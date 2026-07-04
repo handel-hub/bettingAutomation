@@ -3,15 +3,18 @@ export class BrowserRegistry {
         this.browsers = new Map();
     }
 
-    register(id, role, context, page) {
+    register(id, role, browser, context, page, meta = {}) {
         this.browsers.set(id, {
             id,
             role,      // 'master' | 'slave'
             state: 'Initializing', // Initializing, Authenticated, Ready, Busy, Error
             url: 'about:blank',
             health: 'Good', // Good, Bad
+            browser,
             context,
-            page
+            page,
+            username: meta.username ?? null,
+            proxyUrl: meta.proxyUrl ?? null
         });
     }
 

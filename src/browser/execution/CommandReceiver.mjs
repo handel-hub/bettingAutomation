@@ -45,12 +45,13 @@ export class CommandReceiver extends EventEmitter {
             if (this.hotkeyMap[input]) {
                 const seqNum = this.hotkeyMap[input];
                 const command = new Command({
+                    category: 'Execution',
                     type: 'macro',
                     payload: { seqNum, validateOnly: validationMode },
                     source: 'Terminal',
                     executionMode: 'ALL'
                 });
-                this.emit('ExecutionRequested', command);
+                this.emit('Command', command);
                 validationMode = false;
             }
         });

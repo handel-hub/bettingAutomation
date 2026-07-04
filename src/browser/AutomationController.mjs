@@ -1,4 +1,5 @@
 import { logger } from '../config.mjs';
+import { CommandRouter } from './CommandRouter.mjs';
 
 import {
     BrowserRegistry,
@@ -28,7 +29,6 @@ export class AutomationController {
         this.sessionManager = new SessionManager(this.registry);
         this.navSync = new NavigationSynchronizer(this.registry);
         this.healthMonitor = new HealthMonitor(this.registry);
-        this.recoveryManager = new RecoveryManager(this.lifecycleManager, this.sessionManager);
 
         // --- Initialize Execution Subsystem ---
         this.commandReceiver = new CommandReceiver(settings);
@@ -36,17 +36,20 @@ export class AutomationController {
         this.macroEngine = new MacroEngine(this.simulator);
         this.actionDispatcher = new ActionDispatcher(settings);
 
+        const credentialsMap = new Map(accounts.map(a => [a.username, a.password]));
+        this.recoveryManager = new RecoveryManager(
+            this.registry,
+            this.lifecycleManager,
+            this.sessionManager,
+            credentialsMap
+        );
+
+        this.commandRouter = new CommandRouter();
         this.setupEventBus();
     }
 
     setupEventBus() {
-        // Coordination Events
-        this.healthMonitor.on('HealthFailure', (browserId) => {
-            this.recoveryManager.heal(browserId);
-        });
-
-        // Execution Events
-        const handleExecution = async (command) => {
+        this.commandRouter.register('Execution', '*', async (command) => {
             let targetBrowsers = [];
             
             if (command.executionMode === 'SLAVES_ONLY') {
@@ -80,10 +83,38 @@ export class AutomationController {
                 const promises = targetBrowsers.map(b => this.simulator.execute(b, command));
                 await Promise.allSettled(promises);
             }
-        };
+        });
 
-        this.commandReceiver.on('ExecutionRequested', handleExecution);
-        this.actionDispatcher.on('ExecutionRequested', handleExecution);
+        this.commandRouter.register('Navigation', 'navigate', async (command) => {
+            const slaves = this.registry.getReadySlaves();
+            logger.info(`Routing NavigationCommand to ${slaves.length} ready slaves: ${command.payload.url}`);
+            const promises = slaves.map(b => this.simulator.execute(b, command));
+            await Promise.allSettled(promises);
+        });
+
+        this.commandRouter.register('Recovery', 'HEAL_REQUESTED', async (command) => {
+            this.recoveryManager.heal(command.target);
+        });
+
+        this.commandRouter.register('Recovery', 'MASTER_HEALED', async (command) => {
+            const master = this.registry.getMaster();
+            if (master) {
+                await this.navSync.setupMasterSync();
+                await this.actionDispatcher.injectMasterListeners(master.page);
+            }
+        });
+
+        this.commandRouter.register('Recovery', 'HEAL_FAILED', async (command) => {
+            logger.fatal(`CRITICAL: Slave [${command.target}] could not be recovered after ${command.payload.maxAttempts} attempts and is permanently dead!`);
+        });
+
+        const routeFn = (cmd) => this.commandRouter.route(cmd);
+        
+        this.commandReceiver.on('Command', routeFn);
+        this.actionDispatcher.on('Command', routeFn);
+        this.navSync.on('Command', routeFn);
+        this.healthMonitor.on('Command', routeFn);
+        this.recoveryManager.on('Command', routeFn);
 
         // Bridge: Simulator Success/Failure -> Registry Metadata
         this.simulator.on('ActionFailure', ({ id, error }) => {
@@ -121,19 +152,8 @@ export class AutomationController {
                 continue;
             }
 
-            await this.lifecycleManager.spawnBrowser(id, 'slave', proxyUrl);
-            
-            const loaded = await this.sessionManager.loadSession(id, account.username);
-            if (!loaded) {
-                const loggedIn = await this.sessionManager.login(id, account.username, account.password);
-                if (loggedIn) {
-                    await this.sessionManager.saveSession(id, account.username);
-                }
-            } else {
-                const browserObj = this.registry.get(id);
-                await browserObj.page.goto('https://www.sportybet.com/', { waitUntil: 'domcontentloaded' });
-                this.registry.updateState(id, 'Ready');
-            }
+            await this.lifecycleManager.spawnBrowser(id, 'slave', proxyUrl, account.username);
+            await this.sessionManager.restoreOrLogin(id, account.username, account.password);
         }
 
         // 3. Setup Navigation Synchronization

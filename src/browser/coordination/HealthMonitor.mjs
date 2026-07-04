@@ -1,4 +1,5 @@
 import EventEmitter from 'node:events';
+import { Command } from '../execution/Command.mjs';
 
 export class HealthMonitor extends EventEmitter {
     constructor(registry) {
@@ -24,7 +25,12 @@ export class HealthMonitor extends EventEmitter {
         const browsers = this.registry.getAll();
         for (const browser of browsers) {
             if (browser.state === 'Error' || browser.health === 'Bad') {
-                this.emit('HealthFailure', browser.id);
+                this.emit('Command', new Command({
+                    category: 'Recovery',
+                    type: 'HEAL_REQUESTED',
+                    target: browser.id,
+                    source: 'HealthMonitor'
+                }));
             }
         }
     }

@@ -23,18 +23,40 @@ export class ActionDispatcher extends EventEmitter {
             }
 
             const command = new Command({
+                category: 'Execution',
                 type: eventData.type,
                 payload: eventData,
                 source: 'Master Browser',
                 executionMode: 'SLAVES_ONLY'
             });
 
-            this.emit('ExecutionRequested', command);
+            this.emit('Command', command);
         });
 
         await masterPage.addInitScript(() => {
             function getCssSelector(el) {
                 if (!(el instanceof Element)) return;
+                
+                let current = el;
+                let isBad = false;
+                const adRegex = /(^|[\s_-])ad(s|v|vertisement|banner)?([\s_-]|$)/i;
+                
+                while (current && current !== document) {
+                    if (current.tagName === 'IFRAME') {
+                        isBad = true;
+                        break;
+                    }
+                    const className = (typeof current.className === 'string') ? current.className : '';
+                    const id = (typeof current.id === 'string') ? current.id : '';
+                    
+                    if (adRegex.test(className) || adRegex.test(id)) {
+                        isBad = true;
+                        break;
+                    }
+                    current = current.parentNode;
+                }
+                if (isBad) return null;
+                
                 let path = [];
                 while (el.nodeType === Node.ELEMENT_NODE) {
                     let selector = el.nodeName.toLowerCase();

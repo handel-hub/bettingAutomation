@@ -1,27 +1,37 @@
 import { logger } from '../../config.mjs';
+import EventEmitter from 'node:events';
+import { Command } from '../execution/Command.mjs';
 
-export class NavigationSynchronizer {
-    constructor(registry) {
+export class NavigationSynchronizer extends EventEmitter {
+    /**
+     * @param {BrowserRegistry} registry
+     * @param {{ debounceMs?: number }} options
+     */
+    constructor(registry, options = {}) {
+        super();
         this.registry = registry;
+        this.debounceMs = options.debounceMs ?? 250;
+        this.debounceTimer = null;
+        this.latestUrl = null;
     }
 
     async setupMasterSync() {
         const master = this.registry.getMaster();
         if (!master) return;
 
-        master.page.on('framenavigated', async (frame) => {
+        master.page.on('framenavigated', (frame) => {
             if (frame === master.page.mainFrame()) {
                 const newUrl = frame.url();
                 logger.info(`[Master Navigated] ${newUrl}`);
                 this.registry.updateUrl(master.id, newUrl);
-                await this.syncSlavesTo(newUrl);
+                this.scheduleSync(newUrl);
             }
         });
-        
-        await master.page.exposeFunction('reportHistorySync', async (url) => {
+
+        await master.page.exposeFunction('reportHistorySync', (url) => {
             logger.info(`[Master History Push] ${url}`);
             this.registry.updateUrl(master.id, url);
-            await this.syncSlavesTo(url);
+            this.scheduleSync(url);
         });
 
         await master.page.addInitScript(() => {
@@ -36,22 +46,22 @@ export class NavigationSynchronizer {
         });
     }
 
-    async syncSlavesTo(url) {
-        const slaves = this.registry.getAll().filter(b => b.role === 'slave');
-        logger.info(`Synchronizing ${slaves.length} slaves to ${url}`);
-        
-        const promises = slaves.map(async (slave) => {
-            try {
-                this.registry.updateState(slave.id, 'Busy');
-                await slave.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-                this.registry.updateUrl(slave.id, url);
-                this.registry.updateState(slave.id, 'Ready');
-            } catch (err) {
-                logger.error(`Slave [${slave.id}] failed to sync to ${url}: ${err.message}`);
-                this.registry.updateState(slave.id, 'Error');
-            }
-        });
-
-        await Promise.allSettled(promises);
+    /**
+     * Coalesces bursts of navigation signals into a single Navigation Command
+     * targeting only the last URL seen within the debounce window.
+     */
+    scheduleSync(url) {
+        this.latestUrl = url;
+        if (this.debounceTimer) clearTimeout(this.debounceTimer);
+        this.debounceTimer = setTimeout(() => {
+            this.debounceTimer = null;
+            this.emit('Command', new Command({
+                category: 'Navigation',
+                type: 'navigate',
+                payload: { url: this.latestUrl },
+                source: 'NavigationSynchronizer',
+                executionMode: 'SLAVES_ONLY'
+            }));
+        }, this.debounceMs);
     }
 }

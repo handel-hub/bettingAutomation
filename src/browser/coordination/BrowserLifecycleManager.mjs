@@ -15,7 +15,7 @@ export class BrowserLifecycleManager {
         }
     }
 
-    async spawnBrowser(id, role, proxyUrl) {
+    async spawnBrowser(id, role, proxyUrl, username = null) {
         const isMaster = role === 'master';
         const headless = isMaster ? false : (this.spawning.slave_mode === 'headless');
 
@@ -58,7 +58,7 @@ export class BrowserLifecycleManager {
 
             const page = await context.newPage();
             
-            this.registry.register(id, role, context, page);
+            this.registry.register(id, role, browser, context, page, { proxyUrl, username });
             
             return { browser, context, page };
         } catch (err) {

@@ -14,12 +14,14 @@ export class MacroEngine {
     }
 
     loadSequence(name) {
-        const fileName = (name.startsWith('seq_') || name === 'startup') ? `${name}.json` : `seq_${name}.json`;
+        const safeName = path.basename(name);
+        const fileName = (safeName.startsWith('seq_') || safeName === 'startup') ? `${safeName}.json` : `seq_${safeName}.json`;
         const seqFile = path.join(this.sequencesDir, fileName);
         if (fs.existsSync(seqFile)) {
             try {
                 const rawSequence = JSON.parse(fs.readFileSync(seqFile, 'utf-8'));
                 return rawSequence.map(action => new Command({
+                    category: 'Execution',
                     type: action.type,
                     payload: action,
                     source: `MacroEngine [${name}]`,
