@@ -1,9 +1,13 @@
-const fs = require('fs');
-const path = require('path');
-const ini = require('ini');
-const pino = require('pino');
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import ini from 'ini';
+import pino from 'pino';
 
-const logger = pino({
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export const logger = pino({
     transport: {
         target: 'pino-pretty',
         options: {
@@ -12,7 +16,7 @@ const logger = pino({
     }
 });
 
-function loadConfig() {
+export function loadConfig() {
     try {
         const settingsPath = path.join(__dirname, '..', 'settings.ini');
         const settingsRaw = fs.readFileSync(settingsPath, 'utf-8');
@@ -38,5 +42,3 @@ function loadConfig() {
         process.exit(1);
     }
 }
-
-module.exports = { loadConfig, logger };

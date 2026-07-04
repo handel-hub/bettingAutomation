@@ -1,7 +1,7 @@
-const { logger } = require('./config');
-const axios = require('axios');
+import axios from 'axios';
+import { logger } from '../config.mjs';
 
-class ProxyManager {
+export class ProxyManager {
     constructor(proxies, settings) {
         this.proxies = proxies.map(url => ({
             url,
@@ -18,7 +18,6 @@ class ProxyManager {
         logger.info('Starting proxy validation...');
         const validationPromises = this.proxies.map(async (proxy) => {
             try {
-                // Determine proxy host/port
                 const url = new URL(proxy.url);
                 const axiosConfig = {
                     proxy: {
@@ -56,7 +55,7 @@ class ProxyManager {
     }
 
     allocateProxy() {
-        if (this.proxies.length === 0) return null; // No proxies configured
+        if (this.proxies.length === 0) return null;
 
         const onlineProxies = this.proxies.filter(p => p.isOnline && p.assignedAccounts < this.maxAccountsPerProxy);
         if (onlineProxies.length === 0) {
@@ -76,5 +75,3 @@ class ProxyManager {
         return selectedProxy.url;
     }
 }
-
-module.exports = { ProxyManager };
