@@ -93,14 +93,22 @@ export class AutomationController {
         });
 
         this.commandRouter.register('Recovery', 'HEAL_REQUESTED', async (command) => {
-            this.recoveryManager.heal(command.target);
+            await this.recoveryManager.heal(command.target);
         });
 
         this.commandRouter.register('Recovery', 'MASTER_HEALED', async (command) => {
             const master = this.registry.getMaster();
-            if (master) {
+            if (!master) return;
+            try {
                 await this.navSync.setupMasterSync();
                 await this.actionDispatcher.injectMasterListeners(master.page);
+                this.registry.updateState(master.id, 'Ready');
+            } catch (err) {
+                logger.error(`Failed to re-attach master listeners after heal: ${err.message}`);
+                // Don't leave it stuck in 'Initializing' forever - flag it
+                // as Error so HealthMonitor's poll picks it up and runs a
+                // fresh heal cycle rather than silently staying broken.
+                this.registry.updateState(master.id, 'Error');
             }
         });
 

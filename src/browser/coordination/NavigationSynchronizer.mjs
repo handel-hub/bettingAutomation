@@ -5,14 +5,21 @@ import { Command } from '../execution/Command.mjs';
 export class NavigationSynchronizer extends EventEmitter {
     /**
      * @param {BrowserRegistry} registry
-     * @param {{ debounceMs?: number }} options
+     * @param {{ dedupeWindowMs?: number }} options
      */
     constructor(registry, options = {}) {
         super();
         this.registry = registry;
-        this.debounceMs = options.debounceMs ?? 250;
-        this.debounceTimer = null;
-        this.latestUrl = null;
+        // A single logical navigation can report twice - Playwright's own
+        // 'framenavigated' fires for same-document (SPA) navigations too,
+        // and the patched pushState/popstate handler reports the same URL
+        // independently. This window only suppresses an exact-URL repeat
+        // arriving right after the first; it does not merge or drop
+        // genuinely different URLs - every distinct navigation is emitted
+        // as its own Command, in the order it happened.
+        this.dedupeWindowMs = options.dedupeWindowMs ?? 250;
+        this.lastQueuedUrl = null;
+        this.lastQueuedAt = 0;
     }
 
     async setupMasterSync() {
@@ -47,21 +54,24 @@ export class NavigationSynchronizer extends EventEmitter {
     }
 
     /**
-     * Coalesces bursts of navigation signals into a single Navigation Command
-     * targeting only the last URL seen within the debounce window.
+     * Emits a Navigation Command for every distinct URL, in the order it
+     * was seen. Only suppresses an exact repeat of the immediately prior
+     * URL within dedupeWindowMs (the two-signals-one-navigation case) -
+     * it never collapses a sequence of different URLs down to the latest.
      */
     scheduleSync(url) {
-        this.latestUrl = url;
-        if (this.debounceTimer) clearTimeout(this.debounceTimer);
-        this.debounceTimer = setTimeout(() => {
-            this.debounceTimer = null;
-            this.emit('Command', new Command({
-                category: 'Navigation',
-                type: 'navigate',
-                payload: { url: this.latestUrl },
-                source: 'NavigationSynchronizer',
-                executionMode: 'SLAVES_ONLY'
-            }));
-        }, this.debounceMs);
+        const now = Date.now();
+        if (url === this.lastQueuedUrl && (now - this.lastQueuedAt) < this.dedupeWindowMs) {
+            return;
+        }
+        this.lastQueuedUrl = url;
+        this.lastQueuedAt = now;
+
+        this.emit('Command', new Command({
+            category: 'Navigation',
+            type: 'navigate',
+            payload: { url },
+            source: 'NavigationSynchronizer'
+        }));
     }
 }

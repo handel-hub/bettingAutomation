@@ -83,7 +83,6 @@ export class RecoveryManager extends EventEmitter {
         await this.lifecycleManager.spawnBrowser(id, role, proxyUrl, username);
 
         if (role === 'master') {
-            this.registry.updateState(id, 'Ready');
             this.emit('Command', new Command({
                 category: 'Recovery',
                 type: 'MASTER_HEALED',
