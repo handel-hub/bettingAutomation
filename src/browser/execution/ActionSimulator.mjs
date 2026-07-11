@@ -12,6 +12,10 @@ export class ActionSimulator extends EventEmitter {
         this.queues = new Map();
     }
 
+    clearQueue(id) {
+        this.queues.delete(id);
+    }
+
     execute(browserObj, command) {
         const { id } = browserObj;
         const prior = this.queues.get(id) ?? Promise.resolve();
@@ -26,9 +30,22 @@ export class ActionSimulator extends EventEmitter {
             if (command.type === 'click') {
                 await page.click(command.payload.selector, { timeout: 2000 });
             } else if (command.type === 'input') {
-                await page.fill(command.payload.selector, command.payload.value, { timeout: 2000 });
+                if (command.payload.delay) {
+                    await page.locator(command.payload.selector).fill('');
+                    await page.locator(command.payload.selector).pressSequentially(command.payload.value, { delay: command.payload.delay });
+                } else {
+                    await page.fill(command.payload.selector, command.payload.value, { timeout: 2000 });
+                }
             } else if (command.type === 'navigate') {
                 await page.goto(command.payload.url, { waitUntil: 'domcontentloaded' });
+            } else if (command.type === 'wait') {
+                if (command.payload.selector) {
+                    await page.waitForSelector(command.payload.selector, { state: command.payload.state || 'visible', timeout: command.payload.timeout || 10000 });
+                } else if (command.payload.timeout) {
+                    await page.waitForTimeout(command.payload.timeout);
+                }
+            } else if (command.type === 'add_style') {
+                await page.addStyleTag({ content: command.payload.content });
             }
             this.emit('ActionSuccess', { id, command });
             return true;

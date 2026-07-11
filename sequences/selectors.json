@@ -1,0 +1,10 @@
+{
+  "cashout": {
+    "openBetsNav": ".m-btn-button:has-text('Open Bets')",
+    "ticket": "div.m-order-item",
+    "cashoutBtn": "button.m-btn-cashout",
+    "confirmBtn": "button.m-btn-confirm",
+    "toastSuccess": ".m-toast-success",
+    "toastError": ".m-toast-error, .m-toast, div:has-text('Suspended')"
+  }
+}

@@ -4,3 +4,4 @@ export { SessionManager } from './SessionManager.mjs';
 export { NavigationSynchronizer } from './NavigationSynchronizer.mjs';
 export { HealthMonitor } from './HealthMonitor.mjs';
 export { RecoveryManager } from './RecoveryManager.mjs';
+export { AccountLockManager } from './AccountLockManager.mjs';

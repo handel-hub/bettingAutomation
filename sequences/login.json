@@ -1,0 +1,35 @@
+[
+  {
+    "type": "add_style",
+    "content": ".m-ads-dialog, .m-download-app, .af-dialog { display: none !important; }"
+  },
+  {
+    "type": "wait",
+    "timeout": 1200
+  },
+  {
+    "type": "click",
+    "selector": "div.m-login-btn"
+  },
+  {
+    "type": "wait",
+    "selector": ".m-login-modal",
+    "state": "visible"
+  },
+  {
+    "type": "input",
+    "selector": ".m-login-modal input[name=\"phone\"]",
+    "value": "{USERNAME}",
+    "delay": 50
+  },
+  {
+    "type": "input",
+    "selector": ".m-login-modal input[type=\"password\"]",
+    "value": "{PASSWORD}",
+    "delay": 50
+  },
+  {
+    "type": "click",
+    "selector": "button.m-btn-login-submit:not(.is-disabled)"
+  }
+]

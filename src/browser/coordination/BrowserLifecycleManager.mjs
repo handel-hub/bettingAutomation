@@ -1,4 +1,5 @@
 import { chromium } from 'playwright-extra';
+import { devices } from 'playwright';
 import { logger } from '../../config.mjs';
 
 export class BrowserLifecycleManager {
@@ -33,7 +34,8 @@ export class BrowserLifecycleManager {
             logger.info(`Launching ${role} browser [${id}]...`);
             const browser = await chromium.launch({ headless, executablePath, args });
             
-            const contextOptions = { viewport: { width: 1280, height: 720 }, locale: 'en-US' };
+            const mobileDevice = devices['iPhone 13'];
+            const contextOptions = { ...mobileDevice, locale: 'en-US' };
             
             if (proxyUrl) {
                 const url = new URL(proxyUrl);

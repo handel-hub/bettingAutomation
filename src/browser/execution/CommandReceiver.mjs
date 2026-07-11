@@ -42,6 +42,19 @@ export class CommandReceiver extends EventEmitter {
                 return;
             } 
             
+            if (input === 'c') {
+                const command = new Command({
+                    category: 'Workflow',
+                    type: 'cashout',
+                    payload: {},
+                    source: 'Terminal',
+                    executionMode: 'UNIQUE_ACCOUNTS_ONLY'
+                });
+                this.emit('Command', command);
+                logger.info(`[Terminal] Triggered Cashout Workflow.`);
+                return;
+            }
+            
             if (this.hotkeyMap[input]) {
                 const seqNum = this.hotkeyMap[input];
                 const command = new Command({

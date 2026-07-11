@@ -122,28 +122,45 @@ export class SessionManager {
         try {
             await page.goto('https://www.sportybet.com/', { waitUntil: 'domcontentloaded' });
             
-            const loginInputSelector = 'input[name="phone"]'; 
-            const pwdInputSelector = 'input[name="psw"]';     
-            const loginBtnSelector = '.m-login-btn';          
-            
-            const isLoggedIn = await this.verifyLoggedIn(id);
-            if (isLoggedIn) {
-                logger.info(`${username} is already logged in (session restored).`);
-                this.registry.updateState(id, 'Ready');
-                return true;
-            }
-            
-            await page.waitForSelector(loginInputSelector, { timeout: 10000 });
-            await page.fill(loginInputSelector, username);
-            await page.fill(pwdInputSelector, password);
-            await page.click(loginBtnSelector);
+            const macroPath = path.join(__dirname, '..', '..', '..', 'sequences', 'login.json');
+            let macroContent = fs.readFileSync(macroPath, 'utf-8');
+            macroContent = macroContent.replace(/\{USERNAME\}/g, username).replace(/\{PASSWORD\}/g, password);
+            const steps = JSON.parse(macroContent);
 
-            await page.waitForSelector('.m-balance', { timeout: 15000 });
+            for (const step of steps) {
+                if (step.type === 'click') {
+                    await page.click(step.selector, { timeout: 5000 });
+                } else if (step.type === 'input') {
+                    if (step.delay) {
+                        await page.locator(step.selector).fill('');
+                        await page.locator(step.selector).pressSequentially(step.value, { delay: step.delay });
+                    } else {
+                        await page.fill(step.selector, step.value, { timeout: 2000 });
+                    }
+                } else if (step.type === 'wait') {
+                    if (step.selector) {
+                        await page.waitForSelector(step.selector, { state: step.state || 'visible', timeout: step.timeout || 10000 });
+                    } else if (step.timeout) {
+                        await page.waitForTimeout(step.timeout);
+                    }
+                } else if (step.type === 'add_style') {
+                    await page.addStyleTag({ content: step.content });
+                }
+            }
+
+            const successPromise = page.waitForSelector('.m-balance', { timeout: 15000 }).then(() => true);
+            const errorPromise = page.waitForSelector('div.m-toast, div.m-error-msg', { timeout: 15000 }).then(async (el) => {
+                const errText = await el.textContent();
+                throw new Error(`Login rejected by UI: ${errText.trim()}`);
+            });
+
+            await Promise.race([successPromise, errorPromise]);
+
             logger.info(`Successfully logged in ${username} on [${id}]`);
             this.registry.updateState(id, 'Ready');
             return true;
         } catch (err) {
-            logger.error(`Login failed for ${username} on [${id}]:`, err.message);
+            logger.error(`Login failed for ${username} on [${id}]: ${err.message}`);
             this.registry.updateState(id, 'Error');
             return false;
         }

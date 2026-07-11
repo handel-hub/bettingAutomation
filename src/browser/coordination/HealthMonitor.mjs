@@ -24,7 +24,7 @@ export class HealthMonitor extends EventEmitter {
     checkHealth() {
         const browsers = this.registry.getAll();
         for (const browser of browsers) {
-            if (browser.state === 'Error' || browser.health === 'Bad') {
+            if (browser.state === 'Error') {
                 this.emit('Command', new Command({
                     category: 'Recovery',
                     type: 'HEAL_REQUESTED',

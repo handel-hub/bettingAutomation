@@ -1,5 +1,6 @@
 import { logger } from '../../config.mjs';
 import fs from 'node:fs';
+import { promises as fsPromises } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import EventEmitter from 'node:events';
@@ -12,6 +13,17 @@ export class ActionDispatcher extends EventEmitter {
     constructor(settings) {
         super();
         this.memorySettings = settings.Memory || {};
+        
+        this.sequenceFile = path.join(__dirname, '..', '..', '..', 'sequences', 'startup.json');
+        this.actions = [];
+        this.saveTimeout = null;
+
+        if (fs.existsSync(this.sequenceFile)) {
+            try { this.actions = JSON.parse(fs.readFileSync(this.sequenceFile, 'utf-8')); } catch(e) {}
+        }
+
+        process.on('SIGINT', () => this.flushSync());
+        process.on('beforeExit', () => this.flushSync());
     }
 
     async injectMasterListeners(masterPage) {
@@ -90,14 +102,33 @@ export class ActionDispatcher extends EventEmitter {
     }
 
     recordAction(action) {
-        const sequenceFile = path.join(__dirname, '..', '..', '..', 'sequences', 'startup.json');
-        let actions = [];
-        if (fs.existsSync(sequenceFile)) {
-            try { actions = JSON.parse(fs.readFileSync(sequenceFile, 'utf-8')); } catch(e) {}
+        this.actions.push(action);
+        if (this.saveTimeout) clearTimeout(this.saveTimeout);
+        
+        this.saveTimeout = setTimeout(async () => {
+            try {
+                const dir = path.dirname(this.sequenceFile);
+                if (!fs.existsSync(dir)) await fsPromises.mkdir(dir, { recursive: true });
+                await fsPromises.writeFile(this.sequenceFile, JSON.stringify(this.actions, null, 2));
+            } catch (err) {
+                logger.error(`ActionDispatcher: Failed to flush sequence async: ${err.message}`);
+            }
+        }, 1000);
+    }
+
+    flushSync() {
+        if (this.saveTimeout) {
+            clearTimeout(this.saveTimeout);
+            this.saveTimeout = null;
         }
-        actions.push(action);
-        const dir = path.dirname(sequenceFile);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(sequenceFile, JSON.stringify(actions, null, 2));
+        if (this.actions.length > 0) {
+            try {
+                const dir = path.dirname(this.sequenceFile);
+                if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+                fs.writeFileSync(this.sequenceFile, JSON.stringify(this.actions, null, 2));
+            } catch (e) {
+                console.error(`ActionDispatcher: Failed to flush sequence sync on exit: ${e.message}`);
+            }
+        }
     }
 }

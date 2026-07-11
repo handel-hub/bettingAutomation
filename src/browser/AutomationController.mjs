@@ -7,14 +7,16 @@ import {
     SessionManager,
     NavigationSynchronizer,
     HealthMonitor,
-    RecoveryManager
+    RecoveryManager,
+    AccountLockManager
 } from './coordination/index.mjs';
 
 import {
     CommandReceiver,
     ActionDispatcher,
     ActionSimulator,
-    MacroEngine
+    MacroEngine,
+    WorkflowEngine
 } from './execution/index.mjs';
 
 export class AutomationController {
@@ -35,6 +37,8 @@ export class AutomationController {
         this.simulator = new ActionSimulator();
         this.macroEngine = new MacroEngine(this.simulator);
         this.actionDispatcher = new ActionDispatcher(settings);
+        this.lockManager = new AccountLockManager();
+        this.workflowEngine = new WorkflowEngine(this.lockManager, this.registry);
 
         const credentialsMap = new Map(accounts.map(a => [a.username, a.password]));
         this.recoveryManager = new RecoveryManager(
@@ -64,6 +68,14 @@ export class AutomationController {
                 targetBrowsers.push(...slaves);
             }
             
+            targetBrowsers = targetBrowsers.filter(b => {
+                if (b.username && this.lockManager.isLocked(b.username)) {
+                    logger.warn(`Dropping target [${b.id}] because account ${b.username} is locked.`);
+                    return false;
+                }
+                return true;
+            });
+
             if (targetBrowsers.length === 0) {
                 logger.warn(`Cannot execute command [${command.id}]: No target browsers for mode ${command.executionMode}`);
                 return;
@@ -85,6 +97,63 @@ export class AutomationController {
             }
         });
 
+        this.commandRouter.register('Workflow', '*', async (command) => {
+            let targetBrowsers = [];
+            
+            if (command.executionMode === 'UNIQUE_ACCOUNTS_ONLY') {
+                const slaves = this.registry.getReadySlaves();
+                
+                const allSlavesByUsername = new Map();
+                for (const s of this.registry.getAll()) {
+                    if (s.role === 'slave' && s.username) {
+                        if (!allSlavesByUsername.has(s.username)) allSlavesByUsername.set(s.username, []);
+                        allSlavesByUsername.get(s.username).push(s);
+                    }
+                }
+
+                const uniqueAccounts = new Set();
+                for (const slave of slaves) {
+                    if (!uniqueAccounts.has(slave.username)) {
+                        const slavesForAccount = allSlavesByUsername.get(slave.username) || [];
+                        const isAnyBusy = slavesForAccount.some(s => s.state === 'Busy');
+                        
+                        if (isAnyBusy) {
+                            logger.warn(`Cannot route Workflow to account ${slave.username} because one or more slaves are currently Busy.`);
+                            continue;
+                        }
+
+                        uniqueAccounts.add(slave.username);
+                        targetBrowsers.push(slave);
+                    }
+                }
+            } else if (command.executionMode === 'SLAVES_ONLY') {
+                targetBrowsers = this.registry.getReadySlaves();
+            } else if (command.executionMode === 'MASTER_ONLY') {
+                const master = this.registry.getMaster();
+                if (master) targetBrowsers = [master];
+            } else if (command.executionMode === 'ALL') {
+                const master = this.registry.getMaster();
+                const slaves = this.registry.getReadySlaves();
+                if (master) targetBrowsers.push(master);
+                targetBrowsers.push(...slaves);
+            }
+            
+            targetBrowsers = targetBrowsers.filter(b => {
+                if (b.username && this.lockManager.isLocked(b.username)) {
+                    logger.warn(`Dropping target [${b.id}] because account ${b.username} is locked.`);
+                    return false;
+                }
+                return true;
+            });
+
+            if (targetBrowsers.length === 0) {
+                logger.warn(`Cannot execute Workflow [${command.type}]: No target browsers for mode ${command.executionMode}`);
+                return;
+            }
+
+            await this.workflowEngine.execute(command, targetBrowsers);
+        });
+
         this.commandRouter.register('Navigation', 'navigate', async (command) => {
             const slaves = this.registry.getReadySlaves();
             logger.info(`Routing NavigationCommand to ${slaves.length} ready slaves: ${command.payload.url}`);
@@ -93,6 +162,7 @@ export class AutomationController {
         });
 
         this.commandRouter.register('Recovery', 'HEAL_REQUESTED', async (command) => {
+            this.simulator.clearQueue(command.target);
             await this.recoveryManager.heal(command.target);
         });
 
@@ -113,6 +183,7 @@ export class AutomationController {
         });
 
         this.commandRouter.register('Recovery', 'HEAL_FAILED', async (command) => {
+            this.simulator.clearQueue(command.target);
             logger.fatal(`CRITICAL: Slave [${command.target}] could not be recovered after ${command.payload.maxAttempts} attempts and is permanently dead!`);
         });
 
