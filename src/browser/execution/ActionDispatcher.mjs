@@ -103,9 +103,16 @@ export class ActionDispatcher extends EventEmitter {
 
     recordAction(action) {
         this.actions.push(action);
+        const now = Date.now();
+        if (!this.firstPendingAt) this.firstPendingAt = now;
+
         if (this.saveTimeout) clearTimeout(this.saveTimeout);
         
+        const elapsed = now - this.firstPendingAt;
+        const delay = Math.min(1000, Math.max(0, 5000 - elapsed));
+
         this.saveTimeout = setTimeout(async () => {
+            this.firstPendingAt = null;
             try {
                 const dir = path.dirname(this.sequenceFile);
                 if (!fs.existsSync(dir)) await fsPromises.mkdir(dir, { recursive: true });
@@ -113,7 +120,7 @@ export class ActionDispatcher extends EventEmitter {
             } catch (err) {
                 logger.error(`ActionDispatcher: Failed to flush sequence async: ${err.message}`);
             }
-        }, 1000);
+        }, delay);
     }
 
     flushSync() {

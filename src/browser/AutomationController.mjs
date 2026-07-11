@@ -204,7 +204,11 @@ export class AutomationController {
     async start() {
         logger.info('Starting Automation Controller...');
 
-        const maxAccounts = parseInt(this.settings.Spawning.max_accounts_to_spawn || '10', 10);
+        let maxAccounts = parseInt(this.settings.Spawning.max_accounts_to_spawn, 10);
+        if (!Number.isInteger(maxAccounts) || maxAccounts <= 0) {
+            logger.warn(`Invalid or missing max_accounts_to_spawn ("${this.settings.Spawning.max_accounts_to_spawn}") — defaulting to all ${this.accounts.length} configured accounts.`);
+            maxAccounts = this.accounts.length;
+        }
         const activeAccounts = this.accounts.slice(0, maxAccounts);
 
         if (activeAccounts.length === 0) {
@@ -216,6 +220,10 @@ export class AutomationController {
         let masterProxyUrl = null;
         if (this.settings.Spawning.master_use_proxy === 'true') {
             masterProxyUrl = this.proxyManager.allocateProxy();
+            if (!masterProxyUrl && this.settings.Proxy.proxy_failure_mode === 'strict') {
+                logger.error('master_use_proxy=true but no proxy is available (strict mode). Refusing to launch master unprotected.');
+                process.exit(1);
+            }
         }
         await this.lifecycleManager.spawnBrowser('master', 'master', masterProxyUrl);
 
@@ -238,13 +246,8 @@ export class AutomationController {
         // 3. Setup Navigation Synchronization
         await this.navSync.setupMasterSync();
 
-        // 4. Setup Execution Dispatcher (Master Event Listeners)
+        // 4. Replay Startup Macro (moved up, BEFORE listener injection)
         const master = this.registry.getMaster();
-        if (master) {
-            await this.actionDispatcher.injectMasterListeners(master.page);
-        }
-
-        // 5. Replay Startup Macro (Startup execution strategy)
         if (this.settings.Memory.replay_action_sequence === 'true') {
             logger.info('Replaying startup macro on Master...');
             const sequence = this.macroEngine.loadSequence('startup'); 
@@ -253,6 +256,11 @@ export class AutomationController {
                  const readySlaves = this.registry.getReadySlaves();
                  await this.macroEngine.execute(sequence, readySlaves);
             }
+        }
+
+        // 5. Setup Execution Dispatcher (Master Event Listeners)
+        if (master) {
+            await this.actionDispatcher.injectMasterListeners(master.page);
         }
 
         // 6. Start Health Monitor & Command Receiver

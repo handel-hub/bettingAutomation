@@ -17,6 +17,11 @@ export class WorkflowEngine {
             this.selectors = {};
         }
 
+        if (!this.selectors.cashout) {
+            logger.fatal('selectors.json is missing a "cashout" section — cashout workflow cannot function. Fix sequences/selectors.json before starting.');
+            process.exit(1);
+        }
+
         this.workflows = {
             'cashout': new CashoutWorkflow(this.selectors.cashout)
         };

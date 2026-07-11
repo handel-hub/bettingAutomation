@@ -40,8 +40,13 @@ export class MacroEngine {
             try {
                 for (const command of commands) {
                     if (command.payload.selector) {
-                        const count = await b.page.locator(command.payload.selector).count();
+                        const locator = b.page.locator(command.payload.selector);
+                        const count = await locator.count();
                         if (count === 0) throw new Error(`Selector not found: ${command.payload.selector}`);
+                        if (command.type === 'click' || command.type === 'input') {
+                            const visible = await locator.first().isVisible();
+                            if (!visible) throw new Error(`Selector present but not visible: ${command.payload.selector}`);
+                        }
                     }
                 }
                 return { id: b.id, isValid: true };

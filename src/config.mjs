@@ -55,16 +55,37 @@ export function loadConfig() {
             fs.unlinkSync(accountsPath);
             logger.info('Successfully encrypted accounts (round-trip verified). Deleted plaintext accounts.txt.');
         } else if (fs.existsSync(accountsEncPath)) {
-            const encryptedData = JSON.parse(fs.readFileSync(accountsEncPath, 'utf-8'));
-            accountsRaw = decrypt(encryptedData, 'accounts');
+            try {
+                const encryptedData = JSON.parse(fs.readFileSync(accountsEncPath, 'utf-8'));
+                accountsRaw = decrypt(encryptedData, 'accounts');
+            } catch (err) {
+                logger.fatal(
+                    'Failed to decrypt accounts.enc — MASTER_KEY may have changed since it was ' +
+                    'encrypted. Restore the previous MASTER_KEY, or recreate accounts.txt from a ' +
+                    'backup and let it re-migrate to accounts.enc on next startup.'
+                );
+                process.exit(1);
+            }
         } else {
             logger.warn('No accounts found (neither accounts.txt nor accounts.enc exist).');
         }
 
-        const accounts = accountsRaw.split('\n').filter(line => line.trim() !== '').map(line => {
-            const [username, password] = line.split(',');
-            return { username: username?.trim(), password: password?.trim() };
-        });
+        const accounts = accountsRaw.split('\n')
+            .filter(line => line.trim() !== '')
+            .map(line => {
+                const idx = line.indexOf(',');
+                if (idx === -1) {
+                    logger.warn(`Skipping malformed account line (no comma found): "${line}"`);
+                    return null;
+                }
+                const username = line.slice(0, idx).trim();
+                const password = line.slice(idx + 1).trim();
+                if (line.slice(idx + 1).includes(',')) {
+                    logger.warn(`Account line for "${username}" contains extra commas in the password field — using everything after the first comma as-is.`);
+                }
+                return { username, password };
+            })
+            .filter(Boolean);
 
         const proxiesPath = path.join(__dirname, '..', 'proxies.txt');
         let proxies = [];
