@@ -19,7 +19,7 @@ async function main() {
     try {
         await controller.start();
     } catch (err) {
-        logger.error('Fatal error during startup:', err.message);
+        logger.error({ err }, `Fatal error during startup: ${err.message}`);
         process.exit(1);
     }
 }
