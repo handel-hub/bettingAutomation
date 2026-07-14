@@ -16,10 +16,14 @@ export class CashoutWorkflow extends Workflow {
 
         try {
             // 1. Navigate to Open Bets
-            const openBetsBtn = page.locator(this.selectors.openBetsNav);
+            const openBetsBtn = page.locator(this.selectors.openBetsNav).first();
             if (await openBetsBtn.isVisible()) {
                 await openBetsBtn.click();
-                await page.waitForTimeout(1000); // Hydration buffer
+            }
+
+            // Wait for dynamic content loading mask to disappear
+            if (this.selectors.loadingMask) {
+                await page.locator(this.selectors.loadingMask).waitFor({ state: 'hidden', timeout: 8000 }).catch(() => {});
             }
 
             // 2. Find all cashable tickets
@@ -44,9 +48,9 @@ export class CashoutWorkflow extends Workflow {
                 if (await cashoutBtn.isVisible()) {
                     await cashoutBtn.click();
                     
-                    // 4. Wait for and click confirmation
+                    // 4. Wait for and click confirmation (in-place text change)
                     try {
-                        const confirmBtn = page.locator(this.selectors.confirmBtn);
+                        const confirmBtn = ticket.locator(this.selectors.confirmBtn);
                         await confirmBtn.waitFor({ state: 'visible', timeout: 3000 });
                         await confirmBtn.click();
                     } catch (err) {

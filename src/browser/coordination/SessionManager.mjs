@@ -120,7 +120,7 @@ export class SessionManager {
         const page = browserObj.page;
 
         try {
-            await page.goto('https://www.sportybet.com/', { waitUntil: 'domcontentloaded' });
+            await page.goto('https://www.sportybet.com/ng/m/', { waitUntil: 'domcontentloaded' });
             
             const macroPath = path.join(__dirname, '..', '..', '..', 'sequences', 'login.json');
             let macroContent = fs.readFileSync(macroPath, 'utf-8');
@@ -148,8 +148,11 @@ export class SessionManager {
                 }
             }
 
-            const successPromise = page.waitForSelector('.m-balance', { timeout: 15000 }).then(() => true);
-            const errorPromise = page.waitForSelector('div.m-toast, div.m-error-msg', { timeout: 15000 }).then(async (el) => {
+            const successPromise = page.waitForFunction(() => {
+                return window.loginStatus === true || !!document.querySelector('.m-balance, .m-avatar, [data-op="bottom-me"].active, .user-assets-panel, .m-user-wrapper');
+            }, { timeout: 15000 }).then(() => true);
+
+            const errorPromise = page.waitForSelector('div.m-toast, div.m-error-msg, .error-message', { timeout: 15000 }).then(async (el) => {
                 const errText = await el.textContent();
                 throw new Error(`Login rejected by UI: ${errText.trim()}`);
             });
@@ -161,6 +164,12 @@ export class SessionManager {
             return true;
         } catch (err) {
             logger.error(`Login failed for ${username} on [${id}]: ${err.message}`);
+            try {
+                const screenshotPath = path.join(process.cwd(), `error_${id}_login.png`);
+                await page.screenshot({ path: screenshotPath });
+                logger.info(`Saved error screenshot to ${screenshotPath}`);
+            } catch (e) {}
+            
             this.registry.updateState(id, 'Error');
             return false;
         }

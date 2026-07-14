@@ -54,6 +54,15 @@ export class AutomationController {
 
     setupEventBus() {
         this.commandRouter.register('Execution', '*', async (command) => {
+            if (command.withLifecycle) command = command.withLifecycle('BROADCAST');
+            
+            let interactionLog = '';
+            if (command.payload && command.payload.interactionId) {
+                const p = command.payload;
+                interactionLog = `\n  ↳ [Interaction] ID: ${p.interactionId} | Type: ${p.interactionType} | Context: ${p.context || 'Unknown'} | Consumed: [${(p.consumedEvents || []).join(', ')}]`;
+            }
+            
+            logger.info(`[Broadcast] Command ${command.id} [${command.type}] | Latency (Capture->Broadcast): ${Date.now() - command.captureTime}ms | Lifecycle: ${command.lifecycle || 'N/A'}${interactionLog}`);
             let targetBrowsers = [];
             
             if (command.executionMode === 'SLAVES_ONLY') {
@@ -101,29 +110,31 @@ export class AutomationController {
             let targetBrowsers = [];
             
             if (command.executionMode === 'UNIQUE_ACCOUNTS_ONLY') {
+                const master = this.registry.getMaster();
                 const slaves = this.registry.getReadySlaves();
+                const allReadyBrowsers = master ? [master, ...slaves] : slaves;
                 
-                const allSlavesByUsername = new Map();
-                for (const s of this.registry.getAll()) {
-                    if (s.role === 'slave' && s.username) {
-                        if (!allSlavesByUsername.has(s.username)) allSlavesByUsername.set(s.username, []);
-                        allSlavesByUsername.get(s.username).push(s);
+                const allBrowsersByUsername = new Map();
+                for (const b of this.registry.getAll()) {
+                    if (b.username) {
+                        if (!allBrowsersByUsername.has(b.username)) allBrowsersByUsername.set(b.username, []);
+                        allBrowsersByUsername.get(b.username).push(b);
                     }
                 }
 
                 const uniqueAccounts = new Set();
-                for (const slave of slaves) {
-                    if (!uniqueAccounts.has(slave.username)) {
-                        const slavesForAccount = allSlavesByUsername.get(slave.username) || [];
-                        const isAnyBusy = slavesForAccount.some(s => s.state === 'Busy');
+                for (const browser of allReadyBrowsers) {
+                    if (!uniqueAccounts.has(browser.username)) {
+                        const browsersForAccount = allBrowsersByUsername.get(browser.username) || [];
+                        const isAnyBusy = browsersForAccount.some(s => s.state === 'Busy');
                         
                         if (isAnyBusy) {
-                            logger.warn(`Cannot route Workflow to account ${slave.username} because one or more slaves are currently Busy.`);
+                            logger.warn(`Cannot route Workflow to account ${browser.username} because one or more browsers are currently Busy.`);
                             continue;
                         }
 
-                        uniqueAccounts.add(slave.username);
-                        targetBrowsers.push(slave);
+                        uniqueAccounts.add(browser.username);
+                        targetBrowsers.push(browser);
                     }
                 }
             } else if (command.executionMode === 'SLAVES_ONLY') {
@@ -155,6 +166,7 @@ export class AutomationController {
         });
 
         this.commandRouter.register('Navigation', 'navigate', async (command) => {
+            logger.info(`[Broadcast] Command ${command.id} [Navigation] | Latency (Capture->Broadcast): ${Date.now() - command.captureTime}ms`);
             const slaves = this.registry.getReadySlaves();
             logger.info(`Routing NavigationCommand to ${slaves.length} ready slaves: ${command.payload.url}`);
             const promises = slaves.map(b => this.simulator.execute(b, command));
@@ -209,14 +221,20 @@ export class AutomationController {
             logger.warn(`Invalid or missing max_accounts_to_spawn ("${this.settings.Spawning.max_accounts_to_spawn}") — defaulting to all ${this.accounts.length} configured accounts.`);
             maxAccounts = this.accounts.length;
         }
-        const activeAccounts = this.accounts.slice(0, maxAccounts);
+        const activeAccounts = [];
+        for (let i = 0; i < maxAccounts; i++) {
+            activeAccounts.push(this.accounts[i % this.accounts.length]);
+        }
 
         if (activeAccounts.length === 0) {
             logger.warn('No accounts configured. Exiting.');
             process.exit(0);
         }
 
-        // 1. Master Spawning
+        const masterAccount = activeAccounts[0];
+        const slaveAccounts = activeAccounts.slice(1);
+
+        // 1. Master Spawning & Auth
         let masterProxyUrl = null;
         if (this.settings.Spawning.master_use_proxy === 'true') {
             masterProxyUrl = this.proxyManager.allocateProxy();
@@ -225,22 +243,29 @@ export class AutomationController {
                 process.exit(1);
             }
         }
-        await this.lifecycleManager.spawnBrowser('master', 'master', masterProxyUrl);
+        await this.lifecycleManager.spawnBrowser('master', 'master', masterProxyUrl, masterAccount.username);
+        
+        logger.info(`Authenticating Master browser with account: ${masterAccount.username}`);
+        await this.sessionManager.restoreOrLogin('master', masterAccount.username, masterAccount.password);
 
         // 2. Slave Spawning & Auth
-        logger.info(`Spawning ${activeAccounts.length} slave accounts...`);
-        for (let i = 0; i < activeAccounts.length; i++) {
-            const account = activeAccounts[i];
-            const id = `slave_${i}`;
-            
-            const proxyUrl = this.proxyManager.allocateProxy();
-            if (!proxyUrl && this.settings.Proxy.proxy_failure_mode === 'strict') {
-                logger.error(`Skipping account ${account.username} due to lack of proxy (strict mode).`);
-                continue;
-            }
+        if (slaveAccounts.length > 0) {
+            logger.info(`Spawning ${slaveAccounts.length} slave accounts...`);
+            for (let i = 0; i < slaveAccounts.length; i++) {
+                const account = slaveAccounts[i];
+                const id = `slave_${i}`;
+                
+                const proxyUrl = this.proxyManager.allocateProxy();
+                if (!proxyUrl && this.settings.Proxy.proxy_failure_mode === 'strict') {
+                    logger.error(`Skipping account ${account.username} due to lack of proxy (strict mode).`);
+                    continue;
+                }
 
-            await this.lifecycleManager.spawnBrowser(id, 'slave', proxyUrl, account.username);
-            await this.sessionManager.restoreOrLogin(id, account.username, account.password);
+                await this.lifecycleManager.spawnBrowser(id, 'slave', proxyUrl, account.username);
+                await this.sessionManager.restoreOrLogin(id, account.username, account.password);
+            }
+        } else {
+            logger.warn('Only 1 account provided in accounts.txt. No slaves will be spawned (Master took the first account).');
         }
 
         // 3. Setup Navigation Synchronization

@@ -19,6 +19,11 @@ export class BrowserLifecycleManager {
     async spawnBrowser(id, role, proxyUrl, username = null) {
         const isMaster = role === 'master';
         const headless = isMaster ? false : (this.spawning.slave_mode === 'headless');
+        
+        let slowMo = 0;
+        if (this.spawning.debug_slow_mo) {
+            slowMo = parseInt(this.spawning.debug_slow_mo, 10) || 0;
+        }
 
         let executablePath = undefined;
         let args = [];
@@ -30,12 +35,24 @@ export class BrowserLifecycleManager {
             args = this.stealthEngine.getLaunchArgs();
         }
 
+        // Force the actual OS window to a mobile dimension (iPhone 12 Pro: 390x844)
+        args.push('--window-size=390,844');
+
         try {
             logger.info(`Launching ${role} browser [${id}]...`);
-            const browser = await chromium.launch({ headless, executablePath, args });
+            const browser = await chromium.launch({ 
+                headless, 
+                executablePath, 
+                args,
+                slowMo,
+                devtools: role === 'master' // Automatically open DevTools for the master browser
+            });
             
-            const mobileDevice = devices['iPhone 13'];
-            const contextOptions = { ...mobileDevice, locale: 'en-US' };
+            const mobileDevice = devices['iPhone 12 Pro'];
+            const contextOptions = { 
+                ...mobileDevice,
+                locale: 'en-US'
+            };
             
             if (proxyUrl) {
                 const url = new URL(proxyUrl);
@@ -57,8 +74,35 @@ export class BrowserLifecycleManager {
             if (this.stealthEngine) {
                 await this.stealthEngine.applyContextStealth(context);
             }
+            
+            // Defeat Stealth Plugin's desktop spoofing by enforcing mobile properties
+            await context.addInitScript(() => {
+                Object.defineProperty(navigator, 'platform', { get: () => 'iPhone' });
+                Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 5 });
+                Object.defineProperty(window, 'outerWidth', { get: () => 390 });
+                Object.defineProperty(window, 'outerHeight', { get: () => 844 });
+                if (window.screen) {
+                    Object.defineProperty(window.screen, 'width', { get: () => 390 });
+                    Object.defineProperty(window.screen, 'height', { get: () => 844 });
+                    Object.defineProperty(window.screen, 'availWidth', { get: () => 390 });
+                    Object.defineProperty(window.screen, 'availHeight', { get: () => 844 });
+                }
+            });
 
             const page = await context.newPage();
+            
+            if (!headless) {
+                try {
+                    const cdp = await context.newCDPSession(page);
+                    const { windowId } = await cdp.send('Browser.getWindowForTarget');
+                    await cdp.send('Browser.setWindowBounds', {
+                        windowId,
+                        bounds: { width: 390, height: 844, windowState: 'normal' }
+                    });
+                } catch(e) { 
+                    logger.warn(`Could not force CDP window resize for [${id}]: ${e.message}`); 
+                }
+            }
             
             this.registry.register(id, role, browser, context, page, { proxyUrl, username });
             

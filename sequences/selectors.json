@@ -1,10 +1,11 @@
 {
   "cashout": {
-    "openBetsNav": ".m-btn-button:has-text('Open Bets')",
+    "openBetsNav": "[data-op=\"bottom-nav-open-bets\"], nav.m-footer a[href*=\"openbets\"]",
+    "loadingMask": ".m-page-loading-wrap",
     "ticket": "div.m-order-item",
-    "cashoutBtn": "button.m-btn-cashout",
-    "confirmBtn": "button.m-btn-confirm",
-    "toastSuccess": ".m-toast-success",
-    "toastError": ".m-toast-error, .m-toast, div:has-text('Suspended')"
+    "cashoutBtn": "button.af-button:has-text('Cashout')",
+    "confirmBtn": "button.af-button:has-text('Confirm')",
+    "toastSuccess": ".m-toast--success",
+    "toastError": ".m-toast--error, .m-toast, .m-cashout-msg:has-text('unavailable')"
   }
 }

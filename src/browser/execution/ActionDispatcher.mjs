@@ -27,6 +27,10 @@ export class ActionDispatcher extends EventEmitter {
     }
 
     async injectMasterListeners(masterPage) {
+        await masterPage.exposeFunction('dispatchInstrumentationEvent', async (eventData) => {
+            logger.info(`[INSTRUMENTATION] [${eventData.captureTime}] Type: ${eventData.type} | Target: ${eventData.tag}#${eventData.id}.${eventData.class} | Selector: ${eventData.selector} | Extra: ${eventData.extra} | Error: ${eventData.error}`);
+        });
+
         await masterPage.exposeFunction('dispatchExecutionEvent', async (eventData) => {
             logger.info(`[Master Dispatch] ${eventData.type}`);
             
@@ -35,9 +39,11 @@ export class ActionDispatcher extends EventEmitter {
             }
 
             const command = new Command({
+                version: 2,
+                lifecycle: 'CAPTURED',
                 category: 'Execution',
                 type: eventData.type,
-                payload: eventData,
+                payload: eventData.payload,
                 source: 'Master Browser',
                 executionMode: 'SLAVES_ONLY'
             });
@@ -45,60 +51,412 @@ export class ActionDispatcher extends EventEmitter {
             this.emit('Command', command);
         });
 
-        await masterPage.addInitScript(() => {
-            function getCssSelector(el) {
-                if (!(el instanceof Element)) return;
-                
-                let current = el;
-                let isBad = false;
-                const adRegex = /(^|[\s_-])ad(s|v|vertisement|banner)?([\s_-]|$)/i;
-                
-                while (current && current !== document) {
-                    if (current.tagName === 'IFRAME') {
-                        isBad = true;
-                        break;
-                    }
-                    const className = (typeof current.className === 'string') ? current.className : '';
-                    const id = (typeof current.id === 'string') ? current.id : '';
+        const scriptContent = `
+            (() => {
+            class LocatorEngine {
+                static getCandidates(el) {
+                    if (!(el instanceof Element)) return [];
+                    let candidates = [];
                     
-                    if (adRegex.test(className) || adRegex.test(id)) {
-                        isBad = true;
-                        break;
-                    }
-                    current = current.parentNode;
-                }
-                if (isBad) return null;
-                
-                let path = [];
-                while (el.nodeType === Node.ELEMENT_NODE) {
-                    let selector = el.nodeName.toLowerCase();
-                    if (el.id) {
-                        selector += '#' + el.id;
-                        path.unshift(selector);
-                        break;
-                    } else {
-                        let sib = el, nth = 1;
-                        while (sib = sib.previousElementSibling) {
-                            if (sib.nodeName.toLowerCase() == selector) nth++;
+                    const dataOps = ['data-op', 'data-testid', 'data-id', 'data-action'];
+                    for (const attr of dataOps) {
+                        const val = el.getAttribute(attr);
+                        if (val) {
+                            candidates.push({ strategy: 'data-attr', locator: '[' + attr + '="' + CSS.escape(val) + '"]', confidence: 1.0, rank: 1 });
                         }
-                        if (nth != 1) selector += ":nth-of-type("+nth+")";
                     }
-                    path.unshift(selector);
-                    el = el.parentNode;
+                    
+                    if (el.id && !/\\d+/.test(el.id)) {
+                        candidates.push({ strategy: 'id', locator: '#' + CSS.escape(el.id), confidence: 0.9, rank: 2 });
+                    }
+                    
+                    if (typeof el.className === 'string' && el.className.trim() !== '') {
+                        const classes = el.className.trim().split(/\\s+/).filter(c => {
+                            if (/^[a-z0-9]{5,8}$/.test(c)) return false; 
+                            if (/^(p|m|w|h|text|bg|flex|items|justify|hover|focus|active)-/.test(c)) return false; 
+                            if (c.includes(':')) return false; 
+                            return true;
+                        });
+                        
+                        if (classes.length > 0) {
+                            const selector = el.nodeName.toLowerCase() + '.' + classes.map(c => CSS.escape(c)).join('.');
+                            const matches = Array.from(document.querySelectorAll(selector));
+                            const index = matches.indexOf(el);
+                            
+                            if (index !== -1) {
+                                candidates.push({ 
+                                    strategy: 'semantic-class', 
+                                    locator: selector + ' >> nth=' + index, 
+                                    confidence: 0.8, 
+                                    rank: 3 
+                                });
+                            }
+                        }
+                    }
+                    
+                    let structuralLocator = this.getStructuralCss(el);
+                    if (structuralLocator) {
+                        candidates.push({ strategy: 'structural-css', locator: structuralLocator, confidence: 0.4, rank: 4 });
+                    }
+                    
+                    return candidates;
                 }
-                return path.join(" > ");
+
+                static getStructuralCss(el) {
+                    let current = el;
+                    let isBad = false;
+                    const adRegex = /(^|[\\s_-])ad(s|v|vertisement|banner)?([\\s_-]|$)/i;
+                    
+                    while (current && current !== document) {
+                        if (current.tagName === 'IFRAME') {
+                            isBad = true;
+                            break;
+                        }
+                        const className = (typeof current.className === 'string') ? current.className : '';
+                        const id = (typeof current.id === 'string') ? current.id : '';
+                        
+                        if (adRegex.test(className) || adRegex.test(id)) {
+                            isBad = true;
+                            break;
+                        }
+                        current = current.parentNode;
+                    }
+                    if (isBad) return null;
+                    
+                    let path = [];
+                    while (el && el.nodeType === Node.ELEMENT_NODE) {
+                        let selector = el.nodeName.toLowerCase();
+                        if (el.id) {
+                            selector += '#' + CSS.escape(el.id);
+                            path.unshift(selector);
+                            break;
+                        } else {
+                            let sib = el, nth = 1;
+                            while (sib = sib.previousElementSibling) {
+                                if (sib.nodeName.toLowerCase() == selector) nth++;
+                            }
+                            if (nth != 1) selector += ":nth-of-type("+nth+")";
+                        }
+                        path.unshift(selector);
+                        el = el.parentNode;
+                    }
+                    return path.join(" > ");
+                }
             }
 
-            document.addEventListener('click', (e) => {
-                const selector = getCssSelector(e.target);
-                if (selector) window.dispatchExecutionEvent({ type: 'click', selector });
-            }, true);
+            function generateUUID() {
+                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                    var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                });
+            }
 
-            document.addEventListener('input', (e) => {
-                const selector = getCssSelector(e.target);
-                if (selector) window.dispatchExecutionEvent({ type: 'input', selector, value: e.target.value });
-            }, true);
-        });
+            function sendExecution(type, payload) {
+                if (window.dispatchExecutionEvent) {
+                    payload.captureTime = Date.now();
+                    window.dispatchExecutionEvent({ type, payload });
+                }
+            }
+
+            const AggregationConfig = {
+                clickWindow: 250,
+                doubleClickWindow: 300,
+                typingWindow: 500,
+                scrollWindow: 200,
+                dragThreshold: 10,
+                hoverThrottle: 100,
+                longPressWindow: 800
+            };
+
+            class InteractionRecognizer {
+                constructor() {
+                    this.pointerState = 'IDLE';
+                    this.pointerData = { path: [], startTarget: null, clickTimeout: null, consumed: [], startTime: 0 };
+                    
+                    this.scrollState = 'IDLE';
+                    this.scrollData = { deltaX: 0, deltaY: 0, timeout: null, consumed: [], target: null };
+                    
+                    this.inputState = 'IDLE';
+                    this.inputData = { value: '', timeout: null, consumed: [], target: null };
+                    
+                    this.hoverTimeout = null;
+                }
+
+                emit(type, data) {
+                    const start = Date.now();
+                    const payload = {
+                        interactionId: 'ia-' + generateUUID().split('-')[0],
+                        interactionType: type,
+                        originEvent: data.originEvent,
+                        consumedEvents: data.consumed,
+                        timestamp: start,
+                        context: data.context
+                    };
+
+                    if (data.target && ['CLICK', 'DOUBLE_CLICK', 'DRAG', 'INPUT'].includes(type)) {
+                        payload.locators = LocatorEngine.getCandidates(data.target);
+                    }
+
+                    if (data.coordinates) payload.coordinates = data.coordinates;
+                    if (data.path) payload.path = data.path;
+                    if (data.deltas) payload.deltas = data.deltas;
+                    if (data.value !== undefined) payload.value = data.value;
+                    if (data.key) payload.key = data.key;
+
+                    payload.metadata = { aggregationDuration: Date.now() - data.startTime };
+                    sendExecution(type, payload);
+                }
+
+                flushPointer() {
+                    if (this.pointerData.clickTimeout) {
+                        clearTimeout(this.pointerData.clickTimeout);
+                        this.pointerData.clickTimeout = null;
+                    }
+                    this.pointerState = 'IDLE';
+                    this.pointerData = { path: [], startTarget: null, clickTimeout: null, consumed: [], startTime: 0 };
+                }
+
+                processPointerEvent(e) {
+                    const type = e.type;
+                    const now = Date.now();
+
+                    if (type === 'mousedown' || type === 'pointerdown') {
+                        if (this.pointerState === 'CLICK_PENDING') {
+                            this.pointerData.consumed.push(type);
+                            return;
+                        }
+                        this.flushPointer();
+                        this.pointerState = 'POINTER_DOWN';
+                        this.pointerData.startTarget = e.target;
+                        this.pointerData.path = [{x: e.clientX, y: e.clientY}];
+                        this.pointerData.consumed.push(type);
+                        this.pointerData.startTime = now;
+                    } 
+                    else if (type === 'mousemove' || type === 'pointermove') {
+                        if (this.pointerState === 'POINTER_DOWN' || this.pointerState === 'CLICK_PENDING') {
+                            const start = this.pointerData.path[0];
+                            const dist = Math.sqrt(Math.pow(e.clientX - start.x, 2) + Math.pow(e.clientY - start.y, 2));
+                            if (dist > AggregationConfig.dragThreshold) {
+                                if (this.pointerData.clickTimeout) clearTimeout(this.pointerData.clickTimeout);
+                                this.pointerState = 'DRAGGING';
+                            } else if (this.pointerState === 'POINTER_DOWN') {
+                                this.pointerData.consumed.push(type);
+                            }
+                        }
+
+                        if (this.pointerState === 'DRAGGING') {
+                            const last = this.pointerData.path[this.pointerData.path.length - 1];
+                            const dist = Math.sqrt(Math.pow(e.clientX - last.x, 2) + Math.pow(e.clientY - last.y, 2));
+                            if (dist > 5) {
+                                this.pointerData.path.push({x: e.clientX, y: e.clientY});
+                            }
+                            if (!this.pointerData.consumed.includes(type)) this.pointerData.consumed.push(type);
+                        }
+
+                        if (this.pointerState === 'IDLE') {
+                            if (!this.hoverTimeout) {
+                                this.hoverTimeout = setTimeout(() => {
+                                    this.emit('HOVER', {
+                                        originEvent: type,
+                                        consumed: [type],
+                                        context: 'Pointer Context',
+                                        coordinates: { x: e.clientX, y: e.clientY },
+                                        startTime: now
+                                    });
+                                    this.hoverTimeout = null;
+                                }, AggregationConfig.hoverThrottle);
+                            }
+                        }
+                    }
+                    else if (type === 'mouseup' || type === 'pointerup') {
+                        if (this.pointerState === 'DRAGGING') {
+                            this.pointerData.path.push({x: e.clientX, y: e.clientY});
+                            this.pointerData.consumed.push(type);
+                            this.emit('DRAG', {
+                                originEvent: type,
+                                consumed: this.pointerData.consumed,
+                                context: 'Pointer Context',
+                                target: this.pointerData.startTarget,
+                                path: this.pointerData.path,
+                                startTime: this.pointerData.startTime
+                            });
+                            this.flushPointer();
+                        } else if (this.pointerState === 'POINTER_DOWN') {
+                            this.pointerData.consumed.push(type);
+                            if (e.button === 2) {
+                                this.emit('CLICK', {
+                                    originEvent: 'contextmenu',
+                                    consumed: this.pointerData.consumed,
+                                    context: 'Pointer Context',
+                                    target: this.pointerData.startTarget,
+                                    coordinates: { x: e.clientX, y: e.clientY },
+                                    startTime: this.pointerData.startTime
+                                });
+                                this.flushPointer();
+                            }
+                        } else if (this.pointerState === 'CLICK_PENDING') {
+                            this.pointerData.consumed.push(type);
+                        }
+                    }
+                    else if (type === 'click') {
+                        if (this.pointerState === 'CLICK_PENDING') {
+                            this.pointerData.consumed.push(type);
+                        } else {
+                            this.pointerState = 'CLICK_PENDING';
+                            this.pointerData.consumed.push(type);
+                            if (!this.pointerData.startTarget) this.pointerData.startTarget = e.target;
+                            if (this.pointerData.path.length === 0) this.pointerData.path.push({x: e.clientX, y: e.clientY});
+                            if (!this.pointerData.startTime) this.pointerData.startTime = now;
+
+                            this.pointerData.clickTimeout = setTimeout(() => {
+                                this.emit('CLICK', {
+                                    originEvent: 'click',
+                                    consumed: this.pointerData.consumed,
+                                    context: 'Pointer Context',
+                                    target: this.pointerData.startTarget,
+                                    coordinates: this.pointerData.path[0],
+                                    startTime: this.pointerData.startTime
+                                });
+                                this.flushPointer();
+                            }, AggregationConfig.clickWindow);
+                        }
+                    }
+                    else if (type === 'dblclick') {
+                        this.pointerData.consumed.push(type);
+                        if (this.pointerData.clickTimeout) clearTimeout(this.pointerData.clickTimeout);
+                        
+                        this.emit('DOUBLE_CLICK', {
+                            originEvent: 'dblclick',
+                            consumed: this.pointerData.consumed,
+                            context: 'Pointer Context',
+                            target: this.pointerData.startTarget || e.target,
+                            coordinates: { x: e.clientX, y: e.clientY },
+                            startTime: this.pointerData.startTime || now
+                        });
+                        this.flushPointer();
+                    }
+                }
+
+                processScrollEvent(e) {
+                    const now = Date.now();
+                    if (this.scrollState === 'IDLE') {
+                        this.scrollState = 'SCROLLING';
+                        this.scrollData.startTime = now;
+                        this.scrollData.target = e.target;
+                    }
+                    
+                    if (e.type === 'wheel') {
+                        this.scrollData.deltaX += e.deltaX;
+                        this.scrollData.deltaY += e.deltaY;
+                        if (!this.scrollData.consumed.includes('wheel')) this.scrollData.consumed.push('wheel');
+                    } else if (e.type === 'scroll') {
+                        if (!this.scrollData.consumed.includes('scroll')) this.scrollData.consumed.push('scroll');
+                    }
+
+                    if (this.scrollData.timeout) clearTimeout(this.scrollData.timeout);
+
+                    this.scrollData.timeout = setTimeout(() => {
+                        this.emit('SCROLL', {
+                            originEvent: e.type,
+                            consumed: this.scrollData.consumed,
+                            context: 'Scroll Context',
+                            target: this.scrollData.target,
+                            deltas: { deltaX: this.scrollData.deltaX, deltaY: this.scrollData.deltaY },
+                            startTime: this.scrollData.startTime
+                        });
+                        this.scrollState = 'IDLE';
+                        this.scrollData = { deltaX: 0, deltaY: 0, timeout: null, consumed: [], target: null };
+                    }, AggregationConfig.scrollWindow);
+                }
+
+                processInputEvent(e) {
+                    const now = Date.now();
+                    if (this.inputState === 'IDLE') {
+                        this.inputState = 'TYPING';
+                        this.inputData.startTime = now;
+                        this.inputData.target = e.target;
+                    }
+                    
+                    this.inputData.value = e.target.value;
+                    if (!this.inputData.consumed.includes(e.type)) this.inputData.consumed.push(e.type);
+
+                    if (this.inputData.timeout) clearTimeout(this.inputData.timeout);
+
+                    this.inputData.timeout = setTimeout(() => {
+                        this.emit('INPUT', {
+                            originEvent: 'input',
+                            consumed: this.inputData.consumed,
+                            context: 'Input Context',
+                            target: this.inputData.target,
+                            value: this.inputData.value,
+                            startTime: this.inputData.startTime
+                        });
+                        this.inputState = 'IDLE';
+                        this.inputData = { value: '', timeout: null, consumed: [], target: null };
+                    }, AggregationConfig.typingWindow);
+                }
+
+                processKeyboardEvent(e) {
+                    const specialKeys = ['Enter', 'Escape', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backspace', 'Delete'];
+                    const isSpecial = specialKeys.includes(e.key);
+                    const hasModifier = e.ctrlKey || e.altKey || e.metaKey;
+                    
+                    if (isSpecial || hasModifier) {
+                        let parts = [];
+                        if (e.ctrlKey) parts.push('Control');
+                        if (e.altKey) parts.push('Alt');
+                        if (e.shiftKey && parts.length > 0) parts.push('Shift');
+                        if (e.metaKey) parts.push('Meta');
+                        
+                        let key = e.key;
+                        if (key === 'Control' || key === 'Alt' || key === 'Shift' || key === 'Meta') return;
+                        if (key && key.length === 1 && /^[a-z]$/i.test(key)) key = key.toLowerCase();
+                        parts.push(key);
+                        const combo = parts.join('+');
+                        
+                        this.emit('KEYBOARD', {
+                            originEvent: 'keydown',
+                            consumed: ['keydown'],
+                            context: 'Keyboard Context',
+                            target: e.target,
+                            key: combo,
+                            startTime: Date.now()
+                        });
+                    }
+                }
+            }
+
+            class InteractionCollector {
+                constructor() {
+                    this.recognizer = new InteractionRecognizer();
+                }
+
+                handle(e) {
+                    if (!e.isTrusted) return;
+                    
+                    if (['mousedown', 'mousemove', 'mouseup', 'click', 'dblclick'].includes(e.type)) {
+                        this.recognizer.processPointerEvent(e);
+                    } else if (['wheel', 'scroll'].includes(e.type)) {
+                        this.recognizer.processScrollEvent(e);
+                    } else if (['input'].includes(e.type)) {
+                        this.recognizer.processInputEvent(e);
+                    } else if (['keydown'].includes(e.type)) {
+                        this.recognizer.processKeyboardEvent(e);
+                    }
+                }
+            }
+
+            window.interactionCollector = new InteractionCollector();
+
+            const eventsToIntercept = ['click', 'dblclick', 'input', 'keydown', 'mousemove', 'mousedown', 'mouseup', 'wheel', 'scroll'];
+            eventsToIntercept.forEach(event => {
+                document.addEventListener(event, (e) => window.interactionCollector.handle(e), { capture: true, passive: true });
+            });
+            })();
+        `;
+        
+        await masterPage.addInitScript(scriptContent);
+        await masterPage.evaluate(scriptContent).catch(err => logger.warn('Failed to immediately evaluate ActionDispatcher script: ' + err.message));
     }
 
     recordAction(action) {

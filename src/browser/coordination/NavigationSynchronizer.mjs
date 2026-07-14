@@ -41,16 +41,19 @@ export class NavigationSynchronizer extends EventEmitter {
             this.scheduleSync(url);
         });
 
-        await master.page.addInitScript(() => {
+        const syncScript = `
             const originalPushState = history.pushState;
             history.pushState = function() {
                 originalPushState.apply(this, arguments);
-                window.reportHistorySync(location.href);
+                if (window.reportHistorySync) window.reportHistorySync(location.href);
             };
             window.addEventListener('popstate', () => {
-                window.reportHistorySync(location.href);
+                if (window.reportHistorySync) window.reportHistorySync(location.href);
             });
-        });
+        `;
+        
+        await master.page.addInitScript(syncScript);
+        await master.page.evaluate(syncScript).catch(err => logger.warn('Failed to immediately evaluate NavigationSynchronizer script: ' + err.message));
     }
 
     /**
@@ -70,7 +73,7 @@ export class NavigationSynchronizer extends EventEmitter {
         this.emit('Command', new Command({
             category: 'Navigation',
             type: 'navigate',
-            payload: { url },
+            payload: { url, captureTime: now },
             source: 'NavigationSynchronizer'
         }));
     }

@@ -1,0 +1,748 @@
+:\Users\John\Documents\CODE\back\bettingAutomation>clear
+'clear' is not recognized as an internal or external command,
+operable program or batch file.
+
+C:\Users\John\Documents\CODE\back\bettingAutomation>npm start
+
+> bettingautomation@1.0.0 start
+> node index.mjs
+
+◇ injected env (1) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+[19:00:17.323] INFO (7664): Starting Betting Automation System (v2 Architecture)...
+[19:00:17.398] INFO (7664): Starting proxy validation...
+[19:00:22.436] WARN (7664): Proxy http://192.168.1.5:8080 is OFFLINE. (loose mode)
+[19:00:22.438] WARN (7664): Proxy http://192.168.1.6:8080 is OFFLINE. (loose mode)
+[19:00:22.438] INFO (7664): Proxy validation complete. 0/2 proxies online.
+[19:00:22.445] INFO (7664): WorkflowEngine: Loaded selectors.json successfully.
+[19:00:22.447] INFO (7664): Starting Automation Controller...
+[19:00:22.447] INFO (7664): Launching master browser [master]...
+[19:00:23.881] INFO (7664): Authenticating Master browser with account: 08107992381
+[19:00:23.948] INFO (7664): Loaded session for 08107992381 on [master]
+[19:00:31.471] WARN (7664): Restored session for 08107992381 on [master] did not verify as logged in; falling back to fresh login.
+[19:00:31.471] INFO (7664): Attempting login for 08107992381 on [master]...
+[19:00:41.096] INFO (7664): Successfully logged in 08107992381 on [master]
+[19:00:41.177] INFO (7664): Saved encrypted session for 08107992381 from [master]
+[19:00:41.177] INFO (7664): Spawning 1 slave accounts...
+[19:00:41.177] WARN (7664): No available proxies with capacity!
+[19:00:41.177] INFO (7664): Launching slave browser [slave_0]...
+[19:00:43.301] INFO (7664): Loaded session for 08107992381 on [slave_0]
+[19:00:50.931] WARN (7664): Restored session for 08107992381 on [slave_0] did not verify as logged in; falling back to fresh login.
+[19:00:50.931] INFO (7664): Attempting login for 08107992381 on [slave_0]...
+[19:01:00.767] INFO (7664): Successfully logged in 08107992381 on [slave_0]
+[19:01:00.874] INFO (7664): Saved encrypted session for 08107992381 from [slave_0]
+[19:01:00.947] INFO (7664): Starting Command Receiver...
+[19:01:00.947] INFO (7664): Press 'v' to enter Validation Mode for the next sequence.
+[19:01:00.951] INFO (7664): Automation Controller fully initialized.
+[19:01:06.449] INFO (7664): [Master Dispatch] HOVER
+[19:01:06.456] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (5a0e0e43-9aa6-49d2-9632-44e5a62817a2)
+[19:01:06.457] INFO (7664): [Broadcast] Command 5a0e0e43-9aa6-49d2-9632-44e5a62817a2 [HOVER] | Latency (Capture->Broadcast): 20ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-11fa675e | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:06.458] INFO (7664): [Slave Receive] Command 5a0e0e43-9aa6-49d2-9632-44e5a62817a2 for [slave_0] | Latency (Creation->Receive): 3ms | Lifecycle: RECEIVED
+[19:01:06.459] INFO (7664): [Execute Start] Command 5a0e0e43-9aa6-49d2-9632-44e5a62817a2 on [slave_0] | Latency (Receive->Start): 4ms | Lifecycle: EXECUTING
+[19:01:06.550] INFO (7664): [Master Dispatch] HOVER
+[19:01:06.550] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (8037b222-995f-4c25-984b-d5aaedf6cead)
+[19:01:06.550] INFO (7664): [Broadcast] Command 8037b222-995f-4c25-984b-d5aaedf6cead [HOVER] | Latency (Capture->Broadcast): 3ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-34de0d2e | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:06.551] INFO (7664): [Slave Receive] Command 8037b222-995f-4c25-984b-d5aaedf6cead for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:01:06.668] INFO (7664): [Master Dispatch] HOVER
+[19:01:06.668] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (e36240a8-ed0f-4ed3-9fdd-d40b329ae391)
+[19:01:06.669] INFO (7664): [Broadcast] Command e36240a8-ed0f-4ed3-9fdd-d40b329ae391 [HOVER] | Latency (Capture->Broadcast): 5ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-a086c758 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:06.669] INFO (7664): [Slave Receive] Command e36240a8-ed0f-4ed3-9fdd-d40b329ae391 for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:01:06.782] INFO (7664): [Master Dispatch] HOVER
+[19:01:06.783] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (1ad75508-f297-469d-a56e-393d8c776190)
+[19:01:06.783] INFO (7664): [Broadcast] Command 1ad75508-f297-469d-a56e-393d8c776190 [HOVER] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-5c366a7f | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:06.783] INFO (7664): [Slave Receive] Command 1ad75508-f297-469d-a56e-393d8c776190 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:06.902] INFO (7664): [Master Dispatch] HOVER
+[19:01:06.902] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (d66e88fc-1b8a-44da-9f9d-f6718da291e3)
+[19:01:06.902] INFO (7664): [Broadcast] Command d66e88fc-1b8a-44da-9f9d-f6718da291e3 [HOVER] | Latency (Capture->Broadcast): 5ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-ec568d6e | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:06.903] INFO (7664): [Slave Receive] Command d66e88fc-1b8a-44da-9f9d-f6718da291e3 for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:01:06.970] INFO (7664): [Execute End] [Result: Success] Command 5a0e0e43-9aa6-49d2-9632-44e5a62817a2 [HOVER] on [slave_0] | Execution duration: 511ms | Lifecycle: COMPLETED
+[19:01:06.971] INFO (7664): [Execute Start] Command 8037b222-995f-4c25-984b-d5aaedf6cead on [slave_0] | Latency (Receive->Start): 421ms | Lifecycle: EXECUTING
+[19:01:07.016] INFO (7664): [Master Dispatch] HOVER
+[19:01:07.016] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (886b9c6f-928d-4678-a9cc-ca7d2bc6c8e1)
+[19:01:07.016] INFO (7664): [Broadcast] Command 886b9c6f-928d-4678-a9cc-ca7d2bc6c8e1 [HOVER] | Latency (Capture->Broadcast): 3ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-23725f38 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:07.017] INFO (7664): [Slave Receive] Command 886b9c6f-928d-4678-a9cc-ca7d2bc6c8e1 for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:01:07.133] INFO (7664): [Master Dispatch] HOVER
+[19:01:07.133] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (d33f7b30-d295-4f6f-85f0-4ede18d2f746)
+[19:01:07.133] INFO (7664): [Broadcast] Command d33f7b30-d295-4f6f-85f0-4ede18d2f746 [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-ece3112a | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:07.133] INFO (7664): [Slave Receive] Command d33f7b30-d295-4f6f-85f0-4ede18d2f746 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:07.476] INFO (7664): [Execute End] [Result: Success] Command 8037b222-995f-4c25-984b-d5aaedf6cead [HOVER] on [slave_0] | Execution duration: 505ms | Lifecycle: COMPLETED
+[19:01:07.476] INFO (7664): [Execute Start] Command e36240a8-ed0f-4ed3-9fdd-d40b329ae391 on [slave_0] | Latency (Receive->Start): 808ms | Lifecycle: EXECUTING
+[19:01:07.983] INFO (7664): [Execute End] [Result: Success] Command e36240a8-ed0f-4ed3-9fdd-d40b329ae391 [HOVER] on [slave_0] | Execution duration: 507ms | Lifecycle: COMPLETED
+[19:01:07.983] INFO (7664): [Execute Start] Command 1ad75508-f297-469d-a56e-393d8c776190 on [slave_0] | Latency (Receive->Start): 1200ms | Lifecycle: EXECUTING
+[19:01:08.398] INFO (7664): [Master Dispatch] CLICK
+[19:01:08.399] INFO (7664): [CommandRouter] Routing [Execution:CLICK] (2c7cfbdc-a97e-4ac3-8848-e57eecf968fb)
+[19:01:08.399] INFO (7664): [Broadcast] Command 2c7cfbdc-a97e-4ac3-8848-e57eecf968fb [CLICK] | Latency (Capture->Broadcast): 3ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-8932352d | Type: CLICK | Context: Pointer Context | Consumed: [mousedown, mousemove, mouseup, click]
+[19:01:08.399] INFO (7664): [Slave Receive] Command 2c7cfbdc-a97e-4ac3-8848-e57eecf968fb for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:08.486] INFO (7664): [Execute End] [Result: Success] Command 1ad75508-f297-469d-a56e-393d8c776190 [HOVER] on [slave_0] | Execution duration: 503ms | Lifecycle: COMPLETED
+[19:01:08.486] INFO (7664): [Execute Start] Command d66e88fc-1b8a-44da-9f9d-f6718da291e3 on [slave_0] | Latency (Receive->Start): 1584ms | Lifecycle: EXECUTING
+[19:01:08.991] INFO (7664): [Execute End] [Result: Success] Command d66e88fc-1b8a-44da-9f9d-f6718da291e3 [HOVER] on [slave_0] | Execution duration: 505ms | Lifecycle: COMPLETED
+[19:01:08.991] INFO (7664): [Execute Start] Command 886b9c6f-928d-4678-a9cc-ca7d2bc6c8e1 on [slave_0] | Latency (Receive->Start): 1975ms | Lifecycle: EXECUTING
+[19:01:09.496] INFO (7664): [Execute End] [Result: Success] Command 886b9c6f-928d-4678-a9cc-ca7d2bc6c8e1 [HOVER] on [slave_0] | Execution duration: 505ms | Lifecycle: COMPLETED
+[19:01:09.496] INFO (7664): [Execute Start] Command d33f7b30-d295-4f6f-85f0-4ede18d2f746 on [slave_0] | Latency (Receive->Start): 2363ms | Lifecycle: EXECUTING
+[19:01:10.000] INFO (7664): [Execute End] [Result: Success] Command d33f7b30-d295-4f6f-85f0-4ede18d2f746 [HOVER] on [slave_0] | Execution duration: 504ms | Lifecycle: COMPLETED
+[19:01:10.000] INFO (7664): [Execute Start] Command 2c7cfbdc-a97e-4ac3-8848-e57eecf968fb on [slave_0] | Latency (Receive->Start): 1601ms | Lifecycle: EXECUTING
+[19:01:10.253] WARN (7664): [Interaction Failure] Command 2c7cfbdc-a97e-4ac3-8848-e57eecf968fb on slave [slave_0]: LocatorResolver failed to find any actionable candidates for action: click | Execution duration: 253ms | Lifecycle: FAILED
+[19:01:25.609] INFO (7664): [Master Dispatch] HOVER
+[19:01:25.609] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (28ec7b68-1405-47bb-87f7-64cee6441303)
+[19:01:25.609] INFO (7664): [Broadcast] Command 28ec7b68-1405-47bb-87f7-64cee6441303 [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-15006beb | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:25.609] INFO (7664): [Slave Receive] Command 28ec7b68-1405-47bb-87f7-64cee6441303 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:25.609] INFO (7664): [Execute Start] Command 28ec7b68-1405-47bb-87f7-64cee6441303 on [slave_0] | Latency (Receive->Start): 0ms | Lifecycle: EXECUTING
+[19:01:25.725] INFO (7664): [Master Dispatch] HOVER
+[19:01:25.725] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (24e50a67-ed00-4ad3-8d7b-38a304765925)
+[19:01:25.725] INFO (7664): [Broadcast] Command 24e50a67-ed00-4ad3-8d7b-38a304765925 [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-5ba8cebc | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:25.725] INFO (7664): [Slave Receive] Command 24e50a67-ed00-4ad3-8d7b-38a304765925 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:25.841] INFO (7664): [Master Dispatch] HOVER
+[19:01:25.841] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (7a7438d4-cb11-4c18-93c5-90d90021f51c)
+[19:01:25.841] INFO (7664): [Broadcast] Command 7a7438d4-cb11-4c18-93c5-90d90021f51c [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-b3166e93 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:25.841] INFO (7664): [Slave Receive] Command 7a7438d4-cb11-4c18-93c5-90d90021f51c for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:26.057] INFO (7664): [Master Dispatch] HOVER
+[19:01:26.057] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (0f325c8d-6de3-4f52-8830-f1bfe1bee974)
+[19:01:26.057] INFO (7664): [Broadcast] Command 0f325c8d-6de3-4f52-8830-f1bfe1bee974 [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-57f3ed33 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:26.057] INFO (7664): [Slave Receive] Command 0f325c8d-6de3-4f52-8830-f1bfe1bee974 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:26.113] INFO (7664): [Execute End] [Result: Success] Command 28ec7b68-1405-47bb-87f7-64cee6441303 [HOVER] on [slave_0] | Execution duration: 504ms | Lifecycle: COMPLETED
+[19:01:26.114] INFO (7664): [Execute Start] Command 24e50a67-ed00-4ad3-8d7b-38a304765925 on [slave_0] | Latency (Receive->Start): 389ms | Lifecycle: EXECUTING
+[19:01:26.619] INFO (7664): [Execute End] [Result: Success] Command 24e50a67-ed00-4ad3-8d7b-38a304765925 [HOVER] on [slave_0] | Execution duration: 505ms | Lifecycle: COMPLETED
+[19:01:26.619] INFO (7664): [Execute Start] Command 7a7438d4-cb11-4c18-93c5-90d90021f51c on [slave_0] | Latency (Receive->Start): 778ms | Lifecycle: EXECUTING
+[19:01:27.080] INFO (7664): [Master Dispatch] CLICK
+[19:01:27.080] INFO (7664): [CommandRouter] Routing [Execution:CLICK] (75d6eebc-e650-4139-b9dd-ce0909558971)
+[19:01:27.080] INFO (7664): [Broadcast] Command 75d6eebc-e650-4139-b9dd-ce0909558971 [CLICK] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-33cc3c4a | Type: CLICK | Context: Pointer Context | Consumed: [mousedown, mouseup, click]
+[19:01:27.080] INFO (7664): [Slave Receive] Command 75d6eebc-e650-4139-b9dd-ce0909558971 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:27.125] INFO (7664): [Execute End] [Result: Success] Command 7a7438d4-cb11-4c18-93c5-90d90021f51c [HOVER] on [slave_0] | Execution duration: 506ms | Lifecycle: COMPLETED
+[19:01:27.126] INFO (7664): [Execute Start] Command 0f325c8d-6de3-4f52-8830-f1bfe1bee974 on [slave_0] | Latency (Receive->Start): 1068ms | Lifecycle: EXECUTING
+[19:01:27.629] INFO (7664): [Execute End] [Result: Success] Command 0f325c8d-6de3-4f52-8830-f1bfe1bee974 [HOVER] on [slave_0] | Execution duration: 504ms | Lifecycle: COMPLETED
+[19:01:27.629] INFO (7664): [Execute Start] Command 75d6eebc-e650-4139-b9dd-ce0909558971 on [slave_0] | Latency (Receive->Start): 549ms | Lifecycle: EXECUTING
+[19:01:27.825] WARN (7664): [Interaction Failure] Command 75d6eebc-e650-4139-b9dd-ce0909558971 on slave [slave_0]: LocatorResolver failed to find any actionable candidates for action: click | Execution duration: 196ms | Lifecycle: FAILED
+[19:01:31.510] INFO (7664): [Master Dispatch] HOVER
+[19:01:31.510] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (068212ab-329a-4d71-b55d-987116661d9d)
+[19:01:31.511] INFO (7664): [Broadcast] Command 068212ab-329a-4d71-b55d-987116661d9d [HOVER] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-dbf53b0f | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:31.511] INFO (7664): [Slave Receive] Command 068212ab-329a-4d71-b55d-987116661d9d for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:01:31.511] INFO (7664): [Execute Start] Command 068212ab-329a-4d71-b55d-987116661d9d on [slave_0] | Latency (Receive->Start): 1ms | Lifecycle: EXECUTING
+[19:01:31.627] INFO (7664): [Master Dispatch] HOVER
+[19:01:31.627] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (a5c0d095-f373-490e-ae5d-9d447c658c67)
+[19:01:31.627] INFO (7664): [Broadcast] Command a5c0d095-f373-490e-ae5d-9d447c658c67 [HOVER] | Latency (Capture->Broadcast): 6ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-2240ccdc | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:31.627] INFO (7664): [Slave Receive] Command a5c0d095-f373-490e-ae5d-9d447c658c67 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:31.736] INFO (7664): [Master Dispatch] HOVER
+[19:01:31.736] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (d473763b-9641-425b-979c-06d99992c297)
+[19:01:31.736] INFO (7664): [Broadcast] Command d473763b-9641-425b-979c-06d99992c297 [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-453fb9a6 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:31.736] INFO (7664): [Slave Receive] Command d473763b-9641-425b-979c-06d99992c297 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:31.855] INFO (7664): [Master Dispatch] HOVER
+[19:01:31.855] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (1057a263-0c4d-4041-ae2d-8b57a8141be6)
+[19:01:31.855] INFO (7664): [Broadcast] Command 1057a263-0c4d-4041-ae2d-8b57a8141be6 [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-0d99e2f2 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:31.855] INFO (7664): [Slave Receive] Command 1057a263-0c4d-4041-ae2d-8b57a8141be6 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:31.990] INFO (7664): [Master Dispatch] HOVER
+[19:01:31.990] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (1da86a61-0a65-40d3-b663-17d53128638e)
+[19:01:31.990] INFO (7664): [Broadcast] Command 1da86a61-0a65-40d3-b663-17d53128638e [HOVER] | Latency (Capture->Broadcast): 3ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-1765e8d5 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:31.990] INFO (7664): [Slave Receive] Command 1da86a61-0a65-40d3-b663-17d53128638e for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:32.017] INFO (7664): [Execute End] [Result: Success] Command 068212ab-329a-4d71-b55d-987116661d9d [HOVER] on [slave_0] | Execution duration: 506ms | Lifecycle: COMPLETED
+[19:01:32.017] INFO (7664): [Execute Start] Command a5c0d095-f373-490e-ae5d-9d447c658c67 on [slave_0] | Latency (Receive->Start): 390ms | Lifecycle: EXECUTING
+[19:01:32.103] INFO (7664): [Master Dispatch] HOVER
+[19:01:32.103] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (0befc2d6-3a2d-4e49-89bf-92b26e07fee1)
+[19:01:32.103] INFO (7664): [Broadcast] Command 0befc2d6-3a2d-4e49-89bf-92b26e07fee1 [HOVER] | Latency (Capture->Broadcast): -1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-68f4c23e | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:32.104] INFO (7664): [Slave Receive] Command 0befc2d6-3a2d-4e49-89bf-92b26e07fee1 for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:01:32.221] INFO (7664): [Master Dispatch] HOVER
+[19:01:32.221] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (dddf764b-a07d-4049-9913-69f4c4f8f914)
+[19:01:32.221] INFO (7664): [Broadcast] Command dddf764b-a07d-4049-9913-69f4c4f8f914 [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-c4772c8f | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:32.221] INFO (7664): [Slave Receive] Command dddf764b-a07d-4049-9913-69f4c4f8f914 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:32.354] INFO (7664): [Master Dispatch] HOVER
+[19:01:32.354] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (9730af83-f410-4ac3-ae9f-b93fd661561e)
+[19:01:32.354] INFO (7664): [Broadcast] Command 9730af83-f410-4ac3-ae9f-b93fd661561e [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-70d3fca1 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:32.354] INFO (7664): [Slave Receive] Command 9730af83-f410-4ac3-ae9f-b93fd661561e for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:32.524] INFO (7664): [Execute End] [Result: Success] Command a5c0d095-f373-490e-ae5d-9d447c658c67 [HOVER] on [slave_0] | Execution duration: 507ms | Lifecycle: COMPLETED
+[19:01:32.525] INFO (7664): [Execute Start] Command d473763b-9641-425b-979c-06d99992c297 on [slave_0] | Latency (Receive->Start): 789ms | Lifecycle: EXECUTING
+[19:01:32.898] INFO (7664): [Master Navigated] https://www.sportybet.com/ng/m/
+[19:01:32.899] INFO (7664): [CommandRouter] Routing [Navigation:navigate] (8425045f-4a61-42ce-b730-2d73712fb201)
+[19:01:32.899] INFO (7664): [Broadcast] Command 8425045f-4a61-42ce-b730-2d73712fb201 [Navigation] | Latency (Capture->Broadcast): 0ms
+[19:01:32.899] INFO (7664): Routing NavigationCommand to 1 ready slaves: https://www.sportybet.com/ng/m/
+[19:01:32.899] INFO (7664): [Slave Receive] Command 8425045f-4a61-42ce-b730-2d73712fb201 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:33.030] INFO (7664): [Execute End] [Result: Success] Command d473763b-9641-425b-979c-06d99992c297 [HOVER] on [slave_0] | Execution duration: 505ms | Lifecycle: COMPLETED
+[19:01:33.030] INFO (7664): [Execute Start] Command 1057a263-0c4d-4041-ae2d-8b57a8141be6 on [slave_0] | Latency (Receive->Start): 1175ms | Lifecycle: EXECUTING
+[19:01:33.141] INFO (7664): [Master Dispatch] CLICK
+[19:01:33.142] INFO (7664): [CommandRouter] Routing [Execution:CLICK] (d8da6abb-e07d-46a4-adf7-713f58ca155a)
+[19:01:33.142] INFO (7664): [Broadcast] Command d8da6abb-e07d-46a4-adf7-713f58ca155a [CLICK] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-978d82fe | Type: CLICK | Context: Pointer Context | Consumed: [mousedown, mouseup, click]
+[19:01:33.142] INFO (7664): [Slave Receive] Command d8da6abb-e07d-46a4-adf7-713f58ca155a for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:33.389] INFO (7664): [Master Navigated] https://www.sportybet.com/ng/m/sports?source=home
+[19:01:33.389] INFO (7664): [CommandRouter] Routing [Navigation:navigate] (6cf14758-8244-4a13-987b-5a231b64a837)
+[19:01:33.389] INFO (7664): [Broadcast] Command 6cf14758-8244-4a13-987b-5a231b64a837 [Navigation] | Latency (Capture->Broadcast): 0ms
+[19:01:33.389] INFO (7664): Routing NavigationCommand to 1 ready slaves: https://www.sportybet.com/ng/m/sports?source=home
+[19:01:33.389] INFO (7664): [Slave Receive] Command 6cf14758-8244-4a13-987b-5a231b64a837 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:33.399] INFO (7664): [Master History Push] https://www.sportybet.com/ng/m/sports?source=home
+[19:01:33.537] INFO (7664): [Execute End] [Result: Success] Command 1057a263-0c4d-4041-ae2d-8b57a8141be6 [HOVER] on [slave_0] | Execution duration: 507ms | Lifecycle: COMPLETED
+[19:01:33.537] INFO (7664): [Execute Start] Command 1da86a61-0a65-40d3-b663-17d53128638e on [slave_0] | Latency (Receive->Start): 1547ms | Lifecycle: EXECUTING
+[19:01:34.044] INFO (7664): [Execute End] [Result: Success] Command 1da86a61-0a65-40d3-b663-17d53128638e [HOVER] on [slave_0] | Execution duration: 507ms | Lifecycle: COMPLETED
+[19:01:34.045] INFO (7664): [Execute Start] Command 0befc2d6-3a2d-4e49-89bf-92b26e07fee1 on [slave_0] | Latency (Receive->Start): 1942ms | Lifecycle: EXECUTING
+[19:01:34.550] INFO (7664): [Execute End] [Result: Success] Command 0befc2d6-3a2d-4e49-89bf-92b26e07fee1 [HOVER] on [slave_0] | Execution duration: 505ms | Lifecycle: COMPLETED
+[19:01:34.550] INFO (7664): [Execute Start] Command dddf764b-a07d-4049-9913-69f4c4f8f914 on [slave_0] | Latency (Receive->Start): 2329ms | Lifecycle: EXECUTING
+[19:01:35.056] INFO (7664): [Execute End] [Result: Success] Command dddf764b-a07d-4049-9913-69f4c4f8f914 [HOVER] on [slave_0] | Execution duration: 506ms | Lifecycle: COMPLETED
+[19:01:35.056] INFO (7664): [Execute Start] Command 9730af83-f410-4ac3-ae9f-b93fd661561e on [slave_0] | Latency (Receive->Start): 2702ms | Lifecycle: EXECUTING
+[19:01:35.560] INFO (7664): [Execute End] [Result: Success] Command 9730af83-f410-4ac3-ae9f-b93fd661561e [HOVER] on [slave_0] | Execution duration: 504ms | Lifecycle: COMPLETED
+[19:01:35.560] INFO (7664): [Execute Start] Command 8425045f-4a61-42ce-b730-2d73712fb201 on [slave_0] | Latency (Receive->Start): 2661ms | Lifecycle: EXECUTING
+[19:01:37.580] INFO (7664): [Execute End] [Result: Success] Command 8425045f-4a61-42ce-b730-2d73712fb201 [navigate] on [slave_0] | Execution duration: 2020ms | Lifecycle: COMPLETED
+[19:01:37.580] INFO (7664): [Execute Start] Command d8da6abb-e07d-46a4-adf7-713f58ca155a on [slave_0] | Latency (Receive->Start): 4438ms | Lifecycle: EXECUTING
+[19:01:38.084] WARN (7664): [Interaction Failure] Command d8da6abb-e07d-46a4-adf7-713f58ca155a on slave [slave_0]: LocatorResolver failed to find any actionable candidates for action: click | Execution duration: 504ms | Lifecycle: FAILED
+[19:01:38.084] INFO (7664): [Execute Start] Command 6cf14758-8244-4a13-987b-5a231b64a837 on [slave_0] | Latency (Receive->Start): 4695ms | Lifecycle: EXECUTING
+[19:01:39.822] INFO (7664): [Execute End] [Result: Success] Command 6cf14758-8244-4a13-987b-5a231b64a837 [navigate] on [slave_0] | Execution duration: 1738ms | Lifecycle: COMPLETED
+[19:01:46.451] INFO (7664): [Master Dispatch] SCROLL
+[19:01:46.451] INFO (7664): [CommandRouter] Routing [Execution:SCROLL] (e43f2622-1a49-4486-868d-d996a34d5577)
+[19:01:46.451] INFO (7664): [Broadcast] Command e43f2622-1a49-4486-868d-d996a34d5577 [SCROLL] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-6d514b61 | Type: SCROLL | Context: Scroll Context | Consumed: [wheel, scroll]
+[19:01:46.451] INFO (7664): [Slave Receive] Command e43f2622-1a49-4486-868d-d996a34d5577 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:46.451] INFO (7664): [Execute Start] Command e43f2622-1a49-4486-868d-d996a34d5577 on [slave_0] | Latency (Receive->Start): 0ms | Lifecycle: EXECUTING
+[19:01:46.990] INFO (7664): [Execute End] [Result: Success] Command e43f2622-1a49-4486-868d-d996a34d5577 [SCROLL] on [slave_0] | Execution duration: 539ms | Lifecycle: COMPLETED
+[19:01:51.690] INFO (7664): [Master Dispatch] HOVER
+[19:01:51.690] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (f2ae2738-f8af-446f-bbc6-ceca78c3a1b4)
+[19:01:51.690] INFO (7664): [Broadcast] Command f2ae2738-f8af-446f-bbc6-ceca78c3a1b4 [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-3318b3a1 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:51.691] INFO (7664): [Slave Receive] Command f2ae2738-f8af-446f-bbc6-ceca78c3a1b4 for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:01:51.691] INFO (7664): [Execute Start] Command f2ae2738-f8af-446f-bbc6-ceca78c3a1b4 on [slave_0] | Latency (Receive->Start): 1ms | Lifecycle: EXECUTING
+[19:01:51.824] INFO (7664): [Master Dispatch] HOVER
+[19:01:51.825] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (cda8e644-1f0d-4a0b-864b-5d810551de66)
+[19:01:51.825] INFO (7664): [Broadcast] Command cda8e644-1f0d-4a0b-864b-5d810551de66 [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-5b3758e1 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:51.825] INFO (7664): [Slave Receive] Command cda8e644-1f0d-4a0b-864b-5d810551de66 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:51.926] INFO (7664): [Master Dispatch] HOVER
+[19:01:51.926] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (584108b2-fd76-4829-9aaa-bcf64c9347f6)
+[19:01:51.926] INFO (7664): [Broadcast] Command 584108b2-fd76-4829-9aaa-bcf64c9347f6 [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-a556174e | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:51.926] INFO (7664): [Slave Receive] Command 584108b2-fd76-4829-9aaa-bcf64c9347f6 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:52.040] INFO (7664): [Master Dispatch] HOVER
+[19:01:52.040] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (a58f989a-1ffe-4131-b0b1-ef10e1808c5b)
+[19:01:52.040] INFO (7664): [Broadcast] Command a58f989a-1ffe-4131-b0b1-ef10e1808c5b [HOVER] | Latency (Capture->Broadcast): -1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-9094a9c0 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:52.040] INFO (7664): [Slave Receive] Command a58f989a-1ffe-4131-b0b1-ef10e1808c5b for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:52.146] INFO (7664): [Master Dispatch] HOVER
+[19:01:52.146] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (4c5aa0a7-2a74-4b14-825e-c380c3e4d3bd)
+[19:01:52.146] INFO (7664): [Broadcast] Command 4c5aa0a7-2a74-4b14-825e-c380c3e4d3bd [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-f330f2be | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:52.146] INFO (7664): [Slave Receive] Command 4c5aa0a7-2a74-4b14-825e-c380c3e4d3bd for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:52.207] INFO (7664): [Execute End] [Result: Success] Command f2ae2738-f8af-446f-bbc6-ceca78c3a1b4 [HOVER] on [slave_0] | Execution duration: 516ms | Lifecycle: COMPLETED
+[19:01:52.208] INFO (7664): [Execute Start] Command cda8e644-1f0d-4a0b-864b-5d810551de66 on [slave_0] | Latency (Receive->Start): 383ms | Lifecycle: EXECUTING
+[19:01:52.252] INFO (7664): [Master Dispatch] HOVER
+[19:01:52.252] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (a89e7e7a-81c0-45c7-aa05-8c067c520bb7)
+[19:01:52.252] INFO (7664): [Broadcast] Command a89e7e7a-81c0-45c7-aa05-8c067c520bb7 [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-55714606 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:52.252] INFO (7664): [Slave Receive] Command a89e7e7a-81c0-45c7-aa05-8c067c520bb7 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:52.361] INFO (7664): [Master Dispatch] HOVER
+[19:01:52.361] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (bcdd7d8a-e43f-44d2-be48-db7416d874b9)
+[19:01:52.361] INFO (7664): [Broadcast] Command bcdd7d8a-e43f-44d2-be48-db7416d874b9 [HOVER] | Latency (Capture->Broadcast): -1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-7731621f | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:52.361] INFO (7664): [Slave Receive] Command bcdd7d8a-e43f-44d2-be48-db7416d874b9 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:52.480] INFO (7664): [Master Dispatch] HOVER
+[19:01:52.480] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (654a6a9a-6130-4c93-bed4-859923d24596)
+[19:01:52.480] INFO (7664): [Broadcast] Command 654a6a9a-6130-4c93-bed4-859923d24596 [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-938f79df | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:52.480] INFO (7664): [Slave Receive] Command 654a6a9a-6130-4c93-bed4-859923d24596 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:52.660] INFO (7664): [Master Dispatch] HOVER
+[19:01:52.660] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (0c281aba-8408-476f-a358-7515f61e3a4c)
+[19:01:52.660] INFO (7664): [Broadcast] Command 0c281aba-8408-476f-a358-7515f61e3a4c [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-7f0560b0 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:52.660] INFO (7664): [Slave Receive] Command 0c281aba-8408-476f-a358-7515f61e3a4c for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:52.712] INFO (7664): [Execute End] [Result: Success] Command cda8e644-1f0d-4a0b-864b-5d810551de66 [HOVER] on [slave_0] | Execution duration: 504ms | Lifecycle: COMPLETED
+[19:01:52.712] INFO (7664): [Execute Start] Command 584108b2-fd76-4829-9aaa-bcf64c9347f6 on [slave_0] | Latency (Receive->Start): 786ms | Lifecycle: EXECUTING
+[19:01:52.763] INFO (7664): [Master Dispatch] HOVER
+[19:01:52.763] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (7334e199-51fc-4bfe-b90a-cfa99980e62f)
+[19:01:52.763] INFO (7664): [Broadcast] Command 7334e199-51fc-4bfe-b90a-cfa99980e62f [HOVER] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-9703d9cc | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:52.763] INFO (7664): [Slave Receive] Command 7334e199-51fc-4bfe-b90a-cfa99980e62f for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:52.865] INFO (7664): [Master Dispatch] HOVER
+[19:01:52.865] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (6e1ea1a5-1371-4e56-9dc0-5dd4a7e63fa6)
+[19:01:52.865] INFO (7664): [Broadcast] Command 6e1ea1a5-1371-4e56-9dc0-5dd4a7e63fa6 [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-c2c9eb74 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:01:52.865] INFO (7664): [Slave Receive] Command 6e1ea1a5-1371-4e56-9dc0-5dd4a7e63fa6 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:53.222] INFO (7664): [Execute End] [Result: Success] Command 584108b2-fd76-4829-9aaa-bcf64c9347f6 [HOVER] on [slave_0] | Execution duration: 510ms | Lifecycle: COMPLETED
+[19:01:53.222] INFO (7664): [Execute Start] Command a58f989a-1ffe-4131-b0b1-ef10e1808c5b on [slave_0] | Latency (Receive->Start): 1182ms | Lifecycle: EXECUTING
+[19:01:53.391] INFO (7664): [Master Navigated] https://www.sportybet.com/ng/m/
+[19:01:53.392] INFO (7664): [CommandRouter] Routing [Navigation:navigate] (e34f2e88-db69-4db8-a505-a21937aa015d)
+[19:01:53.392] INFO (7664): [Broadcast] Command e34f2e88-db69-4db8-a505-a21937aa015d [Navigation] | Latency (Capture->Broadcast): 1ms
+[19:01:53.392] INFO (7664): Routing NavigationCommand to 1 ready slaves: https://www.sportybet.com/ng/m/
+[19:01:53.392] INFO (7664): [Slave Receive] Command e34f2e88-db69-4db8-a505-a21937aa015d for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:53.399] INFO (7664): [Master Navigated] https://www.sportybet.com/ng/m/
+[19:01:53.659] INFO (7664): [Master History Push] https://www.sportybet.com/ng/m/
+[19:01:53.659] INFO (7664): [CommandRouter] Routing [Navigation:navigate] (dda89265-f43a-43dc-82a1-a142b0385698)
+[19:01:53.659] INFO (7664): [Broadcast] Command dda89265-f43a-43dc-82a1-a142b0385698 [Navigation] | Latency (Capture->Broadcast): 0ms
+[19:01:53.659] INFO (7664): Routing NavigationCommand to 1 ready slaves: https://www.sportybet.com/ng/m/
+[19:01:53.659] INFO (7664): [Slave Receive] Command dda89265-f43a-43dc-82a1-a142b0385698 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:53.727] INFO (7664): [Execute End] [Result: Success] Command a58f989a-1ffe-4131-b0b1-ef10e1808c5b [HOVER] on [slave_0] | Execution duration: 505ms | Lifecycle: COMPLETED
+[19:01:53.727] INFO (7664): [Execute Start] Command 4c5aa0a7-2a74-4b14-825e-c380c3e4d3bd on [slave_0] | Latency (Receive->Start): 1581ms | Lifecycle: EXECUTING
+[19:01:53.817] INFO (7664): [Master Dispatch] CLICK
+[19:01:53.817] INFO (7664): [CommandRouter] Routing [Execution:CLICK] (35d11490-6d98-41b2-9fa7-9ca5db6f548e)
+[19:01:53.817] INFO (7664): [Broadcast] Command 35d11490-6d98-41b2-9fa7-9ca5db6f548e [CLICK] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-3ebe7802 | Type: CLICK | Context: Pointer Context | Consumed: [mousedown, mouseup, click]
+[19:01:53.817] INFO (7664): [Slave Receive] Command 35d11490-6d98-41b2-9fa7-9ca5db6f548e for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:53.927] INFO (7664): [Master Dispatch] SCROLL
+[19:01:53.927] INFO (7664): [CommandRouter] Routing [Execution:SCROLL] (50cfa4d6-5165-4651-b6a1-2896b4d3c3d4)
+[19:01:53.927] INFO (7664): [Broadcast] Command 50cfa4d6-5165-4651-b6a1-2896b4d3c3d4 [SCROLL] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-e67b27bd | Type: SCROLL | Context: Scroll Context | Consumed: [scroll]
+[19:01:53.927] INFO (7664): [Slave Receive] Command 50cfa4d6-5165-4651-b6a1-2896b4d3c3d4 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:01:54.246] INFO (7664): [Execute End] [Result: Success] Command 4c5aa0a7-2a74-4b14-825e-c380c3e4d3bd [HOVER] on [slave_0] | Execution duration: 519ms | Lifecycle: COMPLETED
+[19:01:54.246] INFO (7664): [Execute Start] Command a89e7e7a-81c0-45c7-aa05-8c067c520bb7 on [slave_0] | Latency (Receive->Start): 1994ms | Lifecycle: EXECUTING
+[19:01:54.751] INFO (7664): [Execute End] [Result: Success] Command a89e7e7a-81c0-45c7-aa05-8c067c520bb7 [HOVER] on [slave_0] | Execution duration: 505ms | Lifecycle: COMPLETED
+[19:01:54.751] INFO (7664): [Execute Start] Command bcdd7d8a-e43f-44d2-be48-db7416d874b9 on [slave_0] | Latency (Receive->Start): 2390ms | Lifecycle: EXECUTING
+[19:01:55.254] INFO (7664): [Execute End] [Result: Success] Command bcdd7d8a-e43f-44d2-be48-db7416d874b9 [HOVER] on [slave_0] | Execution duration: 503ms | Lifecycle: COMPLETED
+[19:01:55.254] INFO (7664): [Execute Start] Command 654a6a9a-6130-4c93-bed4-859923d24596 on [slave_0] | Latency (Receive->Start): 2774ms | Lifecycle: EXECUTING
+[19:01:55.760] INFO (7664): [Execute End] [Result: Success] Command 654a6a9a-6130-4c93-bed4-859923d24596 [HOVER] on [slave_0] | Execution duration: 506ms | Lifecycle: COMPLETED
+[19:01:55.760] INFO (7664): [Execute Start] Command 0c281aba-8408-476f-a358-7515f61e3a4c on [slave_0] | Latency (Receive->Start): 3100ms | Lifecycle: EXECUTING
+[19:01:56.265] INFO (7664): [Execute End] [Result: Success] Command 0c281aba-8408-476f-a358-7515f61e3a4c [HOVER] on [slave_0] | Execution duration: 505ms | Lifecycle: COMPLETED
+[19:01:56.265] INFO (7664): [Execute Start] Command 7334e199-51fc-4bfe-b90a-cfa99980e62f on [slave_0] | Latency (Receive->Start): 3502ms | Lifecycle: EXECUTING
+[19:01:56.769] INFO (7664): [Execute End] [Result: Success] Command 7334e199-51fc-4bfe-b90a-cfa99980e62f [HOVER] on [slave_0] | Execution duration: 504ms | Lifecycle: COMPLETED
+[19:01:56.769] INFO (7664): [Execute Start] Command 6e1ea1a5-1371-4e56-9dc0-5dd4a7e63fa6 on [slave_0] | Latency (Receive->Start): 3904ms | Lifecycle: EXECUTING
+[19:01:57.274] INFO (7664): [Execute End] [Result: Success] Command 6e1ea1a5-1371-4e56-9dc0-5dd4a7e63fa6 [HOVER] on [slave_0] | Execution duration: 505ms | Lifecycle: COMPLETED
+[19:01:57.274] INFO (7664): [Execute Start] Command e34f2e88-db69-4db8-a505-a21937aa015d on [slave_0] | Latency (Receive->Start): 3882ms | Lifecycle: EXECUTING
+[19:01:58.676] INFO (7664): [Execute End] [Result: Success] Command e34f2e88-db69-4db8-a505-a21937aa015d [navigate] on [slave_0] | Execution duration: 1402ms | Lifecycle: COMPLETED
+[19:01:58.676] INFO (7664): [Execute Start] Command dda89265-f43a-43dc-82a1-a142b0385698 on [slave_0] | Latency (Receive->Start): 5017ms | Lifecycle: EXECUTING
+[19:02:00.346] INFO (7664): [Execute End] [Result: Success] Command dda89265-f43a-43dc-82a1-a142b0385698 [navigate] on [slave_0] | Execution duration: 1670ms | Lifecycle: COMPLETED
+[19:02:00.347] INFO (7664): [Execute Start] Command 35d11490-6d98-41b2-9fa7-9ca5db6f548e on [slave_0] | Latency (Receive->Start): 6530ms | Lifecycle: EXECUTING
+[19:02:00.862] WARN (7664): [Interaction Failure] Command 35d11490-6d98-41b2-9fa7-9ca5db6f548e on slave [slave_0]: LocatorResolver failed to find any actionable candidates for action: click | Execution duration: 515ms | Lifecycle: FAILED
+[19:02:00.862] INFO (7664): [Execute Start] Command 50cfa4d6-5165-4651-b6a1-2896b4d3c3d4 on [slave_0] | Latency (Receive->Start): 6935ms | Lifecycle: EXECUTING
+[19:02:01.497] INFO (7664): [Execute End] [Result: Success] Command 50cfa4d6-5165-4651-b6a1-2896b4d3c3d4 [SCROLL] on [slave_0] | Execution duration: 635ms | Lifecycle: COMPLETED
+[19:02:04.495] INFO (7664): [Master Dispatch] HOVER
+[19:02:04.495] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (0d075340-e2d9-4dcb-85bb-225ddfd00ca1)
+[19:02:04.495] INFO (7664): [Broadcast] Command 0d075340-e2d9-4dcb-85bb-225ddfd00ca1 [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-34af3679 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:04.495] INFO (7664): [Slave Receive] Command 0d075340-e2d9-4dcb-85bb-225ddfd00ca1 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:04.495] INFO (7664): [Execute Start] Command 0d075340-e2d9-4dcb-85bb-225ddfd00ca1 on [slave_0] | Latency (Receive->Start): 0ms | Lifecycle: EXECUTING
+[19:02:04.599] INFO (7664): [Master Dispatch] HOVER
+[19:02:04.599] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (a705bdab-4cbf-4cec-bf9c-6831b02c19e1)
+[19:02:04.599] INFO (7664): [Broadcast] Command a705bdab-4cbf-4cec-bf9c-6831b02c19e1 [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-fce1caeb | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:04.599] INFO (7664): [Slave Receive] Command a705bdab-4cbf-4cec-bf9c-6831b02c19e1 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:04.715] INFO (7664): [Master Dispatch] HOVER
+[19:02:04.715] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (c1657bd7-f96f-4fff-ad53-13602a5b8ed7)
+[19:02:04.715] INFO (7664): [Broadcast] Command c1657bd7-f96f-4fff-ad53-13602a5b8ed7 [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-ffdffc45 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:04.715] INFO (7664): [Slave Receive] Command c1657bd7-f96f-4fff-ad53-13602a5b8ed7 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:04.833] INFO (7664): [Master Dispatch] HOVER
+[19:02:04.833] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (ff8f6eb8-045d-4706-9a5b-f07051d5002b)
+[19:02:04.833] INFO (7664): [Broadcast] Command ff8f6eb8-045d-4706-9a5b-f07051d5002b [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-a84738cc | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:04.833] INFO (7664): [Slave Receive] Command ff8f6eb8-045d-4706-9a5b-f07051d5002b for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:04.943] INFO (7664): [Master Dispatch] HOVER
+[19:02:04.943] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (c2d87f1d-7cb5-43cd-aa83-935c4fe4bb9f)
+[19:02:04.943] INFO (7664): [Broadcast] Command c2d87f1d-7cb5-43cd-aa83-935c4fe4bb9f [HOVER] | Latency (Capture->Broadcast): -1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-300d956a | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:04.943] INFO (7664): [Slave Receive] Command c2d87f1d-7cb5-43cd-aa83-935c4fe4bb9f for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:05.090] INFO (7664): [Execute End] [Result: Success] Command 0d075340-e2d9-4dcb-85bb-225ddfd00ca1 [HOVER] on [slave_0] | Execution duration: 595ms | Lifecycle: COMPLETED
+[19:02:05.090] INFO (7664): [Execute Start] Command a705bdab-4cbf-4cec-bf9c-6831b02c19e1 on [slave_0] | Latency (Receive->Start): 491ms | Lifecycle: EXECUTING
+[19:02:05.116] INFO (7664): [Master Dispatch] HOVER
+[19:02:05.116] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (5cd7e9e6-7aad-40e0-8cdd-78da2ace504f)
+[19:02:05.116] INFO (7664): [Broadcast] Command 5cd7e9e6-7aad-40e0-8cdd-78da2ace504f [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-d2e97f8a | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:05.116] INFO (7664): [Slave Receive] Command 5cd7e9e6-7aad-40e0-8cdd-78da2ace504f for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:05.220] INFO (7664): [Master Dispatch] HOVER
+[19:02:05.220] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (134a632e-f082-40a7-9ff6-00c5850a6e2d)
+[19:02:05.220] INFO (7664): [Broadcast] Command 134a632e-f082-40a7-9ff6-00c5850a6e2d [HOVER] | Latency (Capture->Broadcast): -1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-514c3b95 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:05.221] INFO (7664): [Slave Receive] Command 134a632e-f082-40a7-9ff6-00c5850a6e2d for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:02:05.694] INFO (7664): [Execute End] [Result: Success] Command a705bdab-4cbf-4cec-bf9c-6831b02c19e1 [HOVER] on [slave_0] | Execution duration: 604ms | Lifecycle: COMPLETED
+[19:02:05.694] INFO (7664): [Execute Start] Command c1657bd7-f96f-4fff-ad53-13602a5b8ed7 on [slave_0] | Latency (Receive->Start): 979ms | Lifecycle: EXECUTING
+[19:02:06.199] INFO (7664): [Execute End] [Result: Success] Command c1657bd7-f96f-4fff-ad53-13602a5b8ed7 [HOVER] on [slave_0] | Execution duration: 505ms | Lifecycle: COMPLETED
+[19:02:06.200] INFO (7664): [Execute Start] Command ff8f6eb8-045d-4706-9a5b-f07051d5002b on [slave_0] | Latency (Receive->Start): 1367ms | Lifecycle: EXECUTING
+[19:02:06.252] INFO (7664): [Master Dispatch] CLICK
+[19:02:06.252] INFO (7664): [CommandRouter] Routing [Execution:CLICK] (a112ddba-e166-44bb-97dc-c7dc7968ae51)
+[19:02:06.252] INFO (7664): [Broadcast] Command a112ddba-e166-44bb-97dc-c7dc7968ae51 [CLICK] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-ed635f32 | Type: CLICK | Context: Pointer Context | Consumed: [mousedown, mouseup, click]
+[19:02:06.252] INFO (7664): [Slave Receive] Command a112ddba-e166-44bb-97dc-c7dc7968ae51 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:06.706] INFO (7664): [Execute End] [Result: Success] Command ff8f6eb8-045d-4706-9a5b-f07051d5002b [HOVER] on [slave_0] | Execution duration: 506ms | Lifecycle: COMPLETED
+[19:02:06.706] INFO (7664): [Execute Start] Command c2d87f1d-7cb5-43cd-aa83-935c4fe4bb9f on [slave_0] | Latency (Receive->Start): 1763ms | Lifecycle: EXECUTING
+[19:02:07.210] INFO (7664): [Execute End] [Result: Success] Command c2d87f1d-7cb5-43cd-aa83-935c4fe4bb9f [HOVER] on [slave_0] | Execution duration: 504ms | Lifecycle: COMPLETED
+[19:02:07.210] INFO (7664): [Execute Start] Command 5cd7e9e6-7aad-40e0-8cdd-78da2ace504f on [slave_0] | Latency (Receive->Start): 2094ms | Lifecycle: EXECUTING
+[19:02:07.713] INFO (7664): [Execute End] [Result: Success] Command 5cd7e9e6-7aad-40e0-8cdd-78da2ace504f [HOVER] on [slave_0] | Execution duration: 503ms | Lifecycle: COMPLETED
+[19:02:07.713] INFO (7664): [Execute Start] Command 134a632e-f082-40a7-9ff6-00c5850a6e2d on [slave_0] | Latency (Receive->Start): 2493ms | Lifecycle: EXECUTING
+[19:02:08.218] INFO (7664): [Execute End] [Result: Success] Command 134a632e-f082-40a7-9ff6-00c5850a6e2d [HOVER] on [slave_0] | Execution duration: 505ms | Lifecycle: COMPLETED
+[19:02:08.219] INFO (7664): [Execute Start] Command a112ddba-e166-44bb-97dc-c7dc7968ae51 on [slave_0] | Latency (Receive->Start): 1967ms | Lifecycle: EXECUTING
+[19:02:08.470] WARN (7664): [Interaction Failure] Command a112ddba-e166-44bb-97dc-c7dc7968ae51 on slave [slave_0]: LocatorResolver failed to find any actionable candidates for action: click | Execution duration: 251ms | Lifecycle: FAILED
+[19:02:14.976] INFO (7664): [Master Dispatch] SCROLL
+[19:02:14.976] INFO (7664): [CommandRouter] Routing [Execution:SCROLL] (14784dda-65dc-42a1-99fe-4eb447e5bb0a)
+[19:02:14.976] INFO (7664): [Broadcast] Command 14784dda-65dc-42a1-99fe-4eb447e5bb0a [SCROLL] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-c7d5e06d | Type: SCROLL | Context: Scroll Context | Consumed: [wheel, scroll]
+[19:02:14.976] INFO (7664): [Slave Receive] Command 14784dda-65dc-42a1-99fe-4eb447e5bb0a for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:14.976] INFO (7664): [Execute Start] Command 14784dda-65dc-42a1-99fe-4eb447e5bb0a on [slave_0] | Latency (Receive->Start): 0ms | Lifecycle: EXECUTING
+[19:02:15.482] INFO (7664): [Execute End] [Result: Success] Command 14784dda-65dc-42a1-99fe-4eb447e5bb0a [SCROLL] on [slave_0] | Execution duration: 506ms | Lifecycle: COMPLETED
+[19:02:16.544] INFO (7664): [Master Dispatch] SCROLL
+[19:02:16.544] INFO (7664): [CommandRouter] Routing [Execution:SCROLL] (d790586a-44b0-4a31-ba22-d5b818f99585)
+[19:02:16.544] INFO (7664): [Broadcast] Command d790586a-44b0-4a31-ba22-d5b818f99585 [SCROLL] | Latency (Capture->Broadcast): -1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-29fca526 | Type: SCROLL | Context: Scroll Context | Consumed: [wheel, scroll]
+[19:02:16.544] INFO (7664): [Slave Receive] Command d790586a-44b0-4a31-ba22-d5b818f99585 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:16.544] INFO (7664): [Execute Start] Command d790586a-44b0-4a31-ba22-d5b818f99585 on [slave_0] | Latency (Receive->Start): 0ms | Lifecycle: EXECUTING
+[19:02:17.050] INFO (7664): [Execute End] [Result: Success] Command d790586a-44b0-4a31-ba22-d5b818f99585 [SCROLL] on [slave_0] | Execution duration: 506ms | Lifecycle: COMPLETED
+[19:02:17.539] INFO (7664): [Master Dispatch] SCROLL
+[19:02:17.540] INFO (7664): [CommandRouter] Routing [Execution:SCROLL] (a35ed5d3-f831-48b1-afec-68bf34821ebd)
+[19:02:17.540] INFO (7664): [Broadcast] Command a35ed5d3-f831-48b1-afec-68bf34821ebd [SCROLL] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-320a61ba | Type: SCROLL | Context: Scroll Context | Consumed: [wheel, scroll]
+[19:02:17.540] INFO (7664): [Slave Receive] Command a35ed5d3-f831-48b1-afec-68bf34821ebd for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:17.540] INFO (7664): [Execute Start] Command a35ed5d3-f831-48b1-afec-68bf34821ebd on [slave_0] | Latency (Receive->Start): 0ms | Lifecycle: EXECUTING
+[19:02:18.050] INFO (7664): [Execute End] [Result: Success] Command a35ed5d3-f831-48b1-afec-68bf34821ebd [SCROLL] on [slave_0] | Execution duration: 510ms | Lifecycle: COMPLETED
+[19:02:18.139] INFO (7664): [Master Dispatch] SCROLL
+[19:02:18.139] INFO (7664): [CommandRouter] Routing [Execution:SCROLL] (565bec2b-4c53-4202-9c61-0874c7445efb)
+[19:02:18.139] INFO (7664): [Broadcast] Command 565bec2b-4c53-4202-9c61-0874c7445efb [SCROLL] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-cd27754d | Type: SCROLL | Context: Scroll Context | Consumed: [wheel, scroll]
+[19:02:18.139] INFO (7664): [Slave Receive] Command 565bec2b-4c53-4202-9c61-0874c7445efb for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:18.139] INFO (7664): [Execute Start] Command 565bec2b-4c53-4202-9c61-0874c7445efb on [slave_0] | Latency (Receive->Start): 0ms | Lifecycle: EXECUTING
+[19:02:18.318] INFO (7664): [Master Dispatch] HOVER
+[19:02:18.318] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (6b6e3079-a0a1-4258-95f8-b129535c5dac)
+[19:02:18.318] INFO (7664): [Broadcast] Command 6b6e3079-a0a1-4258-95f8-b129535c5dac [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-3679f019 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:18.318] INFO (7664): [Slave Receive] Command 6b6e3079-a0a1-4258-95f8-b129535c5dac for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:18.456] INFO (7664): [Master Dispatch] HOVER
+[19:02:18.457] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (1fab7592-b382-4820-86e3-fa491ab0f3d9)
+[19:02:18.457] INFO (7664): [Broadcast] Command 1fab7592-b382-4820-86e3-fa491ab0f3d9 [HOVER] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-695c17bf | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:18.458] INFO (7664): [Slave Receive] Command 1fab7592-b382-4820-86e3-fa491ab0f3d9 for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:02:18.570] INFO (7664): [Master Dispatch] HOVER
+[19:02:18.570] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (32fee80d-86a9-420c-ae43-2894b60a15d5)
+[19:02:18.570] INFO (7664): [Broadcast] Command 32fee80d-86a9-420c-ae43-2894b60a15d5 [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-041bfd27 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:18.570] INFO (7664): [Slave Receive] Command 32fee80d-86a9-420c-ae43-2894b60a15d5 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:18.651] INFO (7664): [Execute End] [Result: Success] Command 565bec2b-4c53-4202-9c61-0874c7445efb [SCROLL] on [slave_0] | Execution duration: 512ms | Lifecycle: COMPLETED
+[19:02:18.652] INFO (7664): [Execute Start] Command 6b6e3079-a0a1-4258-95f8-b129535c5dac on [slave_0] | Latency (Receive->Start): 334ms | Lifecycle: EXECUTING
+[19:02:18.694] INFO (7664): [Master Dispatch] HOVER
+[19:02:18.694] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (9bee0b9a-fa79-4c25-a7b5-6d1eba4c68c0)
+[19:02:18.694] INFO (7664): [Broadcast] Command 9bee0b9a-fa79-4c25-a7b5-6d1eba4c68c0 [HOVER] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-04284bb9 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:18.694] INFO (7664): [Slave Receive] Command 9bee0b9a-fa79-4c25-a7b5-6d1eba4c68c0 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:18.820] INFO (7664): [Master Dispatch] HOVER
+[19:02:18.821] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (563d99fc-4914-4c33-bd61-62c2819b5c39)
+[19:02:18.821] INFO (7664): [Broadcast] Command 563d99fc-4914-4c33-bd61-62c2819b5c39 [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-1a1bcdc7 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:18.821] INFO (7664): [Slave Receive] Command 563d99fc-4914-4c33-bd61-62c2819b5c39 for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:02:19.156] INFO (7664): [Execute End] [Result: Success] Command 6b6e3079-a0a1-4258-95f8-b129535c5dac [HOVER] on [slave_0] | Execution duration: 504ms | Lifecycle: COMPLETED
+[19:02:19.156] INFO (7664): [Execute Start] Command 1fab7592-b382-4820-86e3-fa491ab0f3d9 on [slave_0] | Latency (Receive->Start): 699ms | Lifecycle: EXECUTING
+[19:02:19.660] INFO (7664): [Execute End] [Result: Success] Command 1fab7592-b382-4820-86e3-fa491ab0f3d9 [HOVER] on [slave_0] | Execution duration: 504ms | Lifecycle: COMPLETED
+[19:02:19.660] INFO (7664): [Execute Start] Command 32fee80d-86a9-420c-ae43-2894b60a15d5 on [slave_0] | Latency (Receive->Start): 1090ms | Lifecycle: EXECUTING
+[19:02:20.166] INFO (7664): [Execute End] [Result: Success] Command 32fee80d-86a9-420c-ae43-2894b60a15d5 [HOVER] on [slave_0] | Execution duration: 506ms | Lifecycle: COMPLETED
+[19:02:20.167] INFO (7664): [Execute Start] Command 9bee0b9a-fa79-4c25-a7b5-6d1eba4c68c0 on [slave_0] | Latency (Receive->Start): 1473ms | Lifecycle: EXECUTING
+[19:02:20.671] INFO (7664): [Execute End] [Result: Success] Command 9bee0b9a-fa79-4c25-a7b5-6d1eba4c68c0 [HOVER] on [slave_0] | Execution duration: 504ms | Lifecycle: COMPLETED
+[19:02:20.671] INFO (7664): [Execute Start] Command 563d99fc-4914-4c33-bd61-62c2819b5c39 on [slave_0] | Latency (Receive->Start): 1851ms | Lifecycle: EXECUTING
+[19:02:21.175] INFO (7664): [Execute End] [Result: Success] Command 563d99fc-4914-4c33-bd61-62c2819b5c39 [HOVER] on [slave_0] | Execution duration: 504ms | Lifecycle: COMPLETED
+[19:02:23.248] INFO (7664): [Master Navigated] https://www.sportybet.com/ng/m/
+[19:02:23.249] INFO (7664): [CommandRouter] Routing [Navigation:navigate] (38a6e10b-a1aa-40a5-a3e6-f3fd7f90f628)
+[19:02:23.249] INFO (7664): [Broadcast] Command 38a6e10b-a1aa-40a5-a3e6-f3fd7f90f628 [Navigation] | Latency (Capture->Broadcast): 1ms
+[19:02:23.249] INFO (7664): Routing NavigationCommand to 1 ready slaves: https://www.sportybet.com/ng/m/
+[19:02:23.249] INFO (7664): [Slave Receive] Command 38a6e10b-a1aa-40a5-a3e6-f3fd7f90f628 for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:02:23.249] INFO (7664): [Execute Start] Command 38a6e10b-a1aa-40a5-a3e6-f3fd7f90f628 on [slave_0] | Latency (Receive->Start): 1ms | Lifecycle: EXECUTING
+[19:02:23.853] INFO (7664): [Master Navigated] https://www.sportybet.com/ng/m/sport/football/International_Clubs/UEFA_Conference_League/FK_Decic_Tuzi_vs_FK_Liepaja/sr:match:72158336?navigatedFrom=highlights
+[19:02:23.853] INFO (7664): [CommandRouter] Routing [Navigation:navigate] (3399765c-caf5-410b-8834-579b449f9b54)
+[19:02:23.853] INFO (7664): [Broadcast] Command 3399765c-caf5-410b-8834-579b449f9b54 [Navigation] | Latency (Capture->Broadcast): 0ms
+[19:02:23.853] INFO (7664): Routing NavigationCommand to 1 ready slaves: https://www.sportybet.com/ng/m/sport/football/International_Clubs/UEFA_Conference_League/FK_Decic_Tuzi_vs_FK_Liepaja/sr:match:72158336?navigatedFrom=highlights
+[19:02:23.853] INFO (7664): [Slave Receive] Command 3399765c-caf5-410b-8834-579b449f9b54 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:23.864] INFO (7664): [Master History Push] https://www.sportybet.com/ng/m/sport/football/International_Clubs/UEFA_Conference_League/FK_Decic_Tuzi_vs_FK_Liepaja/sr:match:72158336?navigatedFrom=highlights
+[19:02:24.324] INFO (7664): [Master Dispatch] CLICK
+[19:02:24.324] INFO (7664): [CommandRouter] Routing [Execution:CLICK] (2bce8138-102e-4036-8b8c-ee061f88f6de)
+[19:02:24.324] INFO (7664): [Broadcast] Command 2bce8138-102e-4036-8b8c-ee061f88f6de [CLICK] | Latency (Capture->Broadcast): -1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-2ed66d30 | Type: CLICK | Context: Pointer Context | Consumed: [mousedown, mouseup, click]
+[19:02:24.324] INFO (7664): [Slave Receive] Command 2bce8138-102e-4036-8b8c-ee061f88f6de for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:24.408] INFO (7664): [Master Dispatch] SCROLL
+[19:02:24.408] INFO (7664): [CommandRouter] Routing [Execution:SCROLL] (91551d8c-998a-4429-ae3e-9535be9989e0)
+[19:02:24.408] INFO (7664): [Broadcast] Command 91551d8c-998a-4429-ae3e-9535be9989e0 [SCROLL] | Latency (Capture->Broadcast): 0ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-06101a50 | Type: SCROLL | Context: Scroll Context | Consumed: [scroll]
+[19:02:24.409] INFO (7664): [Slave Receive] Command 91551d8c-998a-4429-ae3e-9535be9989e0 for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:02:24.651] INFO (7664): [Execute End] [Result: Success] Command 38a6e10b-a1aa-40a5-a3e6-f3fd7f90f628 [navigate] on [slave_0] | Execution duration: 1402ms | Lifecycle: COMPLETED
+[19:02:24.651] INFO (7664): [Execute Start] Command 3399765c-caf5-410b-8834-579b449f9b54 on [slave_0] | Latency (Receive->Start): 798ms | Lifecycle: EXECUTING
+[19:02:26.537] INFO (7664): [Execute End] [Result: Success] Command 3399765c-caf5-410b-8834-579b449f9b54 [navigate] on [slave_0] | Execution duration: 1886ms | Lifecycle: COMPLETED
+[19:02:26.537] INFO (7664): [Execute Start] Command 2bce8138-102e-4036-8b8c-ee061f88f6de on [slave_0] | Latency (Receive->Start): 2213ms | Lifecycle: EXECUTING
+[19:02:26.788] WARN (7664): [Interaction Failure] Command 2bce8138-102e-4036-8b8c-ee061f88f6de on slave [slave_0]: LocatorResolver failed to find any actionable candidates for action: click | Execution duration: 251ms | Lifecycle: FAILED
+[19:02:26.788] INFO (7664): [Execute Start] Command 91551d8c-998a-4429-ae3e-9535be9989e0 on [slave_0] | Latency (Receive->Start): 2380ms | Lifecycle: EXECUTING
+[19:02:27.592] INFO (7664): [Execute End] [Result: Success] Command 91551d8c-998a-4429-ae3e-9535be9989e0 [SCROLL] on [slave_0] | Execution duration: 804ms | Lifecycle: COMPLETED
+[19:02:31.125] INFO (7664): [Master Dispatch] HOVER
+[19:02:31.125] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (838c1641-30b2-41a0-a214-032449ba6656)
+[19:02:31.125] INFO (7664): [Broadcast] Command 838c1641-30b2-41a0-a214-032449ba6656 [HOVER] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-8b0b7a7f | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:31.125] INFO (7664): [Slave Receive] Command 838c1641-30b2-41a0-a214-032449ba6656 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:31.125] INFO (7664): [Execute Start] Command 838c1641-30b2-41a0-a214-032449ba6656 on [slave_0] | Latency (Receive->Start): 0ms | Lifecycle: EXECUTING
+[19:02:31.231] INFO (7664): [Master Dispatch] HOVER
+[19:02:31.231] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (e9ebf074-dcc7-4390-9966-731f9903304f)
+[19:02:31.231] INFO (7664): [Broadcast] Command e9ebf074-dcc7-4390-9966-731f9903304f [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-cb9e0da9 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:31.232] INFO (7664): [Slave Receive] Command e9ebf074-dcc7-4390-9966-731f9903304f for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:02:31.402] INFO (7664): [Master Dispatch] HOVER
+[19:02:31.402] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (507b6420-9e07-41c1-9ea7-317b6275816b)
+[19:02:31.402] INFO (7664): [Broadcast] Command 507b6420-9e07-41c1-9ea7-317b6275816b [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-bd9a0880 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:31.402] INFO (7664): [Slave Receive] Command 507b6420-9e07-41c1-9ea7-317b6275816b for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:31.711] INFO (7664): [Execute End] [Result: Success] Command 838c1641-30b2-41a0-a214-032449ba6656 [HOVER] on [slave_0] | Execution duration: 586ms | Lifecycle: COMPLETED
+[19:02:31.711] INFO (7664): [Execute Start] Command e9ebf074-dcc7-4390-9966-731f9903304f on [slave_0] | Latency (Receive->Start): 480ms | Lifecycle: EXECUTING
+[19:02:32.478] INFO (7664): [Execute End] [Result: Success] Command e9ebf074-dcc7-4390-9966-731f9903304f [HOVER] on [slave_0] | Execution duration: 767ms | Lifecycle: COMPLETED
+[19:02:32.478] INFO (7664): [Execute Start] Command 507b6420-9e07-41c1-9ea7-317b6275816b on [slave_0] | Latency (Receive->Start): 1076ms | Lifecycle: EXECUTING
+[19:02:32.986] INFO (7664): [Execute End] [Result: Success] Command 507b6420-9e07-41c1-9ea7-317b6275816b [HOVER] on [slave_0] | Execution duration: 508ms | Lifecycle: COMPLETED
+[19:02:33.083] INFO (7664): [Master Navigated] https://www.sportybet.com/ng/m/sport/football/International_Clubs/UEFA_Conference_League/FK_Decic_Tuzi_vs_FK_Liepaja/sr:match:72158336?navigatedFrom=highlights#login
+[19:02:33.083] INFO (7664): [CommandRouter] Routing [Navigation:navigate] (863fc470-fce8-40ed-ad1c-93ec26069c5a)
+[19:02:33.083] INFO (7664): [Broadcast] Command 863fc470-fce8-40ed-ad1c-93ec26069c5a [Navigation] | Latency (Capture->Broadcast): 0ms
+[19:02:33.083] INFO (7664): Routing NavigationCommand to 1 ready slaves: https://www.sportybet.com/ng/m/sport/football/International_Clubs/UEFA_Conference_League/FK_Decic_Tuzi_vs_FK_Liepaja/sr:match:72158336?navigatedFrom=highlights#login
+[19:02:33.083] INFO (7664): [Slave Receive] Command 863fc470-fce8-40ed-ad1c-93ec26069c5a for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:33.083] INFO (7664): [Execute Start] Command 863fc470-fce8-40ed-ad1c-93ec26069c5a on [slave_0] | Latency (Receive->Start): 0ms | Lifecycle: EXECUTING
+[19:02:33.098] INFO (7664): [Master History Push] https://www.sportybet.com/ng/m/sport/football/International_Clubs/UEFA_Conference_League/FK_Decic_Tuzi_vs_FK_Liepaja/sr:match:72158336?navigatedFrom=highlights#login
+[19:02:33.281] INFO (7664): [Master Dispatch] CLICK
+[19:02:33.281] INFO (7664): [CommandRouter] Routing [Execution:CLICK] (c9c1ba27-2187-486d-80be-9867a8a16d23)
+[19:02:33.281] INFO (7664): [Broadcast] Command c9c1ba27-2187-486d-80be-9867a8a16d23 [CLICK] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-8bc4dcab | Type: CLICK | Context: Pointer Context | Consumed: [mousedown, mouseup, click]
+[19:02:33.281] INFO (7664): [Slave Receive] Command c9c1ba27-2187-486d-80be-9867a8a16d23 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:33.627] INFO (7664): [Execute End] [Result: Success] Command 863fc470-fce8-40ed-ad1c-93ec26069c5a [navigate] on [slave_0] | Execution duration: 544ms | Lifecycle: COMPLETED
+[19:02:33.627] INFO (7664): [Execute Start] Command c9c1ba27-2187-486d-80be-9867a8a16d23 on [slave_0] | Latency (Receive->Start): 346ms | Lifecycle: EXECUTING
+[19:02:33.879] WARN (7664): [Interaction Failure] Command c9c1ba27-2187-486d-80be-9867a8a16d23 on slave [slave_0]: LocatorResolver failed to find any actionable candidates for action: click | Execution duration: 252ms | Lifecycle: FAILED
+[19:02:40.696] INFO (7664): [Master Dispatch] HOVER
+[19:02:40.696] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (04152dba-fcb2-414a-accb-b7377e58a3f8)
+[19:02:40.696] INFO (7664): [Broadcast] Command 04152dba-fcb2-414a-accb-b7377e58a3f8 [HOVER] | Latency (Capture->Broadcast): 3ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-fc3e34c5 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:40.697] INFO (7664): [Slave Receive] Command 04152dba-fcb2-414a-accb-b7377e58a3f8 for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:02:40.697] INFO (7664): [Execute Start] Command 04152dba-fcb2-414a-accb-b7377e58a3f8 on [slave_0] | Latency (Receive->Start): 1ms | Lifecycle: EXECUTING
+[19:02:40.814] INFO (7664): [Master Dispatch] HOVER
+[19:02:40.814] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (15d81e72-6506-44c5-8048-4562dbd60ef7)
+[19:02:40.814] INFO (7664): [Broadcast] Command 15d81e72-6506-44c5-8048-4562dbd60ef7 [HOVER] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-7aebdf4f | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:40.814] INFO (7664): [Slave Receive] Command 15d81e72-6506-44c5-8048-4562dbd60ef7 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:40.934] INFO (7664): [Master Dispatch] HOVER
+[19:02:40.934] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (27a47a0b-886d-4415-a531-c755a5374501)
+[19:02:40.934] INFO (7664): [Broadcast] Command 27a47a0b-886d-4415-a531-c755a5374501 [HOVER] | Latency (Capture->Broadcast): 4ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-51448b57 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:40.934] INFO (7664): [Slave Receive] Command 27a47a0b-886d-4415-a531-c755a5374501 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:41.062] INFO (7664): [Master Dispatch] HOVER
+[19:02:41.062] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (ebe039e5-2b33-4989-bc31-45496b5dc1fe)
+[19:02:41.062] INFO (7664): [Broadcast] Command ebe039e5-2b33-4989-bc31-45496b5dc1fe [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-7c7dc874 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:41.062] INFO (7664): [Slave Receive] Command ebe039e5-2b33-4989-bc31-45496b5dc1fe for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:41.178] INFO (7664): [Master Dispatch] HOVER
+[19:02:41.178] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (d34abdf9-f93d-4737-87c8-7ef388fe16ba)
+[19:02:41.178] INFO (7664): [Broadcast] Command d34abdf9-f93d-4737-87c8-7ef388fe16ba [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-90910b1e | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:41.178] INFO (7664): [Slave Receive] Command d34abdf9-f93d-4737-87c8-7ef388fe16ba for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:41.204] INFO (7664): [Execute End] [Result: Success] Command 04152dba-fcb2-414a-accb-b7377e58a3f8 [HOVER] on [slave_0] | Execution duration: 507ms | Lifecycle: COMPLETED
+[19:02:41.204] INFO (7664): [Execute Start] Command 15d81e72-6506-44c5-8048-4562dbd60ef7 on [slave_0] | Latency (Receive->Start): 390ms | Lifecycle: EXECUTING
+[19:02:41.707] INFO (7664): [Execute End] [Result: Success] Command 15d81e72-6506-44c5-8048-4562dbd60ef7 [HOVER] on [slave_0] | Execution duration: 503ms | Lifecycle: COMPLETED
+[19:02:41.707] INFO (7664): [Execute Start] Command 27a47a0b-886d-4415-a531-c755a5374501 on [slave_0] | Latency (Receive->Start): 773ms | Lifecycle: EXECUTING
+[19:02:42.095] INFO (7664): [Master Dispatch] CLICK
+[19:02:42.095] INFO (7664): [CommandRouter] Routing [Execution:CLICK] (afc52a9c-2676-46bb-bd22-289ee7d915ff)
+[19:02:42.095] INFO (7664): [Broadcast] Command afc52a9c-2676-46bb-bd22-289ee7d915ff [CLICK] | Latency (Capture->Broadcast): 4ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-727c9d44 | Type: CLICK | Context: Pointer Context | Consumed: [mousedown, mouseup, click]
+[19:02:42.096] INFO (7664): [Slave Receive] Command afc52a9c-2676-46bb-bd22-289ee7d915ff for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:02:42.212] INFO (7664): [Execute End] [Result: Success] Command 27a47a0b-886d-4415-a531-c755a5374501 [HOVER] on [slave_0] | Execution duration: 505ms | Lifecycle: COMPLETED
+[19:02:42.212] INFO (7664): [Execute Start] Command ebe039e5-2b33-4989-bc31-45496b5dc1fe on [slave_0] | Latency (Receive->Start): 1150ms | Lifecycle: EXECUTING
+[19:02:42.715] INFO (7664): [Execute End] [Result: Success] Command ebe039e5-2b33-4989-bc31-45496b5dc1fe [HOVER] on [slave_0] | Execution duration: 503ms | Lifecycle: COMPLETED
+[19:02:42.716] INFO (7664): [Execute Start] Command d34abdf9-f93d-4737-87c8-7ef388fe16ba on [slave_0] | Latency (Receive->Start): 1538ms | Lifecycle: EXECUTING
+[19:02:43.223] INFO (7664): [Execute End] [Result: Success] Command d34abdf9-f93d-4737-87c8-7ef388fe16ba [HOVER] on [slave_0] | Execution duration: 507ms | Lifecycle: COMPLETED
+[19:02:43.223] INFO (7664): [Execute Start] Command afc52a9c-2676-46bb-bd22-289ee7d915ff on [slave_0] | Latency (Receive->Start): 1128ms | Lifecycle: EXECUTING
+[19:02:43.724] WARN (7664): [Interaction Failure] Command afc52a9c-2676-46bb-bd22-289ee7d915ff on slave [slave_0]: LocatorResolver failed to find any actionable candidates for action: click | Execution duration: 501ms | Lifecycle: FAILED
+[19:02:44.645] INFO (7664): [Master Dispatch] INPUT
+[19:02:44.645] INFO (7664): [CommandRouter] Routing [Execution:INPUT] (3500a7f6-1465-4f28-82c1-01891e63d962)
+[19:02:44.645] INFO (7664): [Broadcast] Command 3500a7f6-1465-4f28-82c1-01891e63d962 [INPUT] | Latency (Capture->Broadcast): 4ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-8be46355 | Type: INPUT | Context: Input Context | Consumed: [input]
+[19:02:44.645] INFO (7664): [Slave Receive] Command 3500a7f6-1465-4f28-82c1-01891e63d962 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:44.646] INFO (7664): [Execute Start] Command 3500a7f6-1465-4f28-82c1-01891e63d962 on [slave_0] | Latency (Receive->Start): 1ms | Lifecycle: EXECUTING
+[19:02:45.152] WARN (7664): [Interaction Failure] Command 3500a7f6-1465-4f28-82c1-01891e63d962 on slave [slave_0]: LocatorResolver failed to find any actionable candidates for action: input | Execution duration: 506ms | Lifecycle: FAILED
+[19:02:47.389] INFO (7664): [Master Dispatch] INPUT
+[19:02:47.390] INFO (7664): [CommandRouter] Routing [Execution:INPUT] (430d54d6-9450-4c6d-8c31-0e137196a17b)
+[19:02:47.390] INFO (7664): [Broadcast] Command 430d54d6-9450-4c6d-8c31-0e137196a17b [INPUT] | Latency (Capture->Broadcast): 4ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-d03b51bb | Type: INPUT | Context: Input Context | Consumed: [input]
+[19:02:47.390] INFO (7664): [Slave Receive] Command 430d54d6-9450-4c6d-8c31-0e137196a17b for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:47.390] INFO (7664): [Execute Start] Command 430d54d6-9450-4c6d-8c31-0e137196a17b on [slave_0] | Latency (Receive->Start): 0ms | Lifecycle: EXECUTING
+[19:02:47.896] WARN (7664): [Interaction Failure] Command 430d54d6-9450-4c6d-8c31-0e137196a17b on slave [slave_0]: LocatorResolver failed to find any actionable candidates for action: input | Execution duration: 506ms | Lifecycle: FAILED
+[19:02:48.601] INFO (7664): [Master Dispatch] INPUT
+[19:02:48.601] INFO (7664): [CommandRouter] Routing [Execution:INPUT] (ea2d04b9-0fe5-4f18-a698-368754111b90)
+[19:02:48.601] INFO (7664): [Broadcast] Command ea2d04b9-0fe5-4f18-a698-368754111b90 [INPUT] | Latency (Capture->Broadcast): 3ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-ef531d3d | Type: INPUT | Context: Input Context | Consumed: [input]
+[19:02:48.601] INFO (7664): [Slave Receive] Command ea2d04b9-0fe5-4f18-a698-368754111b90 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:48.602] INFO (7664): [Execute Start] Command ea2d04b9-0fe5-4f18-a698-368754111b90 on [slave_0] | Latency (Receive->Start): 1ms | Lifecycle: EXECUTING
+[19:02:49.107] WARN (7664): [Interaction Failure] Command ea2d04b9-0fe5-4f18-a698-368754111b90 on slave [slave_0]: LocatorResolver failed to find any actionable candidates for action: input | Execution duration: 505ms | Lifecycle: FAILED
+[19:02:49.981] INFO (7664): [Master Dispatch] HOVER
+[19:02:49.981] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (30eca213-3381-44ad-a018-be908e02b699)
+[19:02:49.981] INFO (7664): [Broadcast] Command 30eca213-3381-44ad-a018-be908e02b699 [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-7fc9a346 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:49.981] INFO (7664): [Slave Receive] Command 30eca213-3381-44ad-a018-be908e02b699 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:49.981] INFO (7664): [Execute Start] Command 30eca213-3381-44ad-a018-be908e02b699 on [slave_0] | Latency (Receive->Start): 0ms | Lifecycle: EXECUTING
+[19:02:50.107] INFO (7664): [Master Dispatch] HOVER
+[19:02:50.108] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (47c63371-16e3-4a91-bfd7-3078e16ca764)
+[19:02:50.108] INFO (7664): [Broadcast] Command 47c63371-16e3-4a91-bfd7-3078e16ca764 [HOVER] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-77c85712 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:50.108] INFO (7664): [Slave Receive] Command 47c63371-16e3-4a91-bfd7-3078e16ca764 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:50.225] INFO (7664): [Master Dispatch] HOVER
+[19:02:50.225] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (9498b274-965b-4cb6-9252-2dde54396596)
+[19:02:50.225] INFO (7664): [Broadcast] Command 9498b274-965b-4cb6-9252-2dde54396596 [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-db70111a | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:50.225] INFO (7664): [Slave Receive] Command 9498b274-965b-4cb6-9252-2dde54396596 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:50.340] INFO (7664): [Master Dispatch] HOVER
+[19:02:50.340] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (aad8ef50-292f-4e8f-8179-e64c1bc31e7c)
+[19:02:50.340] INFO (7664): [Broadcast] Command aad8ef50-292f-4e8f-8179-e64c1bc31e7c [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-1f1d4dc3 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:50.341] INFO (7664): [Slave Receive] Command aad8ef50-292f-4e8f-8179-e64c1bc31e7c for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:02:50.489] INFO (7664): [Execute End] [Result: Success] Command 30eca213-3381-44ad-a018-be908e02b699 [HOVER] on [slave_0] | Execution duration: 508ms | Lifecycle: COMPLETED
+[19:02:50.489] INFO (7664): [Execute Start] Command 47c63371-16e3-4a91-bfd7-3078e16ca764 on [slave_0] | Latency (Receive->Start): 381ms | Lifecycle: EXECUTING
+[19:02:50.510] INFO (7664): [Master Dispatch] HOVER
+[19:02:50.510] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (15f06c1f-fad4-4bd2-aed5-dcf9e5d3d273)
+[19:02:50.510] INFO (7664): [Broadcast] Command 15f06c1f-fad4-4bd2-aed5-dcf9e5d3d273 [HOVER] | Latency (Capture->Broadcast): 4ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-884e5c06 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:02:50.510] INFO (7664): [Slave Receive] Command 15f06c1f-fad4-4bd2-aed5-dcf9e5d3d273 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:50.997] INFO (7664): [Execute End] [Result: Success] Command 47c63371-16e3-4a91-bfd7-3078e16ca764 [HOVER] on [slave_0] | Execution duration: 508ms | Lifecycle: COMPLETED
+[19:02:50.997] INFO (7664): [Execute Start] Command 9498b274-965b-4cb6-9252-2dde54396596 on [slave_0] | Latency (Receive->Start): 772ms | Lifecycle: EXECUTING
+[19:02:51.136] INFO (7664): [Master Dispatch] CLICK
+[19:02:51.137] INFO (7664): [CommandRouter] Routing [Execution:CLICK] (570a318c-760a-4c42-9d1c-df71ab26bdcf)
+[19:02:51.137] INFO (7664): [Broadcast] Command 570a318c-760a-4c42-9d1c-df71ab26bdcf [CLICK] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-a8f5f0a8 | Type: CLICK | Context: Pointer Context | Consumed: [mousedown, mouseup, click]
+[19:02:51.137] INFO (7664): [Slave Receive] Command 570a318c-760a-4c42-9d1c-df71ab26bdcf for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:51.505] INFO (7664): [Execute End] [Result: Success] Command 9498b274-965b-4cb6-9252-2dde54396596 [HOVER] on [slave_0] | Execution duration: 508ms | Lifecycle: COMPLETED
+[19:02:51.506] INFO (7664): [Execute Start] Command aad8ef50-292f-4e8f-8179-e64c1bc31e7c on [slave_0] | Latency (Receive->Start): 1166ms | Lifecycle: EXECUTING
+[19:02:51.670] INFO (7664): [Master Navigated] https://www.sportybet.com/ng/m/sport/football/International_Clubs/UEFA_Conference_League/FK_Decic_Tuzi_vs_FK_Liepaja/sr:match:72158336?navigatedFrom=highlights
+[19:02:51.670] INFO (7664): [CommandRouter] Routing [Navigation:navigate] (5e2aaf35-2fd8-45e3-9961-8edddd9de96e)
+[19:02:51.670] INFO (7664): [Broadcast] Command 5e2aaf35-2fd8-45e3-9961-8edddd9de96e [Navigation] | Latency (Capture->Broadcast): 0ms
+[19:02:51.670] INFO (7664): Routing NavigationCommand to 1 ready slaves: https://www.sportybet.com/ng/m/sport/football/International_Clubs/UEFA_Conference_League/FK_Decic_Tuzi_vs_FK_Liepaja/sr:match:72158336?navigatedFrom=highlights
+[19:02:51.670] INFO (7664): [Slave Receive] Command 5e2aaf35-2fd8-45e3-9961-8edddd9de96e for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:02:51.681] INFO (7664): [Master History Push] https://www.sportybet.com/ng/m/sport/football/International_Clubs/UEFA_Conference_League/FK_Decic_Tuzi_vs_FK_Liepaja/sr:match:72158336?navigatedFrom=highlights
+[19:02:52.011] INFO (7664): [Execute End] [Result: Success] Command aad8ef50-292f-4e8f-8179-e64c1bc31e7c [HOVER] on [slave_0] | Execution duration: 505ms | Lifecycle: COMPLETED
+[19:02:52.011] INFO (7664): [Execute Start] Command 15f06c1f-fad4-4bd2-aed5-dcf9e5d3d273 on [slave_0] | Latency (Receive->Start): 1501ms | Lifecycle: EXECUTING
+[19:02:52.516] INFO (7664): [Execute End] [Result: Success] Command 15f06c1f-fad4-4bd2-aed5-dcf9e5d3d273 [HOVER] on [slave_0] | Execution duration: 505ms | Lifecycle: COMPLETED
+[19:02:52.516] INFO (7664): [Execute Start] Command 570a318c-760a-4c42-9d1c-df71ab26bdcf on [slave_0] | Latency (Receive->Start): 1379ms | Lifecycle: EXECUTING
+[19:02:53.270] WARN (7664): [Interaction Failure] Command 570a318c-760a-4c42-9d1c-df71ab26bdcf on slave [slave_0]: LocatorResolver failed to find any actionable candidates for action: click | Execution duration: 754ms | Lifecycle: FAILED
+[19:02:53.270] INFO (7664): [Execute Start] Command 5e2aaf35-2fd8-45e3-9961-8edddd9de96e on [slave_0] | Latency (Receive->Start): 1600ms | Lifecycle: EXECUTING
+[19:02:54.505] INFO (7664): [Execute End] [Result: Success] Command 5e2aaf35-2fd8-45e3-9961-8edddd9de96e [navigate] on [slave_0] | Execution duration: 1235ms | Lifecycle: COMPLETED
+[19:03:00.079] INFO (7664): [Master Dispatch] HOVER
+[19:03:00.079] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (622dfda9-57e1-4fb8-bb75-00ba60d619eb)
+[19:03:00.079] INFO (7664): [Broadcast] Command 622dfda9-57e1-4fb8-bb75-00ba60d619eb [HOVER] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-b4b39833 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:03:00.079] INFO (7664): [Slave Receive] Command 622dfda9-57e1-4fb8-bb75-00ba60d619eb for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:03:00.079] INFO (7664): [Execute Start] Command 622dfda9-57e1-4fb8-bb75-00ba60d619eb on [slave_0] | Latency (Receive->Start): 0ms | Lifecycle: EXECUTING
+[19:03:00.188] INFO (7664): [Master Dispatch] HOVER
+[19:03:00.188] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (62b1df19-382e-4565-9cb5-c04066c75d9a)
+[19:03:00.188] INFO (7664): [Broadcast] Command 62b1df19-382e-4565-9cb5-c04066c75d9a [HOVER] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-a68eacf2 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:03:00.188] INFO (7664): [Slave Receive] Command 62b1df19-382e-4565-9cb5-c04066c75d9a for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:03:00.290] INFO (7664): [Master Dispatch] HOVER
+[19:03:00.290] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (594babc5-80f4-42ec-9094-0d530dcdfb4e)
+[19:03:00.290] INFO (7664): [Broadcast] Command 594babc5-80f4-42ec-9094-0d530dcdfb4e [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-159bf890 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:03:00.290] INFO (7664): [Slave Receive] Command 594babc5-80f4-42ec-9094-0d530dcdfb4e for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:03:00.421] INFO (7664): [Master Dispatch] HOVER
+[19:03:00.421] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (e375b528-5484-480a-b6a9-6b91cc78cd5e)
+[19:03:00.421] INFO (7664): [Broadcast] Command e375b528-5484-480a-b6a9-6b91cc78cd5e [HOVER] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-8e02a6e6 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:03:00.421] INFO (7664): [Slave Receive] Command e375b528-5484-480a-b6a9-6b91cc78cd5e for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:03:00.659] INFO (7664): [Execute End] [Result: Success] Command 622dfda9-57e1-4fb8-bb75-00ba60d619eb [HOVER] on [slave_0] | Execution duration: 580ms | Lifecycle: COMPLETED
+[19:03:00.659] INFO (7664): [Execute Start] Command 62b1df19-382e-4565-9cb5-c04066c75d9a on [slave_0] | Latency (Receive->Start): 471ms | Lifecycle: EXECUTING
+[19:03:01.418] INFO (7664): [Execute End] [Result: Success] Command 62b1df19-382e-4565-9cb5-c04066c75d9a [HOVER] on [slave_0] | Execution duration: 759ms | Lifecycle: COMPLETED
+[19:03:01.418] INFO (7664): [Execute Start] Command 594babc5-80f4-42ec-9094-0d530dcdfb4e on [slave_0] | Latency (Receive->Start): 1128ms | Lifecycle: EXECUTING
+[19:03:01.523] INFO (7664): [Master Dispatch] CLICK
+[19:03:01.523] INFO (7664): [CommandRouter] Routing [Execution:CLICK] (d2c229a5-892f-4e3f-8ad3-51fb16e5596d)
+[19:03:01.523] INFO (7664): [Broadcast] Command d2c229a5-892f-4e3f-8ad3-51fb16e5596d [CLICK] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-b17c6684 | Type: CLICK | Context: Pointer Context | Consumed: [mousedown, mouseup, click]
+[19:03:01.523] INFO (7664): [Slave Receive] Command d2c229a5-892f-4e3f-8ad3-51fb16e5596d for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:03:01.923] INFO (7664): [Execute End] [Result: Success] Command 594babc5-80f4-42ec-9094-0d530dcdfb4e [HOVER] on [slave_0] | Execution duration: 505ms | Lifecycle: COMPLETED
+[19:03:01.924] INFO (7664): [Execute Start] Command e375b528-5484-480a-b6a9-6b91cc78cd5e on [slave_0] | Latency (Receive->Start): 1503ms | Lifecycle: EXECUTING
+[19:03:02.430] INFO (7664): [Execute End] [Result: Success] Command e375b528-5484-480a-b6a9-6b91cc78cd5e [HOVER] on [slave_0] | Execution duration: 506ms | Lifecycle: COMPLETED
+[19:03:02.430] INFO (7664): [Execute Start] Command d2c229a5-892f-4e3f-8ad3-51fb16e5596d on [slave_0] | Latency (Receive->Start): 907ms | Lifecycle: EXECUTING
+[19:03:03.080] INFO (7664): [Execute End] [Result: Success] Command d2c229a5-892f-4e3f-8ad3-51fb16e5596d [CLICK] on [slave_0] | Execution duration: 650ms | Used Locator: [structural-css] body#notInWebView > div:nth-of-type(3) > div > div > div > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(2) > div > div > div:nth-of-type(2) > ul > li:nth-of-type(3) > span | Lifecycle: COMPLETED
+[19:03:04.845] INFO (7664): [Master Dispatch] HOVER
+[19:03:04.845] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (ea659dec-26c3-445c-92cd-0ba027783b36)
+[19:03:04.845] INFO (7664): [Broadcast] Command ea659dec-26c3-445c-92cd-0ba027783b36 [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-a19200dd | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:03:04.845] INFO (7664): [Slave Receive] Command ea659dec-26c3-445c-92cd-0ba027783b36 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:03:04.845] INFO (7664): [Execute Start] Command ea659dec-26c3-445c-92cd-0ba027783b36 on [slave_0] | Latency (Receive->Start): 0ms | Lifecycle: EXECUTING
+[19:03:04.953] INFO (7664): [Master Dispatch] HOVER
+[19:03:04.953] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (2361c673-b254-438c-a1cc-a7d978b07061)
+[19:03:04.953] INFO (7664): [Broadcast] Command 2361c673-b254-438c-a1cc-a7d978b07061 [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-cbb51b29 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:03:04.953] INFO (7664): [Slave Receive] Command 2361c673-b254-438c-a1cc-a7d978b07061 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:03:05.067] INFO (7664): [Master Dispatch] HOVER
+[19:03:05.067] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (f130f388-0370-40f1-8903-fbb42a7ebb0e)
+[19:03:05.067] INFO (7664): [Broadcast] Command f130f388-0370-40f1-8903-fbb42a7ebb0e [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-d09dd82c | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:03:05.067] INFO (7664): [Slave Receive] Command f130f388-0370-40f1-8903-fbb42a7ebb0e for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:03:05.232] INFO (7664): [Master Dispatch] HOVER
+[19:03:05.233] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (1663f922-c410-4df8-a30c-7785325d227a)
+[19:03:05.233] INFO (7664): [Broadcast] Command 1663f922-c410-4df8-a30c-7785325d227a [HOVER] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-5e237b0b | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:03:05.233] INFO (7664): [Slave Receive] Command 1663f922-c410-4df8-a30c-7785325d227a for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:03:05.351] INFO (7664): [Execute End] [Result: Success] Command ea659dec-26c3-445c-92cd-0ba027783b36 [HOVER] on [slave_0] | Execution duration: 506ms | Lifecycle: COMPLETED
+[19:03:05.351] INFO (7664): [Execute Start] Command 2361c673-b254-438c-a1cc-a7d978b07061 on [slave_0] | Latency (Receive->Start): 398ms | Lifecycle: EXECUTING
+[19:03:05.355] INFO (7664): [Master Dispatch] HOVER
+[19:03:05.355] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (4bc7763c-dd6e-41ed-86fe-b130ff42119e)
+[19:03:05.355] INFO (7664): [Broadcast] Command 4bc7763c-dd6e-41ed-86fe-b130ff42119e [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-fa6ca7a8 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:03:05.355] INFO (7664): [Slave Receive] Command 4bc7763c-dd6e-41ed-86fe-b130ff42119e for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:03:05.857] INFO (7664): [Execute End] [Result: Success] Command 2361c673-b254-438c-a1cc-a7d978b07061 [HOVER] on [slave_0] | Execution duration: 506ms | Lifecycle: COMPLETED
+[19:03:05.857] INFO (7664): [Execute Start] Command f130f388-0370-40f1-8903-fbb42a7ebb0e on [slave_0] | Latency (Receive->Start): 790ms | Lifecycle: EXECUTING
+[19:03:06.093] INFO (7664): [Master Dispatch] CLICK
+[19:03:06.093] INFO (7664): [CommandRouter] Routing [Execution:CLICK] (b5f1cc7d-ea00-45a0-a2e7-c2a6ee37cf0e)
+[19:03:06.093] INFO (7664): [Broadcast] Command b5f1cc7d-ea00-45a0-a2e7-c2a6ee37cf0e [CLICK] | Latency (Capture->Broadcast): 3ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-c5d9d594 | Type: CLICK | Context: Pointer Context | Consumed: [mousedown, mouseup, click]
+[19:03:06.093] INFO (7664): [Slave Receive] Command b5f1cc7d-ea00-45a0-a2e7-c2a6ee37cf0e for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:03:06.362] INFO (7664): [Execute End] [Result: Success] Command f130f388-0370-40f1-8903-fbb42a7ebb0e [HOVER] on [slave_0] | Execution duration: 505ms | Lifecycle: COMPLETED
+[19:03:06.363] INFO (7664): [Execute Start] Command 1663f922-c410-4df8-a30c-7785325d227a on [slave_0] | Latency (Receive->Start): 1130ms | Lifecycle: EXECUTING
+[19:03:06.869] INFO (7664): [Execute End] [Result: Success] Command 1663f922-c410-4df8-a30c-7785325d227a [HOVER] on [slave_0] | Execution duration: 506ms | Lifecycle: COMPLETED
+[19:03:06.869] INFO (7664): [Execute Start] Command 4bc7763c-dd6e-41ed-86fe-b130ff42119e on [slave_0] | Latency (Receive->Start): 1514ms | Lifecycle: EXECUTING
+[19:03:07.376] INFO (7664): [Execute End] [Result: Success] Command 4bc7763c-dd6e-41ed-86fe-b130ff42119e [HOVER] on [slave_0] | Execution duration: 507ms | Lifecycle: COMPLETED
+[19:03:07.376] INFO (7664): [Execute Start] Command b5f1cc7d-ea00-45a0-a2e7-c2a6ee37cf0e on [slave_0] | Latency (Receive->Start): 1283ms | Lifecycle: EXECUTING
+[19:03:07.980] INFO (7664): [Execute End] [Result: Success] Command b5f1cc7d-ea00-45a0-a2e7-c2a6ee37cf0e [CLICK] on [slave_0] | Execution duration: 604ms | Used Locator: [structural-css] body#notInWebView > div:nth-of-type(3) > div > div > div > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(2) > div > div > div:nth-of-type(2) > ul > li:nth-of-type(2) > span | Lifecycle: COMPLETED
+[19:03:09.575] INFO (7664): [Master Dispatch] HOVER
+[19:03:09.575] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (9dee3750-1df1-4825-9d91-9041a299abce)
+[19:03:09.575] INFO (7664): [Broadcast] Command 9dee3750-1df1-4825-9d91-9041a299abce [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-86ac46e9 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:03:09.575] INFO (7664): [Slave Receive] Command 9dee3750-1df1-4825-9d91-9041a299abce for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:03:09.575] INFO (7664): [Execute Start] Command 9dee3750-1df1-4825-9d91-9041a299abce on [slave_0] | Latency (Receive->Start): 0ms | Lifecycle: EXECUTING
+[19:03:09.808] INFO (7664): [Master Dispatch] HOVER
+[19:03:09.808] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (fe6f73c3-488d-4beb-95f7-7ae0446a6b3c)
+[19:03:09.808] INFO (7664): [Broadcast] Command fe6f73c3-488d-4beb-95f7-7ae0446a6b3c [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-dca097dd | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:03:09.809] INFO (7664): [Slave Receive] Command fe6f73c3-488d-4beb-95f7-7ae0446a6b3c for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:03:09.933] INFO (7664): [Master Dispatch] HOVER
+[19:03:09.933] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (1dbc753a-3cbf-4b57-88f9-4e72cb2d77da)
+[19:03:09.933] INFO (7664): [Broadcast] Command 1dbc753a-3cbf-4b57-88f9-4e72cb2d77da [HOVER] | Latency (Capture->Broadcast): 1ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-d284e261 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:03:09.933] INFO (7664): [Slave Receive] Command 1dbc753a-3cbf-4b57-88f9-4e72cb2d77da for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:03:10.049] INFO (7664): [Master Dispatch] HOVER
+[19:03:10.049] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (1515fabd-69cd-47a6-97a6-6cae18fdfa78)
+[19:03:10.049] INFO (7664): [Broadcast] Command 1515fabd-69cd-47a6-97a6-6cae18fdfa78 [HOVER] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-4b842fbf | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:03:10.049] INFO (7664): [Slave Receive] Command 1515fabd-69cd-47a6-97a6-6cae18fdfa78 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:03:10.082] INFO (7664): [Execute End] [Result: Success] Command 9dee3750-1df1-4825-9d91-9041a299abce [HOVER] on [slave_0] | Execution duration: 507ms | Lifecycle: COMPLETED
+[19:03:10.082] INFO (7664): [Execute Start] Command fe6f73c3-488d-4beb-95f7-7ae0446a6b3c on [slave_0] | Latency (Receive->Start): 274ms | Lifecycle: EXECUTING
+[19:03:10.588] INFO (7664): [Execute End] [Result: Success] Command fe6f73c3-488d-4beb-95f7-7ae0446a6b3c [HOVER] on [slave_0] | Execution duration: 506ms | Lifecycle: COMPLETED
+[19:03:10.588] INFO (7664): [Execute Start] Command 1dbc753a-3cbf-4b57-88f9-4e72cb2d77da on [slave_0] | Latency (Receive->Start): 655ms | Lifecycle: EXECUTING
+[19:03:10.695] INFO (7664): [Master Dispatch] CLICK
+[19:03:10.695] INFO (7664): [CommandRouter] Routing [Execution:CLICK] (61dcc837-fbd6-4594-a6a2-c2cecfc8cd3d)
+[19:03:10.695] INFO (7664): [Broadcast] Command 61dcc837-fbd6-4594-a6a2-c2cecfc8cd3d [CLICK] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-ace9b368 | Type: CLICK | Context: Pointer Context | Consumed: [mousedown, mouseup, click]
+[19:03:10.695] INFO (7664): [Slave Receive] Command 61dcc837-fbd6-4594-a6a2-c2cecfc8cd3d for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:03:11.094] INFO (7664): [Execute End] [Result: Success] Command 1dbc753a-3cbf-4b57-88f9-4e72cb2d77da [HOVER] on [slave_0] | Execution duration: 506ms | Lifecycle: COMPLETED
+[19:03:11.094] INFO (7664): [Execute Start] Command 1515fabd-69cd-47a6-97a6-6cae18fdfa78 on [slave_0] | Latency (Receive->Start): 1045ms | Lifecycle: EXECUTING
+[19:03:11.602] INFO (7664): [Execute End] [Result: Success] Command 1515fabd-69cd-47a6-97a6-6cae18fdfa78 [HOVER] on [slave_0] | Execution duration: 508ms | Lifecycle: COMPLETED
+[19:03:11.602] INFO (7664): [Execute Start] Command 61dcc837-fbd6-4594-a6a2-c2cecfc8cd3d on [slave_0] | Latency (Receive->Start): 907ms | Lifecycle: EXECUTING
+[19:03:12.342] INFO (7664): [Execute End] [Result: Success] Command 61dcc837-fbd6-4594-a6a2-c2cecfc8cd3d [CLICK] on [slave_0] | Execution duration: 740ms | Used Locator: [structural-css] body#notInWebView > div:nth-of-type(3) > div > div > div > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(2) > div > div > div:nth-of-type(2) > ul > li > svg > path | Lifecycle: COMPLETED
+[19:03:17.248] INFO (7664): [Master Dispatch] HOVER
+[19:03:17.248] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (44055bbe-21b1-4edb-868f-dd9e2438ee0a)
+[19:03:17.248] INFO (7664): [Broadcast] Command 44055bbe-21b1-4edb-868f-dd9e2438ee0a [HOVER] | Latency (Capture->Broadcast): 2ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-cdadcacb | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:03:17.248] INFO (7664): [Slave Receive] Command 44055bbe-21b1-4edb-868f-dd9e2438ee0a for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:03:17.248] INFO (7664): [Execute Start] Command 44055bbe-21b1-4edb-868f-dd9e2438ee0a on [slave_0] | Latency (Receive->Start): 0ms | Lifecycle: EXECUTING
+[19:03:17.364] INFO (7664): [Master Dispatch] HOVER
+[19:03:17.365] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (760c3fae-4b93-40cb-b942-e53c257da060)
+[19:03:17.365] INFO (7664): [Broadcast] Command 760c3fae-4b93-40cb-b942-e53c257da060 [HOVER] | Latency (Capture->Broadcast): 4ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-1f66f777 | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:03:17.365] INFO (7664): [Slave Receive] Command 760c3fae-4b93-40cb-b942-e53c257da060 for [slave_0] | Latency (Creation->Receive): 0ms | Lifecycle: RECEIVED
+[19:03:17.483] INFO (7664): [Master Dispatch] HOVER
+[19:03:17.483] INFO (7664): [CommandRouter] Routing [Execution:HOVER] (f54f5921-4fd2-4fe7-9a48-1aea47bad35b)
+[19:03:17.483] INFO (7664): [Broadcast] Command f54f5921-4fd2-4fe7-9a48-1aea47bad35b [HOVER] | Latency (Capture->Broadcast): 4ms | Lifecycle: BROADCAST
+  Γå│ [Interaction] ID: ia-40a1896c | Type: HOVER | Context: Pointer Context | Consumed: [mousemove]
+[19:03:17.484] INFO (7664): [Slave Receive] Command f54f5921-4fd2-4fe7-9a48-1aea47bad35b for [slave_0] | Latency (Creation->Receive): 1ms | Lifecycle: RECEIVED
+[19:03:17.793] INFO (7664): [Execute End] [Result: Success] Command 44055bbe-21b1-4edb-868f-dd9e2438ee0a [HOVER] on [slave_0] | Execution duration: 545ms | Lifecycle: COMPLETED
+[19:03:17.793] INFO (7664): [Execute Start] Command 760c3fae-4b93-40cb-b942-e53c257da060 on [slave_0] | Latency (Receive->Start): 428ms | Lifecycle: EXECUTING
+[19:03:18.318] INFO (7664): [Execute End] [Result: Success] Command 760c3fae-4b93-40cb-b942-e53c257da060 [HOVER] on [slave_0] | Execution duration: 525ms | Lifecycle: COMPLETED
+[19:03:18.318] INFO (7664): [Execute Start] Command f54f5921-4fd2-4fe7-9a48-1aea47bad35b on [slave_0] | Latency (Receive->Start): 835ms | Lifecycle: EXECUTING
+[19:03:18.829] INFO (7664): [Execute End] [Result: Success] Command f54f5921-4fd2-4fe7-9a48-1aea47bad35b [HOVER] on [slave_0] | Execution duration: 511ms | Lifecycle: COMPLETED
+

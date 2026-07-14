@@ -1,35 +1,40 @@
 [
   {
     "type": "add_style",
-    "content": ".m-ads-dialog, .m-download-app, .af-dialog { display: none !important; }"
+    "content": ".m-page-loading-wrap, .af-smart-banner, .m-dialog-mask, .m-ad-message { display: none !important; pointer-events: none !important; }"
   },
   {
     "type": "wait",
-    "timeout": 1200
+    "selector": ".m-btn-login",
+    "state": "visible"
   },
   {
     "type": "click",
-    "selector": "div.m-login-btn"
+    "selector": ".m-btn-login"
   },
   {
     "type": "wait",
-    "selector": ".m-login-modal",
+    "selector": "input[type='tel']",
     "state": "visible"
   },
   {
     "type": "input",
-    "selector": ".m-login-modal input[name=\"phone\"]",
+    "selector": "input[type='tel']",
     "value": "{USERNAME}",
     "delay": 50
   },
   {
     "type": "input",
-    "selector": ".m-login-modal input[type=\"password\"]",
+    "selector": "input[type='password']",
     "value": "{PASSWORD}",
     "delay": 50
   },
   {
+    "type": "wait",
+    "timeout": 500
+  },
+  {
     "type": "click",
-    "selector": "button.m-btn-login-submit:not(.is-disabled)"
+    "selector": ".login-btn"
   }
 ]
