@@ -1,5 +1,6 @@
 import { logger } from '../../config.mjs';
 import { Workflow } from './Workflow.mjs';
+import { raceWithCleanup } from '../../utils/playwright.mjs';
 
 export class CashoutWorkflow extends Workflow {
     async execute(browserObj, payload = {}, lockManager, registry) {
@@ -38,11 +39,18 @@ export class CashoutWorkflow extends Workflow {
             logger.info(`Found ${count} cashable tickets for ${accountUsername}. Proceeding...`);
 
             // 3. Process each ticket
-            for (let i = 0; i < count; i++) {
+            let processedCount = 0;
+            const MAX_ITERATIONS = 50;
+
+            while (processedCount < count && processedCount < MAX_ITERATIONS) {
                 if (lockManager) lockManager.refreshLock(accountUsername);
 
                 // Re-select first available cashout button each loop due to DOM mutations
-                const ticket = page.locator(`${this.selectors.ticket}:has(${this.selectors.cashoutBtn})`).nth(0);
+                const ticket = page.locator(`${this.selectors.ticket}:has(${this.selectors.cashoutBtn})`).first();
+                const exists = await ticket.count();
+                if (exists === 0) break;
+                
+                processedCount++;
                 const cashoutBtn = ticket.locator(this.selectors.cashoutBtn);
                 
                 if (await cashoutBtn.isVisible()) {
@@ -60,13 +68,19 @@ export class CashoutWorkflow extends Workflow {
 
                     // 5. Verify outcome
                     try {
-                        const successPromise = page.waitForSelector(this.selectors.toastSuccess, { timeout: 10000 }).then(() => true);
-                        const errorPromise = page.waitForSelector(this.selectors.toastError, { timeout: 10000 }).then(async (el) => {
-                            const errText = await el.textContent();
-                            throw new Error(errText.trim());
-                        });
+                        const result = await raceWithCleanup(page,
+                            async () => await page.$(this.selectors.toastSuccess),
+                            async () => {
+                                const el = await page.$(this.selectors.toastError);
+                                if (el) return await el.textContent();
+                                return null;
+                            },
+                            10000
+                        );
                         
-                        await Promise.race([successPromise, errorPromise]);
+                        if (result.outcome === 'error') {
+                            throw new Error(result.message.trim());
+                        }
                         logger.info(`Cashout successful on ticket for ${accountUsername} [${id}]`);
                     } catch (err) {
                         logger.warn(`Cashout rejected/failed for ${accountUsername} [${id}]: ${err.message}`);

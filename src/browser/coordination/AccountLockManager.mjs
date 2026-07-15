@@ -1,19 +1,20 @@
 import { logger } from '../../config.mjs';
 
 export class AccountLockManager {
-    constructor() {
-        // Map of username -> timestamp
+    constructor(options = {}) {
+        // Map of username -> { timestamp, ttl }
         this.locks = new Map();
-        this.TTL_MS = 30000; // 30 seconds
+        this.TTL_MS = options.ttlMs ?? 30000; // default 30 seconds
     }
 
     /**
      * Acquires a lock for the given username.
      * @param {string} username 
      */
-    acquireLock(username) {
-        this.locks.set(username, Date.now());
-        logger.info(`[LockManager] Acquired lock for account: ${username}`);
+    acquireLock(username, ttlMs = null) {
+        const ttl = ttlMs ?? this.TTL_MS;
+        this.locks.set(username, { timestamp: Date.now(), ttl });
+        logger.info(`[LockManager] Acquired lock for account: ${username} (TTL: ${ttl}ms)`);
     }
 
     /**
@@ -24,9 +25,9 @@ export class AccountLockManager {
     isLocked(username) {
         if (!this.locks.has(username)) return false;
 
-        const timestamp = this.locks.get(username);
-        if (Date.now() - timestamp > this.TTL_MS) {
-            logger.warn(`[LockManager] Lock for ${username} exceeded TTL. Auto-releasing stale lock.`);
+        const lock = this.locks.get(username);
+        if (Date.now() - lock.timestamp > lock.ttl) {
+            logger.warn(`[LockManager] Lock for ${username} exceeded TTL (${lock.ttl}ms). Auto-releasing stale lock.`);
             this.locks.delete(username);
             return false;
         }
@@ -40,7 +41,8 @@ export class AccountLockManager {
      */
     refreshLock(username) {
         if (this.locks.has(username)) {
-            this.locks.set(username, Date.now());
+            const lock = this.locks.get(username);
+            lock.timestamp = Date.now();
         }
     }
 

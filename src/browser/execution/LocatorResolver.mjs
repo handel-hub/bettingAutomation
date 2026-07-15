@@ -1,4 +1,5 @@
 import { logger } from '../../config.mjs';
+import { LocatorResolutionError } from './errors.mjs';
 
 export class ResolutionResult {
     constructor({ success, playwrightLocator, locator, candidate, strategy, duration, attempts, retries, failureReason }) {
@@ -32,17 +33,26 @@ export class LocatorResolver {
         
         let attempts = 0;
         let retries = 0;
+        const neverAttachedCounts = new Map();
+        const SKIP_THRESHOLD = 5;
         
         while ((Date.now() - startTime) < this.RETRY_POLICY.globalTimeoutMs && retries < this.RETRY_POLICY.maxAttempts) {
             
             for (const candidate of candidates) {
+                const neverCount = neverAttachedCounts.get(candidate.locator) || 0;
+                if (neverCount >= SKIP_THRESHOLD) continue;
+
                 attempts++;
                 try {
                     const locator = page.locator(candidate.locator);
                     
                     // 1. Attach Check (No explicit waitFor here to keep the loop fast)
                     const count = await locator.count();
-                    if (count === 0) continue;
+                    if (count === 0) {
+                        neverAttachedCounts.set(candidate.locator, neverCount + 1);
+                        continue;
+                    }
+                    neverAttachedCounts.set(candidate.locator, 0);
                     
                     const target = locator.first();
                     
@@ -106,7 +116,7 @@ export class LocatorResolver {
     static async execute(page, candidates, interactionType, actionFn) {
         const result = await this.resolve(page, candidates, interactionType);
         if (!result.success) {
-            throw new Error(`LocatorResolver failed: ${result.failureReason}`);
+            throw new LocatorResolutionError(result.failureReason, result);
         }
         
         // Execute physical action

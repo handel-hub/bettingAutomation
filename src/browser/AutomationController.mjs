@@ -1,5 +1,6 @@
 import { logger } from '../config.mjs';
 import { CommandRouter } from './CommandRouter.mjs';
+import { TargetResolver } from './coordination/TargetResolver.mjs';
 
 import {
     BrowserRegistry,
@@ -37,7 +38,7 @@ export class AutomationController {
         this.commandReceiver = new CommandReceiver(settings);
         this.simulator = new ActionSimulator();
         this.scheduler = new ExecutionScheduler(this.simulator);
-        this.macroEngine = new MacroEngine(this.simulator);
+        this.macroEngine = new MacroEngine(this.simulator, this.scheduler);
         this.actionDispatcher = new ActionDispatcher(settings);
         this.lockManager = new AccountLockManager();
         this.workflowEngine = new WorkflowEngine(this.lockManager, this.registry);
@@ -51,12 +52,13 @@ export class AutomationController {
         );
 
         this.commandRouter = new CommandRouter();
+        this.targetResolver = new TargetResolver(this.registry, this.lockManager);
         this.setupEventBus();
     }
 
     setupEventBus() {
         this.commandRouter.register('Execution', '*', async (command) => {
-            if (command.withLifecycle) command = command.withLifecycle('BROADCAST');
+            const lifecycle = 'BROADCAST';
             
             let interactionLog = '';
             if (command.payload && command.payload.interactionId) {
@@ -64,28 +66,9 @@ export class AutomationController {
                 interactionLog = `\n  ↳ [Interaction] ID: ${p.interactionId} | Type: ${p.interactionType} | Context: ${p.context || 'Unknown'} | Consumed: [${(p.consumedEvents || []).join(', ')}]`;
             }
             
-            logger.info(`[Broadcast] Command ${command.id} [${command.type}] | Latency (Capture->Broadcast): ${Date.now() - command.captureTime}ms | Lifecycle: ${command.lifecycle || 'N/A'}${interactionLog}`);
-            let targetBrowsers = [];
+            logger.info(`[Broadcast] Command ${command.id} [${command.type}] | Latency (Capture->Broadcast): ${Date.now() - command.captureTime}ms | Lifecycle: ${lifecycle}${interactionLog}`);
             
-            if (command.executionMode === 'SLAVES_ONLY') {
-                targetBrowsers = this.registry.getReadySlaves();
-            } else if (command.executionMode === 'MASTER_ONLY') {
-                const master = this.registry.getMaster();
-                if (master) targetBrowsers = [master];
-            } else if (command.executionMode === 'ALL') {
-                const master = this.registry.getMaster();
-                const slaves = this.registry.getReadySlaves();
-                if (master) targetBrowsers.push(master);
-                targetBrowsers.push(...slaves);
-            }
-            
-            targetBrowsers = targetBrowsers.filter(b => {
-                if (b.username && this.lockManager.isLocked(b.username)) {
-                    logger.warn(`Dropping target [${b.id}] because account ${b.username} is locked.`);
-                    return false;
-                }
-                return true;
-            });
+            const targetBrowsers = this.targetResolver.resolve(command, logger);
 
             if (targetBrowsers.length === 0) {
                 logger.warn(`Cannot execute command [${command.id}]: No target browsers for mode ${command.executionMode}`);
@@ -94,7 +77,7 @@ export class AutomationController {
 
             if (command.type === 'macro') {
                 const { seqNum, validateOnly } = command.payload;
-                const sequence = this.macroEngine.loadSequence(seqNum);
+                const sequence = await this.macroEngine.loadSequence(seqNum);
                 if (!sequence) return;
 
                 if (validateOnly) {

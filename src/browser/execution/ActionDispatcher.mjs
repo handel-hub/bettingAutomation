@@ -681,6 +681,12 @@ export class ActionDispatcher extends EventEmitter {
 
     recordAction(action) {
         this.actions.push(action);
+        
+        const MAX_RECORDED_ACTIONS = 1000;
+        if (this.actions.length > MAX_RECORDED_ACTIONS) {
+            this.actions = this.actions.slice(-MAX_RECORDED_ACTIONS);
+        }
+
         const now = Date.now();
         if (!this.firstPendingAt) this.firstPendingAt = now;
 

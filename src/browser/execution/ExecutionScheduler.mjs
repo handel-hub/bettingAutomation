@@ -152,7 +152,16 @@ export class ExecutionScheduler {
             maxQueueWait: 0,
         };
         
-        setInterval(() => this.logTelemetry(), 10000);
+        this.telemetryIntervalId = setInterval(() => this.logTelemetry(), 10000);
+    }
+
+    dispose() {
+        if (this.telemetryIntervalId) {
+            clearInterval(this.telemetryIntervalId);
+            this.telemetryIntervalId = null;
+        }
+        this.browserQueues.clear();
+        this.drainLocks.clear();
     }
 
     enqueue(browserObj, command) {
@@ -188,7 +197,9 @@ export class ExecutionScheduler {
             return;
         }
 
-        this._drain(browserObj);
+        this._drain(browserObj).catch(err => {
+            logger.error(`[ExecutionScheduler] Unhandled drain error on [${browserId}]: ${err.message}`);
+        });
     }
 
     async _drain(browserObj) {
@@ -207,50 +218,56 @@ export class ExecutionScheduler {
                     break;
                 }
 
-                nextEntry.dequeueTime = Date.now();
-                nextEntry.queueDelay = nextEntry.dequeueTime - nextEntry.enqueueTime;
-                
-                this.telemetry.totalDequeued++;
-                this.telemetry.cumulativeQueueWait += nextEntry.queueDelay;
-                if (nextEntry.queueDelay > this.telemetry.maxQueueWait) {
-                    this.telemetry.maxQueueWait = nextEntry.queueDelay;
-                }
-
-                logger.info(`[Scheduler] Dispatching [${nextEntry.queueClass}] Command ${nextEntry.command.id} on [${browserId}] | QueueDelay: ${nextEntry.queueDelay}ms | Decision: ${nextEntry.schedulerDecision}`);
-
-                const finalCommand = new Command({
-                    category: nextEntry.command.category,
-                    type: nextEntry.command.type,
-                    target: nextEntry.command.target,
-                    source: nextEntry.command.source,
-                    executionMode: nextEntry.command.executionMode,
-                    version: nextEntry.command.version,
-                    lifecycle: nextEntry.command.lifecycle,
-                    id: nextEntry.command.id,
-                    captureTime: nextEntry.command.captureTime,
-                    creationTime: nextEntry.command.creationTime,
-                    payload: nextEntry.command.payload,
-                    metadata: {
-                        ...nextEntry.command.metadata,
-                        scheduler: {
-                            enqueueTime: nextEntry.enqueueTime,
-                            dequeueTime: nextEntry.dequeueTime,
-                            queueDelay: nextEntry.queueDelay,
-                            queueClass: nextEntry.queueClass,
-                            priority: nextEntry.priority,
-                            decision: nextEntry.schedulerDecision
-                        }
-                    }
-                });
-
                 try {
+                    nextEntry.dequeueTime = Date.now();
+                    nextEntry.queueDelay = nextEntry.dequeueTime - nextEntry.enqueueTime;
+                    
+                    this.telemetry.totalDequeued++;
+                    this.telemetry.cumulativeQueueWait += nextEntry.queueDelay;
+                    if (nextEntry.queueDelay > this.telemetry.maxQueueWait) {
+                        this.telemetry.maxQueueWait = nextEntry.queueDelay;
+                    }
+
+                    logger.info(`[Scheduler] Dispatching [${nextEntry.queueClass}] Command ${nextEntry.command.id} on [${browserId}] | QueueDelay: ${nextEntry.queueDelay}ms | Decision: ${nextEntry.schedulerDecision}`);
+
+                    const finalCommand = new Command({
+                        category: nextEntry.command.category,
+                        type: nextEntry.command.type,
+                        target: nextEntry.command.target,
+                        source: nextEntry.command.source,
+                        executionMode: nextEntry.command.executionMode,
+                        version: nextEntry.command.version,
+                        lifecycle: nextEntry.command.lifecycle,
+                        id: nextEntry.command.id,
+                        captureTime: nextEntry.command.captureTime,
+                        creationTime: nextEntry.command.creationTime,
+                        payload: nextEntry.command.payload,
+                        metadata: {
+                            ...nextEntry.command.metadata,
+                            scheduler: {
+                                enqueueTime: nextEntry.enqueueTime,
+                                dequeueTime: nextEntry.dequeueTime,
+                                queueDelay: nextEntry.queueDelay,
+                                queueClass: nextEntry.queueClass,
+                                priority: nextEntry.priority,
+                                decision: nextEntry.schedulerDecision
+                            }
+                        }
+                    });
+
                     await this.simulator.execute(browserObj, finalCommand);
                 } catch(e) {
-                    logger.error(`[Scheduler] Execution failed for ${finalCommand.id}: ${e.message}`);
+                    logger.error(`[Scheduler] Failed to process entry for ${nextEntry?.command?.id ?? 'unknown'}: ${e.message}`);
                 }
             }
         } finally {
             this.drainLocks.delete(browserId);
+        }
+    }
+
+    async waitForIdle(browserId) {
+        while (this.drainLocks.has(browserId)) {
+            await new Promise(r => setTimeout(r, 10));
         }
     }
 

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { logger } from '../../config.mjs';
@@ -8,26 +9,27 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export class MacroEngine {
-    constructor(simulator) {
+    constructor(simulator, scheduler) {
         this.simulator = simulator;
+        this.scheduler = scheduler;
         this.sequencesDir = path.join(__dirname, '..', '..', '..', 'sequences');
     }
 
-    loadSequence(name) {
+    async loadSequence(name) {
         const safeName = path.basename(name);
         const fileName = (safeName.startsWith('seq_') || safeName === 'startup') ? `${safeName}.json` : `seq_${safeName}.json`;
         const seqFile = path.join(this.sequencesDir, fileName);
-        if (fs.existsSync(seqFile)) {
-            try {
-                const rawSequence = JSON.parse(fs.readFileSync(seqFile, 'utf-8'));
-                return rawSequence.map(action => new Command({
-                    category: 'Execution',
-                    type: action.type,
-                    payload: action,
-                    source: `MacroEngine [${name}]`,
-                    executionMode: 'SLAVES_ONLY'
-                }));
-            } catch (err) {
+        try {
+            const rawSequence = JSON.parse(await fsPromises.readFile(seqFile, 'utf-8'));
+            return rawSequence.map(action => new Command({
+                category: 'Execution',
+                type: action.type,
+                payload: action,
+                source: `MacroEngine [${name}]`,
+                executionMode: 'SLAVES_ONLY'
+            }));
+        } catch (err) {
+            if (err.code !== 'ENOENT') {
                 logger.error(`Error parsing ${seqFile}:`, err.message);
             }
         }
@@ -69,8 +71,8 @@ export class MacroEngine {
         logger.info('Executing macro...');
         const executionPromises = targetBrowsers.map(async (b) => {
             for (const command of commands) {
-                const success = await this.simulator.execute(b, command);
-                if (!success) break;
+                this.scheduler.enqueue(b, command);
+                await this.scheduler.waitForIdle(b.id);
             }
         });
         await Promise.allSettled(executionPromises);

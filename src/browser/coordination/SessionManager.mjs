@@ -1,8 +1,10 @@
 import fs from 'node:fs';
+import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { logger } from '../../config.mjs';
 import { encrypt, decrypt } from '../../utils/crypto.mjs';
+import { raceWithCleanup } from '../../utils/playwright.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,7 +28,7 @@ export class SessionManager {
         const sessionFile = path.join(this.sessionsDir, `${username}.json`);
         if (fs.existsSync(sessionFile)) {
             try {
-                const fileData = JSON.parse(fs.readFileSync(sessionFile, 'utf-8'));
+                const fileData = JSON.parse(await fsPromises.readFile(sessionFile, 'utf-8'));
                 let cookies;
                 let wasLegacy = false;
                 if (fileData && fileData.iv && fileData.authTag) {
@@ -123,8 +125,8 @@ export class SessionManager {
             await page.goto('https://www.sportybet.com/ng/m/', { waitUntil: 'domcontentloaded' });
             
             const macroPath = path.join(__dirname, '..', '..', '..', 'sequences', 'login.json');
-            let macroContent = fs.readFileSync(macroPath, 'utf-8');
-            macroContent = macroContent.replace(/\{USERNAME\}/g, username).replace(/\{PASSWORD\}/g, password);
+            let macroContent = await fsPromises.readFile(macroPath, 'utf-8');
+            macroContent = macroContent.replace(/\{USERNAME\}/g, () => username).replace(/\{PASSWORD\}/g, () => password);
             const steps = JSON.parse(macroContent);
 
             for (const step of steps) {
@@ -148,16 +150,23 @@ export class SessionManager {
                 }
             }
 
-            const successPromise = page.waitForFunction(() => {
-                return window.loginStatus === true || !!document.querySelector('.m-balance, .m-avatar, [data-op="bottom-me"].active, .user-assets-panel, .m-user-wrapper');
-            }, { timeout: 15000 }).then(() => true);
+            const result = await raceWithCleanup(page, 
+                async () => {
+                    return await page.evaluate(() => {
+                        return window.loginStatus === true || !!document.querySelector('.m-balance, .m-avatar, [data-op="bottom-me"].active, .user-assets-panel, .m-user-wrapper');
+                    });
+                },
+                async () => {
+                    const el = await page.$('div.m-toast, div.m-error-msg, .error-message');
+                    if (el) return await el.textContent();
+                    return null;
+                },
+                15000
+            );
 
-            const errorPromise = page.waitForSelector('div.m-toast, div.m-error-msg, .error-message', { timeout: 15000 }).then(async (el) => {
-                const errText = await el.textContent();
-                throw new Error(`Login rejected by UI: ${errText.trim()}`);
-            });
-
-            await Promise.race([successPromise, errorPromise]);
+            if (result.outcome === 'error') {
+                throw new Error(`Login rejected by UI: ${result.message}`);
+            }
 
             logger.info(`Successfully logged in ${username} on [${id}]`);
             this.registry.updateState(id, 'Ready');
@@ -165,7 +174,9 @@ export class SessionManager {
         } catch (err) {
             logger.error(`Login failed for ${username} on [${id}]: ${err.message}`);
             try {
-                const screenshotPath = path.join(process.cwd(), `error_${id}_login.png`);
+                const screenshotsDir = path.join(process.cwd(), 'screenshots');
+                if (!fs.existsSync(screenshotsDir)) fs.mkdirSync(screenshotsDir, { recursive: true });
+                const screenshotPath = path.join(screenshotsDir, `error_${id}_login_${Date.now()}.png`);
                 await page.screenshot({ path: screenshotPath });
                 logger.info(`Saved error screenshot to ${screenshotPath}`);
             } catch (e) {}

@@ -1,6 +1,7 @@
 import { logger } from '../../config.mjs';
 import EventEmitter from 'node:events';
 import { LocatorResolver } from './LocatorResolver.mjs';
+import { LocatorResolutionError } from './errors.mjs';
 
 export class ActionSimulator extends EventEmitter {
     constructor() {
@@ -13,14 +14,13 @@ export class ActionSimulator extends EventEmitter {
         
         // Removed [Slave Receive] log since ExecutionScheduler now handles queue wait times,
         // and its [Scheduler] Dispatching log covers the execution initiation.
-        if (command.withLifecycle) command = command.withLifecycle('EXECUTING');
-        logger.info(`[Execute Start] Command ${command.id} on [${id}] | Latency (Receive->Start): ${startTime - command.creationTime}ms | Lifecycle: ${command.lifecycle || 'N/A'}`);
+        const lifecycle = 'EXECUTING';
+        logger.info(`[Execute Start] Command ${command.id} on [${id}] | Latency (Receive->Start): ${startTime - command.creationTime}ms | Lifecycle: ${lifecycle}`);
         try {
             let usedLocatorInfo = null;
 
-            if (command.version === 2) {
-                const { type, payload } = command;
-                const locators = payload.locators || [];
+            const { type, payload } = command;
+            const locators = payload.locators || [];
 
                 if (type === 'CLICK' || type === 'click') {
                     usedLocatorInfo = await LocatorResolver.execute(page, locators, 'click', async (loc) => await loc.click());
@@ -94,44 +94,22 @@ export class ActionSimulator extends EventEmitter {
                 } else if (type === 'add_style') {
                     await page.addStyleTag({ content: payload.content });
                 }
-            } else {
-                if (command.type === 'click') {
-                    await page.click(command.payload.selector, { timeout: 2000 });
-                } else if (command.type === 'input') {
-                    if (command.payload.delay) {
-                        await page.locator(command.payload.selector).fill('');
-                        await page.locator(command.payload.selector).pressSequentially(command.payload.value, { delay: command.payload.delay });
-                    } else {
-                        await page.fill(command.payload.selector, command.payload.value, { timeout: 2000 });
-                    }
-                } else if (command.type === 'navigate') {
-                    await page.goto(command.payload.url, { waitUntil: 'domcontentloaded' });
-                } else if (command.type === 'wait') {
-                    if (command.payload.selector) {
-                        await page.waitForSelector(command.payload.selector, { state: command.payload.state || 'visible', timeout: command.payload.timeout || 10000 });
-                    } else if (command.payload.timeout) {
-                        await page.waitForTimeout(command.payload.timeout);
-                    }
-                } else if (command.type === 'add_style') {
-                    await page.addStyleTag({ content: command.payload.content });
-                }
-            }
             
-            if (command.withLifecycle) command = command.withLifecycle('COMPLETED');
+            const lifecycle = 'COMPLETED';
             const locatorStr = usedLocatorInfo ? ` | Used Locator: [${usedLocatorInfo.strategy}] ${usedLocatorInfo.locator}` : '';
-            logger.info(`[Execute End] [Result: Success] Command ${command.id} [${command.type}] on [${id}] | Execution duration: ${Date.now() - startTime}ms${locatorStr} | Lifecycle: ${command.lifecycle || 'N/A'}`);
+            logger.info(`[Execute End] [Result: Success] Command ${command.id} [${command.type}] on [${id}] | Execution duration: ${Date.now() - startTime}ms${locatorStr} | Lifecycle: ${lifecycle}`);
 
             this.emit('ActionSuccess', { id, command });
             return true;
         } catch (err) {
-            if (command.withLifecycle) command = command.withLifecycle('FAILED');
+            const lifecycle = 'FAILED';
             
-            if (err.message && err.message.includes('LocatorResolver failed')) {
-                logger.warn(`[Interaction Failure] Command ${command.id} on slave [${id}]: ${err.message} | Execution duration: ${Date.now() - startTime}ms | Lifecycle: ${command.lifecycle || 'N/A'}`);
+            if (err instanceof LocatorResolutionError) {
+                logger.warn(`[Interaction Failure] Command ${command.id} on slave [${id}]: ${err.message} | Execution duration: ${Date.now() - startTime}ms | Lifecycle: ${lifecycle}`);
                 return false;
             }
 
-            logger.error(`[Execute End] [Result: Failure] Command ${command.id} on slave [${id}]: ${err.message} | Execution duration: ${Date.now() - startTime}ms | Lifecycle: ${command.lifecycle || 'N/A'}`);
+            logger.error(`[Execute End] [Result: Failure] Command ${command.id} on slave [${id}]: ${err.message} | Execution duration: ${Date.now() - startTime}ms | Lifecycle: ${lifecycle}`);
             this.emit('ActionFailure', { id, command, error: err });
             return false;
         }
