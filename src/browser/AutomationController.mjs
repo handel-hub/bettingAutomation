@@ -15,6 +15,7 @@ import {
     CommandReceiver,
     ActionDispatcher,
     ActionSimulator,
+    ExecutionScheduler,
     MacroEngine,
     WorkflowEngine
 } from './execution/index.mjs';
@@ -35,6 +36,7 @@ export class AutomationController {
         // --- Initialize Execution Subsystem ---
         this.commandReceiver = new CommandReceiver(settings);
         this.simulator = new ActionSimulator();
+        this.scheduler = new ExecutionScheduler(this.simulator);
         this.macroEngine = new MacroEngine(this.simulator);
         this.actionDispatcher = new ActionDispatcher(settings);
         this.lockManager = new AccountLockManager();
@@ -101,8 +103,7 @@ export class AutomationController {
                     await this.macroEngine.execute(sequence, targetBrowsers);
                 }
             } else {
-                const promises = targetBrowsers.map(b => this.simulator.execute(b, command));
-                await Promise.allSettled(promises);
+                targetBrowsers.forEach(b => this.scheduler.enqueue(b, command));
             }
         });
 
@@ -169,12 +170,11 @@ export class AutomationController {
             logger.info(`[Broadcast] Command ${command.id} [Navigation] | Latency (Capture->Broadcast): ${Date.now() - command.captureTime}ms`);
             const slaves = this.registry.getReadySlaves();
             logger.info(`Routing NavigationCommand to ${slaves.length} ready slaves: ${command.payload.url}`);
-            const promises = slaves.map(b => this.simulator.execute(b, command));
-            await Promise.allSettled(promises);
+            slaves.forEach(b => this.scheduler.enqueue(b, command));
         });
 
         this.commandRouter.register('Recovery', 'HEAL_REQUESTED', async (command) => {
-            this.simulator.clearQueue(command.target);
+            this.scheduler.clearQueue(command.target);
             await this.recoveryManager.heal(command.target);
         });
 
@@ -195,7 +195,7 @@ export class AutomationController {
         });
 
         this.commandRouter.register('Recovery', 'HEAL_FAILED', async (command) => {
-            this.simulator.clearQueue(command.target);
+            this.scheduler.clearQueue(command.target);
             logger.fatal(`CRITICAL: Slave [${command.target}] could not be recovered after ${command.payload.maxAttempts} attempts and is permanently dead!`);
         });
 

@@ -5,31 +5,14 @@ import { LocatorResolver } from './LocatorResolver.mjs';
 export class ActionSimulator extends EventEmitter {
     constructor() {
         super();
-        // One promise-chain tail per browser id. Both the live-mirroring
-        // path (AutomationController.handleExecution) and MacroEngine call
-        // execute() independently and can overlap on the same slave; this
-        // makes sure two commands never run concurrently on the same page,
-        // without blocking commands targeting *other* browsers at all.
-        this.queues = new Map();
     }
 
-    clearQueue(id) {
-        this.queues.delete(id);
-    }
-
-    execute(browserObj, command) {
-        const { id } = browserObj;
-        if (command.withLifecycle) command = command.withLifecycle('RECEIVED');
-        logger.info(`[Slave Receive] Command ${command.id} for [${id}] | Latency (Creation->Receive): ${Date.now() - command.creationTime}ms | Lifecycle: ${command.lifecycle || 'N/A'}`);
-        const prior = this.queues.get(id) ?? Promise.resolve();
-        const run = prior.then(() => this.runCommand(browserObj, command));
-        this.queues.set(id, run);
-        return run;
-    }
-
-    async runCommand(browserObj, command) {
+    async execute(browserObj, command) {
         const startTime = Date.now();
         const { id, page } = browserObj;
+        
+        // Removed [Slave Receive] log since ExecutionScheduler now handles queue wait times,
+        // and its [Scheduler] Dispatching log covers the execution initiation.
         if (command.withLifecycle) command = command.withLifecycle('EXECUTING');
         logger.info(`[Execute Start] Command ${command.id} on [${id}] | Latency (Receive->Start): ${startTime - command.creationTime}ms | Lifecycle: ${command.lifecycle || 'N/A'}`);
         try {
