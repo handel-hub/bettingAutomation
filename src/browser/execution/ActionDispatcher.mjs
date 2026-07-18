@@ -51,8 +51,55 @@ export class ActionDispatcher extends EventEmitter {
             this.emit('Command', command);
         });
 
+        const pipelineFiles = [
+            'models/ValidationResult.mjs',
+            'models/RankingResult.mjs',
+            'models/LocatorCandidate.mjs',
+            'engine/PipelineContext.mjs',
+            'engine/PipelineStep.mjs',
+            'extraction/FeatureExtractor.mjs',
+            'generation/strategies/DataAttributeStrategy.mjs',
+            'generation/strategies/TextStrategy.mjs',
+            'generation/strategies/AriaStrategy.mjs',
+            'generation/strategies/RoleStrategy.mjs',
+            'generation/strategies/SemanticClassStrategy.mjs',
+            'generation/strategies/StructuralStrategy.mjs',
+            'generation/CandidateGenerator.mjs',
+            'generation/CandidateDeduplicator.mjs',
+            'validation/CandidateValidator.mjs',
+            'validation/StructuralAnalyzer.mjs',
+            'ranking/RankingRule.mjs',
+            'ranking/RankingRules/BaseScoreRule.mjs',
+            'ranking/RankingRules/DynamicContentRule.mjs',
+            'ranking/RankingRules/ValidationConfidenceRule.mjs',
+            'ranking/RankingRules/SpecificityRule.mjs',
+            'ranking/RankingRules/ComplexityRule.mjs',
+            'ranking/RankingRules/StructuralRule.mjs',
+            'ranking/RankingRules/VisibilityRule.mjs',
+            'ranking/RankingRules/CorroborationRule.mjs',
+            'ranking/RankingConfig.mjs',
+            'ranking/RankingEngine.mjs',
+            'serialization/LocatorSerializer.mjs',
+            'telemetry/RollingWindow.mjs',
+            'telemetry/MetricsRegistry.mjs',
+            'telemetry/TelemetryCollector.mjs',
+            'engine/LocatorIntelligenceEngine.mjs'
+        ];
+
+        let locatorIntelligenceCode = '';
+        for (const file of pipelineFiles) {
+            const filePath = path.join(__dirname, 'locatorIntelligence', file);
+            let content = fs.readFileSync(filePath, 'utf8');
+            // Strip 'export ' and 'import '
+            content = content.replace(/^\uFEFF/, '')
+                             .replace(/^export\s+/gm, '')
+                             .replace(/^import\s+.*$/gm, '');
+            locatorIntelligenceCode += content + '\n\n';
+        }
+
         const scriptContent = `
             (() => {
+            const locatorIntelligencePipelineStart = Date.now();
             function generateUUID() {
                 return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
                     var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
@@ -61,312 +108,9 @@ export class ActionDispatcher extends EventEmitter {
             }
 
             // --------------------------------------------------------
-            // LOCATOR INTELLIGENCE ENGINE (STAGE 2)
+            // LOCATOR INTELLIGENCE ENGINE (STAGE 2.1 - PIPELINE)
             // --------------------------------------------------------
-            class LocatorCandidate {
-                constructor({ strategy, locator, rankingScore = 0, reason = '', features = {}, metadata = {}, rank = 0, state = 'GENERATED' }) {
-                    this.id = 'lc-' + generateUUID().split('-')[0];
-                    this.strategy = strategy;
-                    this.locator = locator;
-                    this.rankingScore = rankingScore;
-                    this.reason = reason;
-                    this.features = features;
-                    this.metadata = metadata;
-                    this.generationTime = Date.now();
-                    this.rank = rank;
-                    this.state = state;
-                }
-            }
-
-            class FeatureExtractor {
-                static extract(el) {
-                    if (!(el instanceof Element)) return null;
-                    
-                    const features = {
-                        id: el.id || '',
-                        className: typeof el.className === 'string' ? el.className : '',
-                        tagName: el.nodeName.toLowerCase(),
-                        text: '',
-                        dataOps: {},
-                        ariaLabel: el.getAttribute('aria-label') || '',
-                        role: el.getAttribute('role') || '',
-                        href: el.getAttribute('href') || '',
-                        src: el.getAttribute('src') || '',
-                        alt: el.getAttribute('alt') || '',
-                        placeholder: el.getAttribute('placeholder') || '',
-                        name: el.getAttribute('name') || '',
-                        type: el.getAttribute('type') || '',
-                        rect: null,
-                        isIntersecting: true, // fallback heuristic
-                        isIframe: false
-                    };
-
-                    // Extract text carefully excluding scripts/styles
-                    let textContent = '';
-                    for (const node of el.childNodes) {
-                        if (node.nodeType === Node.TEXT_NODE) {
-                            textContent += node.textContent;
-                        } else if (node.nodeType === Node.ELEMENT_NODE) {
-                            const tag = node.nodeName.toLowerCase();
-                            if (tag !== 'script' && tag !== 'style') {
-                                textContent += node.innerText || node.textContent || '';
-                            }
-                        }
-                    }
-                    features.text = textContent.trim().replace(/\s+/g, ' ');
-
-                    const dataAttrs = ['data-op', 'data-testid', 'data-id', 'data-action'];
-                    for (const attr of dataAttrs) {
-                        const val = el.getAttribute(attr);
-                        if (val) features.dataOps[attr] = val;
-                    }
-
-                    try {
-                        features.rect = el.getBoundingClientRect();
-                        features.isIntersecting = (features.rect.width > 0 && features.rect.height > 0);
-                    } catch (e) {}
-
-                    return features;
-                }
-            }
-
-            class DataAttributeStrategy {
-                static generate(el, features) {
-                    let candidates = [];
-                    for (const [attr, val] of Object.entries(features.dataOps)) {
-                        candidates.push(new LocatorCandidate({
-                            strategy: 'DataAttributeStrategy',
-                            locator: '[' + attr + '="' + CSS.escape(val) + '"]',
-                            features,
-                            reason: 'Matches ' + attr
-                        }));
-                    }
-                    return candidates;
-                }
-            }
-
-            class TextStrategy {
-                static generate(el, features) {
-                    if (features.text && features.text.length > 0 && features.text.length < 50) {
-                        return [new LocatorCandidate({
-                            strategy: 'TextStrategy',
-                            locator: 'text="' + features.text.replace(/"/g, '\\"') + '"',
-                            features,
-                            reason: 'Visible short text'
-                        })];
-                    }
-                    return [];
-                }
-            }
-
-            class AriaStrategy {
-                static generate(el, features) {
-                    if (features.ariaLabel) {
-                        return [new LocatorCandidate({
-                            strategy: 'AriaStrategy',
-                            locator: '[aria-label="' + CSS.escape(features.ariaLabel) + '"]',
-                            features,
-                            reason: 'Has aria-label'
-                        })];
-                    }
-                    return [];
-                }
-            }
-
-            class RoleStrategy {
-                static generate(el, features) {
-                    if (features.role) {
-                        let loc = 'role=' + CSS.escape(features.role);
-                        if (features.name && features.name.length < 50) {
-                            loc += '[name="' + features.name.replace(/"/g, '\\"') + '"]';
-                        }
-                        return [new LocatorCandidate({
-                            strategy: 'RoleStrategy',
-                            locator: loc,
-                            features,
-                            reason: 'Has explicit role'
-                        })];
-                    }
-                    return [];
-                }
-            }
-
-            class SemanticClassStrategy {
-                static generate(el, features) {
-                    if (!features.className) return [];
-                    const classes = features.className.trim().split(/\s+/).filter(c => {
-                        if (/^[a-z0-9]{5,8}$/i.test(c)) return false; 
-                        if (/^(p|m|w|h|text|bg|flex|items|justify|hover|focus|active)-/.test(c)) return false; 
-                        if (c.includes(':')) return false; 
-                        return true;
-                    });
-                    if (classes.length > 0) {
-                        const selector = features.tagName + '.' + classes.map(c => CSS.escape(c)).join('.');
-                        return [new LocatorCandidate({
-                            strategy: 'SemanticClassStrategy',
-                            locator: selector,
-                            features,
-                            reason: 'Semantic class combination'
-                        })];
-                    }
-                    return [];
-                }
-            }
-
-            class StructuralStrategy {
-                static generate(el, features) {
-                    let current = el;
-                    let isBad = false;
-                    const adRegex = /(^|[\s_-])ad(s|v|vertisement|banner)?([\s_-]|$)/i;
-                    
-                    while (current && current !== document) {
-                        if (current.tagName === 'IFRAME') { isBad = true; break; }
-                        const className = (typeof current.className === 'string') ? current.className : '';
-                        const id = (typeof current.id === 'string') ? current.id : '';
-                        if (adRegex.test(className) || adRegex.test(id)) { isBad = true; break; }
-                        current = current.parentNode;
-                    }
-                    if (isBad) return [];
-                    
-                    let path = [];
-                    current = el;
-                    let depth = 0;
-                    while (current && current.nodeType === Node.ELEMENT_NODE && depth < 10) {
-                        let selector = current.nodeName.toLowerCase();
-                        if (current.id && !/\d+/.test(current.id)) {
-                            selector += '#' + CSS.escape(current.id);
-                            path.unshift(selector);
-                            break;
-                        } else {
-                            let sib = current, nth = 1;
-                            while (sib = sib.previousElementSibling) {
-                                if (sib.nodeName.toLowerCase() == selector) nth++;
-                            }
-                            if (nth != 1) selector += ":nth-of-type("+nth+")";
-                        }
-                        path.unshift(selector);
-                        current = current.parentNode;
-                        depth++;
-                    }
-                    if (path.length === 0) return [];
-                    return [new LocatorCandidate({
-                        strategy: 'StructuralStrategy',
-                        locator: path.join(" > "),
-                        features,
-                        reason: 'Absolute structural path'
-                    })];
-                }
-            }
-
-            const RankingConfig = {
-                weights: {
-                    DataAttributeStrategy: 100,
-                    AriaStrategy: 95,
-                    RoleStrategy: 90,
-                    TextStrategy: 85,
-                    SemanticClassStrategy: 70,
-                    StructuralStrategy: 40
-                },
-                penalties: {
-                    hidden: -30
-                }
-            };
-
-            class RankingEngine {
-                static rank(candidates) {
-                    let ranked = [];
-                    for (let c of candidates) {
-                        c.state = 'RANKED';
-                        let score = RankingConfig.weights[c.strategy] || 0;
-                        
-                        // Heuristic Penalties
-                        if (!c.features.isIntersecting) {
-                            score += RankingConfig.penalties.hidden;
-                            c.reason += ' | Penalty: Hidden';
-                        }
-                        if (c.strategy === 'StructuralStrategy') {
-                            const depth = c.locator.split('>').length;
-                            score -= (depth * 2); // Deeper = worse
-                        }
-
-                        c.rankingScore = Math.max(0, score);
-                        ranked.push(c);
-                    }
-                    
-                    // Sort descending
-                    ranked.sort((a, b) => b.rankingScore - a.rankingScore);
-                    ranked.forEach((c, idx) => c.rank = idx + 1);
-                    return ranked;
-                }
-            }
-
-            class CandidateGenerator {
-                static generate(el, features) {
-                    let candidates = [];
-                    const strategies = [
-                        DataAttributeStrategy, TextStrategy, AriaStrategy, RoleStrategy, 
-                        SemanticClassStrategy, StructuralStrategy
-                    ];
-
-                    for (const strat of strategies) {
-                        try {
-                            candidates.push(...strat.generate(el, features));
-                        } catch (e) {
-                            console.warn('[CandidateGenerator] Strategy failed', e);
-                        }
-                    }
-
-                    // Deduplicate
-                    const uniqueMap = new Map();
-                    for (let c of candidates) {
-                        let norm = c.locator.trim();
-                        if (!uniqueMap.has(norm)) {
-                            uniqueMap.set(norm, c);
-                        } else {
-                            let existing = uniqueMap.get(norm);
-                            existing.reason += ' | Also matched by ' + c.strategy;
-                        }
-                    }
-                    return Array.from(uniqueMap.values());
-                }
-            }
-
-            class LocatorSerializer {
-                static serialize(candidates, startTime) {
-                    return {
-                        locators: candidates.map(c => ({
-                            id: c.id,
-                            strategy: c.strategy,
-                            locator: c.locator,
-                            rankingScore: c.rankingScore,
-                            reason: c.reason,
-                            rank: c.rank,
-                            state: c.state
-                        })),
-                        metadata: {
-                            locatorVersion: 'v2',
-                            rankingVersion: 'v1',
-                            strategyVersion: 'v1',
-                            generationMetrics: {
-                                durationMs: Date.now() - startTime,
-                                candidateCount: candidates.length
-                            }
-                        }
-                    };
-                }
-            }
-
-            class LocatorIntelligenceEngine {
-                static process(el) {
-                    const start = Date.now();
-                    const features = FeatureExtractor.extract(el);
-                    if (!features) return { locators: [], metadata: {} };
-                    
-                    const generated = CandidateGenerator.generate(el, features);
-                    const ranked = RankingEngine.rank(generated);
-                    return LocatorSerializer.serialize(ranked, start);
-                }
-            }
+            ${locatorIntelligenceCode}
             // --------------------------------------------------------
 
             function sendExecution(type, payload) {
@@ -412,9 +156,12 @@ export class ActionDispatcher extends EventEmitter {
                     };
 
                     if (data.target && ['CLICK', 'DOUBLE_CLICK', 'DRAG', 'INPUT'].includes(type)) {
-                        const resolution = LocatorIntelligenceEngine.process(data.target);
-                        payload.locators = resolution.locators;
-                        payload.locatorMetadata = resolution.metadata;
+                        const engine = new LocatorIntelligenceEngine();
+                        const resolution = engine.process(data.target);
+                        if (resolution) {
+                            payload.locators = resolution.locators;
+                            payload.locatorMetadata = resolution.metadata;
+                        }
                     }
 
                     if (data.coordinates) payload.coordinates = data.coordinates;
@@ -674,6 +421,8 @@ export class ActionDispatcher extends EventEmitter {
             });
             })();
         `;
+        
+        fs.writeFileSync(path.join(__dirname, 'debug_injected.js'), scriptContent);
         
         await masterPage.addInitScript(scriptContent);
         await masterPage.evaluate(scriptContent).catch(err => logger.warn('Failed to immediately evaluate ActionDispatcher script: ' + err.message));

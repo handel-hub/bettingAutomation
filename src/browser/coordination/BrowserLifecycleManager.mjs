@@ -1,6 +1,10 @@
 import { chromium } from 'playwright-extra';
 import { devices } from 'playwright';
 import { logger } from '../../config.mjs';
+import { BrowserStateRegistry } from '../synchronization/BrowserStateRegistry.mjs';
+import { LifecycleState } from '../synchronization/models/BrowserStateModel.mjs';
+import { Capabilities } from '../synchronization/capabilities.mjs';
+
 
 export class BrowserLifecycleManager {
     constructor(registry, settings, stealthEngine = null) {
@@ -105,6 +109,13 @@ export class BrowserLifecycleManager {
             }
             
             this.registry.register(id, role, browser, context, page, { proxyUrl, username });
+            
+            BrowserStateRegistry.update(id, {
+                lifecycleState: LifecycleState.READY,
+                capabilities: {
+                    [Capabilities.CONNECTED]: true
+                }
+            });
             
             return { browser, context, page };
         } catch (err) {

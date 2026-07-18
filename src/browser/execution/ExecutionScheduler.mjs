@@ -1,5 +1,9 @@
 import { logger } from '../../config.mjs';
 import { Command } from './Command.mjs';
+import { ExecutionContext } from './ExecutionContext.mjs';
+import { SynchronizationProfiles } from '../synchronization/profiles/SynchronizationProfiles.mjs';
+import { SynchronizationBarrier } from '../synchronization/SynchronizationBarrier.mjs';
+
 
 export class ClassificationPolicy {
     static classify(command) {
@@ -254,6 +258,28 @@ export class ExecutionScheduler {
                             }
                         }
                     });
+
+                    // Wrap in ExecutionContext
+                    const context = new ExecutionContext(finalCommand);
+                    
+                    // Map profile
+                    const commandType = finalCommand.type ? finalCommand.type.toLowerCase() : 'default';
+                    const profile = SynchronizationProfiles[commandType] || SynchronizationProfiles.default;
+                    const deadline = Date.now() + profile.timeoutMs;
+
+                    // Barrier wait
+                    const barrierResult = await SynchronizationBarrier.wait({
+                        browserId,
+                        profile,
+                        context,
+                        deadline
+                    });
+
+                    if (barrierResult.status !== 'PASSED') {
+                        logger.error(`[Scheduler] Barrier failed for Command ${finalCommand.id} on [${browserId}]. Status: ${barrierResult.status}, Blocking: ${barrierResult.blockingCapability}`);
+                        // Handle barrier failure explicitly (drop command, or recovery coordinator)
+                        continue;
+                    }
 
                     await this.simulator.execute(browserObj, finalCommand);
                 } catch(e) {

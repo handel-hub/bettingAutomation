@@ -7,148 +7,169 @@ import {
     DisabledError,
     SyntaxError
 } from './errors.mjs';
+import { DefaultPolicy } from './locatorIntelligence/resolution/ResolutionPolicy.mjs';
+import { ResolutionContext, ResolutionState } from './locatorIntelligence/resolution/ResolutionContext.mjs';
+import { getValidationProfile } from './locatorIntelligence/resolution/ValidationProfile.mjs';
+import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCollector.mjs';
 
 export class ResolutionResult {
-    constructor({ success, playwrightLocator, locator, candidate, strategy, duration, attempts, retries, failureReason, candidateFailures }) {
+    constructor({ success, playwrightLocator, locator, candidate, strategy, duration, resolutionCycles, failureReason, winningCandidate, winningStrategy, winningScore, totalCandidates, exhaustedCandidates, telemetry }) {
         this.success = success;
         this.playwrightLocator = playwrightLocator; // Playwright Locator instance
         this.locator = locator; // String locator for logging
         this.candidate = candidate; // Candidate metadata
         this.strategy = strategy;
+        
         this.duration = duration;
-        this.attempts = attempts;
-        this.retries = retries;
+        this.resolutionCycles = resolutionCycles;
         this.failureReason = failureReason;
-        this.candidateFailures = candidateFailures || []; // structured rejection telemetry
+        
+        this.winningCandidate = winningCandidate;
+        this.winningStrategy = winningStrategy;
+        this.winningScore = winningScore;
+        this.totalCandidates = totalCandidates;
+        this.exhaustedCandidates = exhaustedCandidates;
+        this.telemetry = telemetry || []; // structured rejection telemetry (ResolutionContext[])
     }
 }
 
 export class LocatorResolver {
-    static RETRY_POLICY = {
-        globalTimeoutMs: 2500,
-        retryIntervalMs: 50,
-        maxAttempts: 50
-    };
-
     /**
-     * Resolves the safest actionable locator from a list of candidates using a Global Retry Loop.
+     * Resolves the safest actionable locator from a list of candidates using an Adaptive Decision Engine.
      */
-    static async resolve(page, candidates, interactionType) {
+    static async resolve(page, candidates, interactionType, policy = DefaultPolicy) {
         const startTime = Date.now();
         if (!candidates || candidates.length === 0) {
             return new ResolutionResult({ success: false, failureReason: '[LF-003] Generation Failure: No candidates provided' });
         }
         
-        let attempts = 0;
-        let retries = 0;
-        const neverAttachedCounts = new Map();
-        const SKIP_THRESHOLD = 5;
-        let candidateFailures = [];
+        const profile = getValidationProfile(interactionType);
+        const contexts = candidates.map(c => new ResolutionContext(c, policy));
+        let resolutionCycles = 0;
         
-        while ((Date.now() - startTime) < this.RETRY_POLICY.globalTimeoutMs && retries < this.RETRY_POLICY.maxAttempts) {
-            candidateFailures = []; // Reset candidate failure log for each full loop iteration
+        while ((Date.now() - startTime) < policy.limits.globalTimeoutMs) {
+            resolutionCycles++;
             
-            for (const candidate of candidates) {
-                const neverCount = neverAttachedCounts.get(candidate.locator) || 0;
-                if (neverCount >= SKIP_THRESHOLD) {
-                    candidateFailures.push({ rank: candidate.rank, confidence: candidate.rankingScore, strategy: candidate.strategy, failure: new NotAttachedError('Pruned (never attached)') });
-                    continue;
-                }
-
-                attempts++;
-                let locator;
+            // Sort active candidates by current confidence (descending)
+            const activeContexts = contexts
+                .filter(ctx => ctx.isActive())
+                .sort((a, b) => b.currentConfidence - a.currentConfidence);
+                
+            if (activeContexts.length === 0) {
+                const duration = Date.now() - startTime;
+                const failureReason = `[LF-505] All Candidates Exhausted (${duration}ms)\n${this._formatTelemetry(contexts, policy)}`;
+                logger.warn(`[LocatorResolver] ${failureReason}`);
+                const result = new ResolutionResult({ 
+                    success: false, duration, resolutionCycles, failureReason, 
+                    totalCandidates: candidates.length, exhaustedCandidates: contexts.length,
+                    telemetry: policy.telemetry.debug ? contexts : contexts.map(c => ({ rank: c.candidate.rank, strategy: c.candidate.strategy, attempts: c.attempts, state: c.state, lastFailure: c.lastFailure })) 
+                });
+                TelemetryCollector.recordResolution(result);
+                return result;
+            }
+            
+            for (const ctx of activeContexts) {
+                ctx.transitionTo(ResolutionState.VALIDATING);
+                ctx.recordAttempt();
+                
                 try {
-                    locator = page.locator(candidate.locator);
-                } catch (err) {
-                    // Playwright Syntax Error
-                    logger.debug(`[LocatorResolver] Syntax error testing candidate ${candidate.locator}: ${err.message}`);
-                    candidateFailures.push({ rank: candidate.rank, confidence: candidate.rankingScore, strategy: candidate.strategy, failure: new SyntaxError(err.message) });
-                    continue;
-                }
+                    let locator;
+                    try {
+                        locator = page.locator(ctx.candidate.locator);
+                    } catch (err) {
+                        throw new SyntaxError(err.message);
+                    }
                     
-                try {
                     // 1. Attach Check
-                    const count = await locator.count();
-                    if (count === 0) {
-                        neverAttachedCounts.set(candidate.locator, neverCount + 1);
-                        candidateFailures.push({ rank: candidate.rank, confidence: candidate.rankingScore, strategy: candidate.strategy, failure: new NotAttachedError(`Count: 0`) });
-                        continue;
+                    if (profile.includes('located')) {
+                        const count = await locator.count();
+                        if (count === 0) throw new NotAttachedError(`Count: 0`);
+                        if (count > 1) {
+                            logger.warn(`[LF-102] AmbiguousMatchError: Locator resolved to ${count} elements. Falling back to .first() | Strategy: ${ctx.candidate.strategy} | Locator: ${ctx.candidate.locator}`);
+                        }
+                        locator = locator.first();
+                        ctx.transitionTo(ResolutionState.LOCATED);
+                    } else {
+                        locator = locator.first();
                     }
-                    neverAttachedCounts.set(candidate.locator, 0);
-
-                    // Ambiguity Guard (LF-102)
-                    if (count > 1) {
-                        logger.warn(`[LF-102] AmbiguousMatchError: Locator resolved to ${count} elements. Falling back to .first() | Strategy: ${candidate.strategy} | Locator: ${candidate.locator}`);
-                    }
-                    
-                    const target = locator.first();
                     
                     // 2. Visibility Check
-                    const isVisible = await target.isVisible();
-                    if (!isVisible) {
-                        logger.debug(`[LocatorResolver] Attempt ${attempts}: [${candidate.strategy}] ${candidate.locator} | Attached: Yes | Visible: No`);
-                        candidateFailures.push({ rank: candidate.rank, confidence: candidate.rankingScore, strategy: candidate.strategy, failure: new HiddenError('Visible: No') });
-                        continue;
+                    if (profile.includes('visible')) {
+                        if (!(await locator.isVisible())) throw new HiddenError('Visible: No');
+                        ctx.transitionTo(ResolutionState.VISIBLE);
                     }
-
-                    // 3. Actionability Check
-                    const actionableInteractions = ['click', 'dblclick', 'drag start', 'input', 'keyboard', 'pointerdown'];
-                    if (actionableInteractions.includes(interactionType)) {
-                        const isEnabled = await target.isEnabled();
-                        if (!isEnabled) {
-                            logger.debug(`[LocatorResolver] Attempt ${attempts}: [${candidate.strategy}] ${candidate.locator} | Attached: Yes | Visible: Yes | Actionable: No`);
-                            candidateFailures.push({ rank: candidate.rank, confidence: candidate.rankingScore, strategy: candidate.strategy, failure: new DisabledError('Enabled: No') });
-                            continue;
-                        }
-                    }
-
-                    // 4. Interaction Validation & Selection
-                    const duration = Date.now() - startTime;
-                    // Log resolution specifically (separated from execution)
-                    logger.info(`[LocatorResolver] Resolved in ${duration}ms (Attempt ${attempts}, Retry ${retries}) using [${candidate.strategy}] (Confidence: ${candidate.rankingScore})`);
                     
-                    return new ResolutionResult({
+                    // 3. Actionability Check
+                    if (profile.includes('enabled')) {
+                        if (!(await locator.isEnabled())) throw new DisabledError('Enabled: No');
+                        ctx.transitionTo(ResolutionState.ACTIONABLE);
+                    }
+                    
+                    // Success
+                    ctx.transitionTo(ResolutionState.RESOLVED);
+                    const duration = Date.now() - startTime;
+                    logger.info(`[LocatorResolver] Resolved in ${duration}ms (Cycle ${resolutionCycles}, Attempts ${ctx.attempts}) using [${ctx.candidate.strategy}] (Final Confidence: ${ctx.currentConfidence.toFixed(1)})`);
+                    
+                    const result = new ResolutionResult({
                         success: true,
-                        playwrightLocator: target,
-                        locator: candidate.locator,
-                        candidate: candidate,
-                        strategy: candidate.strategy,
+                        playwrightLocator: locator,
+                        locator: ctx.candidate.locator,
+                        candidate: ctx.candidate,
+                        strategy: ctx.candidate.strategy,
                         duration,
-                        attempts,
-                        retries
+                        resolutionCycles,
+                        winningCandidate: ctx.candidate,
+                        winningStrategy: ctx.candidate.strategy,
+                        winningScore: ctx.currentConfidence,
+                        totalCandidates: candidates.length,
+                        exhaustedCandidates: contexts.filter(c => c.state === ResolutionState.EXHAUSTED).length,
+                        telemetry: policy.telemetry.debug ? contexts : contexts.map(c => ({ rank: c.candidate.rank, strategy: c.candidate.strategy, attempts: c.attempts, state: c.state, lastFailure: c.lastFailure }))
                     });
-
+                    TelemetryCollector.recordResolution(result);
+                    return result;
+                    
                 } catch (err) {
-                    logger.debug(`[LocatorResolver] Unexpected error testing candidate ${candidate.locator}: ${err.message}`);
-                    candidateFailures.push({ rank: candidate.rank, confidence: candidate.rankingScore, strategy: candidate.strategy, failure: err });
-                    continue;
+                    const isTerminal = !policy.retry.retryableFailures.includes(err.name);
+                    if (isTerminal) {
+                        logger.debug(`[LocatorResolver] Terminal error testing candidate ${ctx.candidate.locator}: ${err.message}`);
+                    } else {
+                        logger.debug(`[LocatorResolver] Cycle ${resolutionCycles} Attempt ${ctx.attempts}: [${ctx.candidate.strategy}] ${ctx.candidate.locator} | Error: ${err.message}`);
+                    }
+                    ctx.recordFailure(err, isTerminal);
                 }
             }
-
-            // Sleep before retrying the pipeline
-            retries++;
-            await new Promise(r => setTimeout(r, this.RETRY_POLICY.retryIntervalMs));
+            
+            await new Promise(r => setTimeout(r, policy.limits.retryIntervalMs));
         }
         
-        const failureCode = (retries >= this.RETRY_POLICY.maxAttempts) ? '[LF-505] Max Attempts Reached' : '[LF-504] Global Timeout';
-        let failureReason = `${failureCode} (${Date.now() - startTime}ms)\nCandidates:`;
-        
-        for (const cf of candidateFailures) {
-            const code = cf.failure.code || 'UNKNOWN';
-            const name = cf.failure.name || 'Error';
-            failureReason += `\n  - Rank ${cf.rank || '?'} | Confidence: ${cf.confidence || '?'}% | Type: ${cf.strategy} | Failure: [${code}] ${name}`;
-        }
-        
+        const duration = Date.now() - startTime;
+        const failureReason = `[LF-504] Global Timeout (${duration}ms)\n${this._formatTelemetry(contexts, policy)}`;
         logger.warn(`[LocatorResolver] ${failureReason}`);
-        
-        return new ResolutionResult({
-            success: false,
-            duration: Date.now() - startTime,
-            attempts,
-            retries,
-            failureReason,
-            candidateFailures
+        const result = new ResolutionResult({ 
+            success: false, duration, resolutionCycles, failureReason, 
+            totalCandidates: candidates.length, exhaustedCandidates: contexts.filter(c => c.state === ResolutionState.EXHAUSTED).length,
+            telemetry: policy.telemetry.debug ? contexts : contexts.map(c => ({ rank: c.candidate.rank, strategy: c.candidate.strategy, attempts: c.attempts, state: c.state, lastFailure: c.lastFailure }))
         });
+        TelemetryCollector.recordResolution(result);
+        return result;
+    }
+    
+    static _formatTelemetry(contexts, policy) {
+        let log = 'Candidates:';
+        for (const ctx of contexts) {
+            const code = ctx.lastFailure?.code || 'UNKNOWN';
+            const name = ctx.lastFailure?.name || 'Error';
+            const rank = ctx.candidate.rank ?? '?';
+            
+            const confEvo = ctx.confidenceEvolution.join(' -> ');
+            const stateEvo = ctx.stateHistory.map(s => s.state).join(' -> ');
+            
+            const firstAttempt = ctx.firstAttemptAt ? ctx.firstAttemptAt : 'N/A';
+            const timeInfo = ctx.firstAttemptAt && ctx.lastAttemptAt ? (ctx.lastAttemptAt - ctx.firstAttemptAt) : 0;
+            
+            log += `\n  - Rank ${rank} | Conf: ${confEvo} | Type: ${ctx.candidate.strategy} | States: ${stateEvo} | Attempts: ${ctx.attempts}/${ctx.retryBudget} | Active Time: ${timeInfo}ms | Last Failure: [${code}] ${name}`;
+        }
+        return log;
     }
 
     // Deprecated Wrapper: Preserved for backward compatibility
