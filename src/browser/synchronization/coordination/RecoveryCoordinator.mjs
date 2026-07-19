@@ -1,58 +1,39 @@
-import { RecoveryResult } from './RecoveryResult.mjs';
-import { Command } from '../../execution/Command.mjs';
-import EventEmitter from 'node:events';
+import { RecoveryPlan } from './RecoveryPlan.mjs';
+import { BrowserStateRegistry } from '../BrowserStateRegistry.mjs';
 
-export class RecoveryCoordinator extends EventEmitter {
-    constructor() {
-        super();
-    }
-
+export class RecoveryCoordinator {
     async recover(snapshot, failedCapability) {
-        const start = Date.now();
-        let strategy = 'Retry';
+        let attempts = (snapshot.recoveryState.attempts || 0) + 1;
+        BrowserStateRegistry.update(snapshot.browserId, {
+            recoveryState: { attempts, lastRecovery: Date.now() }
+        });
+
+        let strategy = 'SOFT_RESET';
+        let escalateTo = 'HARD_RESET';
         
-        // Example strategy selection logic
-        if (snapshot.consistency < 50) {
-            strategy = 'State Rebuild';
-        } else if (failedCapability === 'FRAME_READY' || failedCapability === 'DOM_READY') {
-            strategy = 'Refresh Page';
-        } else {
-            strategy = 'Capability Reset';
+        if (snapshot.consistency < 30) {
+            strategy = 'BROWSER_RESTART';
+            escalateTo = null;
+        } else if (attempts === 2) {
+            strategy = 'HARD_RESET';
+            escalateTo = 'DEPENDENCY_CASCADE';
+        } else if (attempts === 3) {
+            strategy = 'DEPENDENCY_CASCADE';
+            escalateTo = 'PAGE_RELOAD';
+        } else if (attempts === 4) {
+            strategy = 'PAGE_RELOAD';
+            escalateTo = 'BROWSER_RESTART';
+        } else if (attempts >= 5) {
+            strategy = 'BROWSER_RESTART';
+            escalateTo = null;
         }
 
-        let resultStatus = 'SUCCESS';
-        let recovered = [];
-        let failed = [];
-
-        if (strategy === 'State Rebuild') {
-            // Trigger a full browser restart via the existing system
-            this.emit('Command', new Command({
-                category: 'Recovery',
-                type: 'HEAL_REQUESTED',
-                target: snapshot.browserId,
-                source: 'SynchronizationRecovery'
-            }));
-            resultStatus = 'ABORTED'; // The barrier should abort while heal happens
-            failed.push(failedCapability);
-        } else if (strategy === 'Refresh Page') {
-            // We would ideally call page.reload() here.
-            // For now, emit a command or pretend it succeeded.
-            resultStatus = 'PARTIAL';
-            failed.push(failedCapability);
-        } else {
-            // Capability Reset
-            resultStatus = 'SUCCESS';
-            recovered.push(failedCapability);
-        }
-
-        return new RecoveryResult(
-            resultStatus,
+        return new RecoveryPlan({
             strategy,
-            Date.now() - start,
-            recovered,
-            failed,
-            1,
-            { reason: `Executed strategy ${strategy}` }
-        );
+            targets: [failedCapability],
+            reason: `Capability ${failedCapability} failed. Attempt: ${attempts}`,
+            maxAttempts: 5,
+            escalateTo
+        });
     }
 }

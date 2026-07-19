@@ -276,7 +276,10 @@ export class ExecutionScheduler {
                         deadline
                     });
 
-                    if (barrierResult.status !== 'PASSED') {
+                    if (barrierResult.status === 'RECOVERING') {
+                        logger.warn(`[Scheduler] Command ${finalCommand.id} on [${browserId}] dropped because a hard recovery (Reload/Restart) was initiated.`);
+                        continue;
+                    } else if (barrierResult.status !== 'PASSED') {
                         logger.error(`[Scheduler] Barrier failed for Command ${finalCommand.id} on [${browserId}]. Status: ${barrierResult.status}, Blocking: ${barrierResult.blockingCapability}`);
                         // Handle barrier failure explicitly (drop command, or recovery coordinator)
                         continue;

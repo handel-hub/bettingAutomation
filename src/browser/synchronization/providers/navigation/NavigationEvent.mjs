@@ -7,10 +7,11 @@ export const NavigationEventType = {
 };
 
 export class NavigationEvent {
-    constructor({ type, browserId, url, timestamp = Date.now(), metadata = {} }) {
+    constructor({ type, browserId, url, navigationId, timestamp = Date.now(), metadata = {} }) {
         this.type = type;
         this.browserId = browserId;
         this.url = url;
+        this.navigationId = navigationId;
         this.timestamp = timestamp;
         this.metadata = metadata;
     }

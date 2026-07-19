@@ -9,16 +9,34 @@ class SynchronizationManagerImpl {
     constructor() {
         this.coordinator = null;
         this.recoveryCoordinator = null;
+        this.recoveryActionExecutor = null;
         this.telemetry = null;
         this.timeline = null;
+        this.activeSyncContexts = new Map();
     }
 
     setCoordinator(coordinator) {
         this.coordinator = coordinator;
+        this.coordinator.on('InvalidationRequested', async (event) => {
+            const context = this.activeSyncContexts.get(event.browserId);
+            if (context) {
+                const provider = CapabilityRegistry.getProvider(event.capability);
+                if (provider) {
+                    await provider.invalidate(context);
+                }
+            }
+        });
     }
 
     setRecoveryCoordinator(recoveryCoordinator) {
         this.recoveryCoordinator = recoveryCoordinator;
+    }
+
+    setRecoveryActionExecutor(executor) {
+        this.recoveryActionExecutor = executor;
+        this.recoveryActionExecutor.on('Command', (cmd) => {
+            if (this.coordinator) this.coordinator.emit('Command', cmd);
+        });
     }
 
     setTelemetry(telemetry) {
@@ -30,9 +48,14 @@ class SynchronizationManagerImpl {
     }
 
     async awaitCapabilities(syncContext, capabilities) {
-        const providers = this.collectProviders(capabilities);
-        const settledResults = await this.executeProviders(providers, syncContext);
-        return this.aggregateResults(settledResults, capabilities, syncContext.browserId);
+        this.activeSyncContexts.set(syncContext.browserId, syncContext);
+        try {
+            const providers = this.collectProviders(capabilities);
+            const settledResults = await this.executeProviders(providers, syncContext);
+            return this.aggregateResults(settledResults, capabilities, syncContext.browserId);
+        } finally {
+            this.activeSyncContexts.delete(syncContext.browserId);
+        }
     }
 
     collectProviders(capabilities) {
@@ -60,7 +83,11 @@ class SynchronizationManagerImpl {
             if (result.status === 'fulfilled') {
                 const capResult = result.value;
                 const isSatisfied = capResult.status === 'SATISFIED';
-                capabilityUpdates[capResult.capability] = isSatisfied;
+                const currentEpoch = BrowserStateRegistry.getState(browserId).navigationEpoch;
+                capabilityUpdates[capResult.capability] = { 
+                    value: isSatisfied, 
+                    epoch: capResult.epoch !== undefined ? capResult.epoch : currentEpoch 
+                };
                 telemetryArray.push(capResult);
             } else {
                 logger.error(`[SynchronizationManager] Provider threw an error: ${result.reason}`);
@@ -75,8 +102,8 @@ class SynchronizationManagerImpl {
 
         // Pass to coordinator for cascading logic, snapshots, and consistency score updates
         if (this.coordinator) {
-            for (const [cap, isReady] of Object.entries(capabilityUpdates)) {
-                this.coordinator.handleCapabilityUpdate(browserId, cap, isReady);
+            for (const [cap, data] of Object.entries(capabilityUpdates)) {
+                this.coordinator.handleCapabilityUpdate(browserId, cap, data.value);
             }
         }
 
@@ -86,14 +113,14 @@ class SynchronizationManagerImpl {
         const missingCapabilities = [];
         for (const cap of requiredCapabilities) {
             // Note: If coordinator invalidated dependencies, this will reflect it natively
-            if (!currentState.capabilities.isSatisfied(cap)) {
+            if (!currentState.capabilities.isSatisfied(cap, currentState.navigationEpoch)) {
                 missingCapabilities.push(cap);
             }
         }
 
         return {
             satisfied: missingCapabilities.length === 0,
-            satisfiedCapabilities: requiredCapabilities.filter(c => currentState.capabilities.isSatisfied(c)),
+            satisfiedCapabilities: requiredCapabilities.filter(c => currentState.capabilities.isSatisfied(c, currentState.navigationEpoch)),
             missingCapabilities: missingCapabilities,
             blockingCapability: missingCapabilities[0] || null,
             providerTelemetry: telemetryArray,

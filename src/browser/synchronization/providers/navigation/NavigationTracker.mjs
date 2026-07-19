@@ -1,6 +1,8 @@
 import { NavigationEvent, NavigationEventType } from './NavigationEvent.mjs';
 import { NavigationStateMachine } from './NavigationStateMachine.mjs';
 
+import { BrowserStateRegistry } from '../../BrowserStateRegistry.mjs';
+
 /**
  * Strictly limits its responsibility to event subscription and normalization.
  */
@@ -9,6 +11,8 @@ export class NavigationTracker {
         this.browserId = browserId;
         this.page = page;
         this.stateMachine = new NavigationStateMachine(browserId);
+        this._lastUrl = null;
+        this._lastNavigationId = null;
     }
 
     async initialize() {
@@ -83,8 +87,6 @@ export class NavigationTracker {
         await this.page.addInitScript(historyProxyScript).catch(() => {});
         
         // 3. Rapid URL Change Polling to catch unexposed redirects natively
-        // In some cases, page.url() might change without explicit framenavigated/load events if intercepted
-        // Playwright handles redirects within 'framenavigated' for the most part, but tracking URL changes is safe.
         this._lastUrl = this.page.url();
         this._pollInterval = setInterval(() => {
             if (this.page.isClosed()) {
@@ -93,17 +95,46 @@ export class NavigationTracker {
             }
             const currentUrl = this.page.url();
             if (currentUrl !== this._lastUrl) {
-                this._lastUrl = currentUrl;
+                // Check if this URL change belongs to an already active navigation that we missed
+                const state = BrowserStateRegistry.getState(this.browserId);
+                const ctx = state?.navigationContext || {};
+                
+                if (ctx.lifecycle && ctx.lifecycle !== 'IDLE' && ctx.lifecycle !== 'READY' && ctx.currentURL === currentUrl) {
+                    // It belongs to the active navigation but we missed the native event
+                    // Suppress duplicate event emission
+                    this._lastUrl = currentUrl;
+                    return;
+                }
+
                 this._emit(NavigationEventType.URL_CHANGED, currentUrl);
             }
         }, 100);
     }
 
     _emit(type, url, metadata = {}) {
+        const state = BrowserStateRegistry.getState(this.browserId);
+        const ctx = state?.navigationContext || {};
+        const isIdleOrReady = !ctx.lifecycle || ctx.lifecycle === 'IDLE' || ctx.lifecycle === 'READY';
+        
+        let navId = ctx.navigationId;
+        
+        // Identity Generation: Tracker is the source of truth for new navigation IDs
+        if (type === NavigationEventType.FRAME_NAVIGATED || type === NavigationEventType.HISTORY_API || type === NavigationEventType.URL_CHANGED) {
+            if (isIdleOrReady) {
+                global._navCounter = (global._navCounter || 0) + 1;
+                navId = `${this.browserId}-nav-${global._navCounter}`;
+            }
+        }
+
+        // Invariant enforced: _lastUrl and _lastNavigationId must reflect the last emitted event
+        this._lastUrl = url;
+        this._lastNavigationId = navId;
+
         const event = new NavigationEvent({
             type,
             browserId: this.browserId,
             url,
+            navigationId: navId,
             metadata
         });
         

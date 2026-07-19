@@ -143,6 +143,29 @@ export class DOMCapabilityProvider extends CapabilityProvider {
     }
 
     async invalidate(syncContext) {
-        // No-op for now. Invalidation would be triggered if a navigation starts.
+        const { browserId, page } = syncContext;
+        try {
+            // Force a fresh measurement to repair reality
+            const isReady = await page.evaluate(() => document.readyState === 'complete');
+            
+            // We publish this new state to the registry, which acts as our Soft Reset
+            const currentEpoch = (await import('../BrowserStateRegistry.mjs')).BrowserStateRegistry.getState(browserId).navigationEpoch;
+            
+            (await import('../BrowserStateRegistry.mjs')).BrowserStateRegistry.update(browserId, {
+                capabilities: { 
+                    [Capabilities.DOM_READY]: { 
+                        value: isReady, 
+                        // If it's still false, we can bump the epoch so consumers know it was re-evaluated
+                        epoch: currentEpoch + (isReady ? 0 : 1) 
+                    } 
+                }
+            });
+
+            if ((await import('../SynchronizationManager.mjs')).SynchronizationManager.coordinator) {
+                (await import('../SynchronizationManager.mjs')).SynchronizationManager.coordinator.handleCapabilityUpdate(browserId, Capabilities.DOM_READY, isReady);
+            }
+        } catch (e) {
+            logger.warn(`[DOMProvider] Invalidation measurement failed: ${e.message}`);
+        }
     }
 }

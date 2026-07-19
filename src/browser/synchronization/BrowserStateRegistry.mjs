@@ -44,6 +44,9 @@ class BrowserStateRegistryImpl extends EventEmitter {
         }
 
         if (updates.navigationContext) {
+            if (updates.navigationContext.navigationId && state.navigationContext.navigationId !== updates.navigationContext.navigationId) {
+                state.navigationEpoch++;
+            }
             Object.assign(state.navigationContext, updates.navigationContext);
         }
 
@@ -76,8 +79,12 @@ class BrowserStateRegistryImpl extends EventEmitter {
         }
 
         if (updates.capabilities) {
-            for (const [cap, value] of Object.entries(updates.capabilities)) {
-                state.capabilities.setSatisfied(cap, value);
+            for (const [cap, data] of Object.entries(updates.capabilities)) {
+                if (typeof data === 'object' && data !== null) {
+                    state.capabilities.setSatisfied(cap, data.value, data.epoch);
+                } else {
+                    state.capabilities.setSatisfied(cap, data);
+                }
             }
         }
 

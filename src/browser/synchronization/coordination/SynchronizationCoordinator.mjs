@@ -49,10 +49,12 @@ export class SynchronizationCoordinator extends EventEmitter {
         for (const dep of dependents) {
             if (states[dep] === true) {
                 states[dep] = false;
-                
-                // Update the state model natively
-                BrowserStateRegistry.update(browserId, {
-                    capabilities: { [dep]: false }
+
+                this.emit('InvalidationRequested', {
+                    browserId,
+                    capability: dep,
+                    cause: capability,
+                    timestamp: Date.now()
                 });
 
                 this.emit('DependencyInvalidated', {

@@ -20,6 +20,14 @@ export class NavigationStateMachine {
         const updates = {};
         const now = Date.now();
 
+        // Validate event ownership (reject late/stale events)
+        if (ctx.navigationId && event.navigationId && event.navigationId !== ctx.navigationId) {
+            if (event.type === NavigationEventType.DOM_CONTENT_LOADED || event.type === NavigationEventType.LOAD) {
+                // Stale event from a previous navigation lifecycle, discard
+                return;
+            }
+        }
+
         // 1. Detect if this is the very first navigation event (starting a navigation)
         if (event.type === NavigationEventType.FRAME_NAVIGATED || event.type === NavigationEventType.HISTORY_API || event.type === NavigationEventType.URL_CHANGED) {
             
@@ -53,11 +61,19 @@ export class NavigationStateMachine {
             }
 
             updates.currentURL = event.url;
+            updates.navigationId = event.navigationId;
             
-            // Generate a navigation ID if it's a fresh start
-            if (updates.lifecycle === NavigationLifecycle.NAVIGATING) {
-                const globalNavCounter = (global._navCounter = (global._navCounter || 0) + 1);
-                updates.navigationId = `${this.browserId}-nav-${globalNavCounter}`;
+            if (event.type === NavigationEventType.HISTORY_API) {
+                // SPA Route: Push intermediate state to preserve telemetry timeline
+                BrowserStateRegistry.update(this.browserId, { navigationContext: { ...ctx, ...updates } });
+                
+                // Immediately transition to READY
+                updates.lifecycle = NavigationLifecycle.READY;
+                updates.result = NavigationResult.SUCCESS;
+                updates.completedAt = now;
+                updates.duration = now - (updates.startedAt || now);
+                BrowserStateRegistry.update(this.browserId, { navigationContext: updates });
+                return;
             }
             
             BrowserStateRegistry.update(this.browserId, { navigationContext: updates });
@@ -83,13 +99,7 @@ export class NavigationStateMachine {
         }
 
         // SPA (History API) usually finishes instantly from our perspective since it doesn't fire load events
-        // However, we wait for URL to settle. The Tracker will emit URL_CHANGED if needed.
-        if (event.type === NavigationEventType.HISTORY_API) {
-             updates.lifecycle = NavigationLifecycle.READY;
-             updates.result = NavigationResult.SUCCESS;
-             updates.completedAt = now;
-             updates.duration = now - (ctx.startedAt || now);
-        }
+        // (Note: Handled in the initial block above now to preserve NAVIGATING -> READY telemetry)
 
         if (Object.keys(updates).length > 0) {
             BrowserStateRegistry.update(this.browserId, { navigationContext: updates });

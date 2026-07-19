@@ -16,14 +16,13 @@ export class SynchronizationBarrier {
         const startTime = Date.now();
         executionContext.addTrace('BarrierWaitStarted');
 
-        let managerResult = await SynchronizationManager.awaitCapabilities(syncContext, capabilities);
-        let elapsed = Date.now() - startTime;
+        let recoveryAttempts = 0;
+        const maxRecoveryAttempts = syncContext.context?.maxRecoveryAttempts ?? 2;
+        
+        let managerResult;
         let recoveryAction = null;
+        let elapsed = 0;
         let diagnostics = null;
-
-        if (SynchronizationManager.timeline) {
-            SynchronizationManager.timeline.record({ type: 'BarrierEvaluated', satisfied: managerResult.satisfied, browserId });
-        }
 
         const enrichTelemetry = (resultStatus) => {
             const snapshot = managerResult.snapshot;
@@ -61,45 +60,56 @@ export class SynchronizationBarrier {
             };
         };
 
-        if (managerResult.satisfied) {
-            executionContext.addTrace('BarrierPassed');
-            if (SynchronizationManager.timeline) SynchronizationManager.timeline.record({ type: 'BarrierPassed', browserId });
-            return enrichTelemetry('PASSED');
+        // 1. Evaluate & Re-evaluate Loop
+        while (true) {
+            managerResult = await SynchronizationManager.awaitCapabilities(syncContext, capabilities);
+            elapsed = Date.now() - startTime;
+            
+            if (SynchronizationManager.timeline) {
+                SynchronizationManager.timeline.record({ type: 'BarrierEvaluated', satisfied: managerResult.satisfied, browserId });
+            }
+
+            // 2. Capability Result Evaluation
+            if (managerResult.satisfied) {
+                executionContext.addTrace(recoveryAttempts > 0 ? 'BarrierPassedAfterRecovery' : 'BarrierPassed');
+                if (SynchronizationManager.timeline) SynchronizationManager.timeline.record({ type: 'BarrierPassed', browserId });
+                return enrichTelemetry('PASSED');
+            }
+
+            // 3. Recoverable?
+            const consistencyScore = managerResult.snapshot ? managerResult.snapshot.consistency : 0;
+            if (consistencyScore < 30 && managerResult.snapshot) { 
+                return enrichTelemetry('CONSISTENCY_TOO_LOW');
+            }
+
+            if (!SynchronizationManager.recoveryCoordinator || !managerResult.snapshot || recoveryAttempts >= maxRecoveryAttempts) {
+                break;
+            }
+
+            // 4. Recovery Execution
+            recoveryAttempts++;
+            if (SynchronizationManager.timeline) SynchronizationManager.timeline.record({ type: 'RecoveryStarted', capability: managerResult.blockingCapability, browserId });
+            
+            const recoveryPlan = await SynchronizationManager.recoveryCoordinator.recover(managerResult.snapshot, managerResult.blockingCapability);
+            recoveryAction = recoveryPlan.strategy;
+
+            if (SynchronizationManager.telemetry) {
+                SynchronizationManager.telemetry.recordRecovery(recoveryPlan);
+            }
+
+            if (SynchronizationManager.recoveryActionExecutor) {
+                await SynchronizationManager.recoveryActionExecutor.execute(recoveryPlan, syncContext);
+            }
+
+            if (recoveryPlan.strategy === 'PAGE_RELOAD' || recoveryPlan.strategy === 'BROWSER_RESTART') {
+                return enrichTelemetry('RECOVERING');
+            }
         }
 
+        // 6. Timeout Evaluation
         if (Date.now() >= deadline) {
             executionContext.addTrace('BarrierTimeout');
             return enrichTelemetry('TIMEOUT');
-        }
-
-        const consistencyScore = managerResult.snapshot ? managerResult.snapshot.consistency : 0;
-        if (consistencyScore < 30 && managerResult.snapshot) { 
-            return enrichTelemetry('CONSISTENCY_TOO_LOW');
-        }
-
-        if (SynchronizationManager.recoveryCoordinator && managerResult.snapshot) {
-            if (SynchronizationManager.timeline) SynchronizationManager.timeline.record({ type: 'RecoveryStarted', capability: managerResult.blockingCapability, browserId });
-            const recoveryResult = await SynchronizationManager.recoveryCoordinator.recover(managerResult.snapshot, managerResult.blockingCapability);
-            
-            recoveryAction = recoveryResult.strategy;
-
-            if (SynchronizationManager.telemetry) {
-                SynchronizationManager.telemetry.recordRecovery(recoveryResult);
-            }
-
-            if (recoveryResult.status === 'ABORTED') {
-                return enrichTelemetry('RECOVERING');
-            }
-
-            if (recoveryResult.status === 'SUCCESS' || recoveryResult.status === 'PARTIAL') {
-                managerResult = await SynchronizationManager.awaitCapabilities(syncContext, capabilities);
-                elapsed = Date.now() - startTime;
-                if (managerResult.satisfied) {
-                    executionContext.addTrace('BarrierPassedAfterRecovery');
-                    if (SynchronizationManager.timeline) SynchronizationManager.timeline.record({ type: 'BarrierPassed', browserId });
-                    return enrichTelemetry('PASSED');
-                }
-            }
         }
 
         executionContext.addTrace('BarrierFailed');

@@ -30,6 +30,7 @@ import { SynchronizationCoordinator } from './synchronization/coordination/Synch
 import { ConsistencyEvaluator } from './synchronization/coordination/ConsistencyEvaluator.mjs';
 import { ConsistencyPolicy } from './synchronization/coordination/ConsistencyPolicy.mjs';
 import { RecoveryCoordinator } from './synchronization/coordination/RecoveryCoordinator.mjs';
+import { RecoveryActionExecutor } from './synchronization/coordination/RecoveryActionExecutor.mjs';
 import { SynchronizationTelemetry } from './synchronization/telemetry/SynchronizationTelemetry.mjs';
 import { SynchronizationTimeline } from './synchronization/telemetry/SynchronizationTimeline.mjs';
 
@@ -70,11 +71,13 @@ export class AutomationController {
         this.consistencyEvaluator = new ConsistencyEvaluator(ConsistencyPolicy.DEFAULT);
         this.syncCoordinator = new SynchronizationCoordinator(this.consistencyEvaluator);
         this.syncRecoveryCoordinator = new RecoveryCoordinator();
+        this.syncRecoveryActionExecutor = new RecoveryActionExecutor();
         this.syncTelemetry = new SynchronizationTelemetry();
         this.syncTimeline = new SynchronizationTimeline();
 
         SynchronizationManager.setCoordinator(this.syncCoordinator);
         SynchronizationManager.setRecoveryCoordinator(this.syncRecoveryCoordinator);
+        SynchronizationManager.setRecoveryActionExecutor(this.syncRecoveryActionExecutor);
         SynchronizationManager.setTelemetry(this.syncTelemetry);
         SynchronizationManager.setTimeline(this.syncTimeline);
 
@@ -214,7 +217,7 @@ export class AutomationController {
         this.navSync.on('Command', routeFn);
         this.healthMonitor.on('Command', routeFn);
         this.recoveryManager.on('Command', routeFn);
-        this.syncRecoveryCoordinator.on('Command', routeFn);
+        this.syncRecoveryActionExecutor.on('Command', routeFn);
 
         // Bridge: Simulator Success/Failure -> Registry Metadata
         this.simulator.on('ActionFailure', ({ id, error }) => {
