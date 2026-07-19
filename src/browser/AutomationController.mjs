@@ -25,6 +25,14 @@ import { CapabilityRegistry } from './synchronization/CapabilityRegistry.mjs';
 import { DOMCapabilityProvider } from './synchronization/providers/DOMCapabilityProvider.mjs';
 import { ConnectionCapabilityProvider } from './synchronization/providers/ConnectionCapabilityProvider.mjs';
 
+import { SynchronizationManager } from './synchronization/SynchronizationManager.mjs';
+import { SynchronizationCoordinator } from './synchronization/coordination/SynchronizationCoordinator.mjs';
+import { ConsistencyEvaluator } from './synchronization/coordination/ConsistencyEvaluator.mjs';
+import { ConsistencyPolicy } from './synchronization/coordination/ConsistencyPolicy.mjs';
+import { RecoveryCoordinator } from './synchronization/coordination/RecoveryCoordinator.mjs';
+import { SynchronizationTelemetry } from './synchronization/telemetry/SynchronizationTelemetry.mjs';
+import { SynchronizationTimeline } from './synchronization/telemetry/SynchronizationTimeline.mjs';
+
 export class AutomationController {
     constructor(settings, accounts, proxyManager, stealthEngine) {
         this.settings = settings;
@@ -57,6 +65,19 @@ export class AutomationController {
 
         this.commandRouter = new CommandRouter();
         this.targetResolver = new TargetResolver(this.registry, this.lockManager);
+
+        // --- Initialize Synchronization Orchestration ---
+        this.consistencyEvaluator = new ConsistencyEvaluator(ConsistencyPolicy.DEFAULT);
+        this.syncCoordinator = new SynchronizationCoordinator(this.consistencyEvaluator);
+        this.syncRecoveryCoordinator = new RecoveryCoordinator();
+        this.syncTelemetry = new SynchronizationTelemetry();
+        this.syncTimeline = new SynchronizationTimeline();
+
+        SynchronizationManager.setCoordinator(this.syncCoordinator);
+        SynchronizationManager.setRecoveryCoordinator(this.syncRecoveryCoordinator);
+        SynchronizationManager.setTelemetry(this.syncTelemetry);
+        SynchronizationManager.setTimeline(this.syncTimeline);
+
         this.setupEventBus();
     }
 
@@ -193,6 +214,7 @@ export class AutomationController {
         this.navSync.on('Command', routeFn);
         this.healthMonitor.on('Command', routeFn);
         this.recoveryManager.on('Command', routeFn);
+        this.syncRecoveryCoordinator.on('Command', routeFn);
 
         // Bridge: Simulator Success/Failure -> Registry Metadata
         this.simulator.on('ActionFailure', ({ id, error }) => {

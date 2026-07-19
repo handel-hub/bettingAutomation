@@ -6,12 +6,29 @@ import { logger } from '../../config.mjs';
  * The orchestrator. Coordinates the barrier and executes Capability Providers.
  */
 class SynchronizationManagerImpl {
-    /**
-     * Waits for the specified capabilities to be satisfied by actively polling providers.
-     * @param {Object} syncContext { browserId, page, browserState, executionContext, deadline }
-     * @param {string[]} capabilities 
-     * @returns {Promise<Object>}
-     */
+    constructor() {
+        this.coordinator = null;
+        this.recoveryCoordinator = null;
+        this.telemetry = null;
+        this.timeline = null;
+    }
+
+    setCoordinator(coordinator) {
+        this.coordinator = coordinator;
+    }
+
+    setRecoveryCoordinator(recoveryCoordinator) {
+        this.recoveryCoordinator = recoveryCoordinator;
+    }
+
+    setTelemetry(telemetry) {
+        this.telemetry = telemetry;
+    }
+
+    setTimeline(timeline) {
+        this.timeline = timeline;
+    }
+
     async awaitCapabilities(syncContext, capabilities) {
         const providers = this.collectProviders(capabilities);
         const settledResults = await this.executeProviders(providers, syncContext);
@@ -21,8 +38,6 @@ class SynchronizationManagerImpl {
     collectProviders(capabilities) {
         const uniqueProviders = new Set();
         for (const cap of capabilities) {
-            // Note: In Stage 2.3 we only have DOMProvider. We don't have a CONNECTED or NAVIGATION provider yet.
-            // If there's no provider, we skip.
             const provider = CapabilityRegistry.getProvider(cap);
             if (provider) {
                 uniqueProviders.add(provider);
@@ -34,22 +49,18 @@ class SynchronizationManagerImpl {
     async executeProviders(providers, syncContext) {
         if (providers.length === 0) return [];
         const promises = providers.map(p => p.waitFor(syncContext));
-        // Use allSettled so one failure doesn't abort telemetry collection for the rest
         return Promise.allSettled(promises);
     }
 
     aggregateResults(settledResults, requiredCapabilities, browserId) {
-        const capabilityUpdates = {};
         const telemetryArray = [];
-        const satisfiedCaps = new Set();
+        const capabilityUpdates = {};
 
         for (const result of settledResults) {
             if (result.status === 'fulfilled') {
                 const capResult = result.value;
-                if (capResult.status === 'SATISFIED') {
-                    satisfiedCaps.add(capResult.capability);
-                    capabilityUpdates[capResult.capability] = true;
-                }
+                const isSatisfied = capResult.status === 'SATISFIED';
+                capabilityUpdates[capResult.capability] = isSatisfied;
                 telemetryArray.push(capResult);
             } else {
                 logger.error(`[SynchronizationManager] Provider threw an error: ${result.reason}`);
@@ -57,15 +68,24 @@ class SynchronizationManagerImpl {
             }
         }
 
-        // The manager safely applies capability mutations to the registry
+        // Apply raw updates to capabilities
         if (Object.keys(capabilityUpdates).length > 0) {
             BrowserStateRegistry.update(browserId, { capabilities: capabilityUpdates });
         }
 
-        const missingCapabilities = [];
+        // Pass to coordinator for cascading logic, snapshots, and consistency score updates
+        if (this.coordinator) {
+            for (const [cap, isReady] of Object.entries(capabilityUpdates)) {
+                this.coordinator.handleCapabilityUpdate(browserId, cap, isReady);
+            }
+        }
+
+        const snapshot = this.coordinator ? this.coordinator.getSnapshot(browserId) : null;
         const currentState = BrowserStateRegistry.getState(browserId);
 
+        const missingCapabilities = [];
         for (const cap of requiredCapabilities) {
+            // Note: If coordinator invalidated dependencies, this will reflect it natively
             if (!currentState.capabilities.isSatisfied(cap)) {
                 missingCapabilities.push(cap);
             }
@@ -73,10 +93,11 @@ class SynchronizationManagerImpl {
 
         return {
             satisfied: missingCapabilities.length === 0,
-            satisfiedCapabilities: Array.from(satisfiedCaps),
+            satisfiedCapabilities: requiredCapabilities.filter(c => currentState.capabilities.isSatisfied(c)),
             missingCapabilities: missingCapabilities,
             blockingCapability: missingCapabilities[0] || null,
-            providerTelemetry: telemetryArray
+            providerTelemetry: telemetryArray,
+            snapshot: snapshot
         };
     }
 }

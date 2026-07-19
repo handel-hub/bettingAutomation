@@ -189,6 +189,29 @@ export class BrowserStateModel {
             lastContextChange: 0
         };
 
+        this.consistencyState = {
+            consistencyScore: 0,
+            lastEvaluated: 0,
+            policy: null
+        };
+
+        this.recoveryState = {
+            currentStrategy: null,
+            attempts: 0,
+            lastRecovery: 0,
+            isRecovering: false,
+            lastResult: null
+        };
+
+        this.synchronizationStatistics = {
+            latency: 0,
+            waitDurations: [],
+            successRate: 0,
+            totalBarriers: 0,
+            failedBarriers: 0,
+            recoveryCount: 0
+        };
+
         this.capabilities = new BrowserCapabilities();
     }
 }

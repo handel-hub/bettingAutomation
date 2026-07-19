@@ -1,82 +1,108 @@
 import { SynchronizationManager } from './SynchronizationManager.mjs';
+import { SynchronizationDiagnostics } from './telemetry/SynchronizationDiagnostics.mjs';
 
 /**
- * A completely stateless execution gate.
+ * A stateless execution gate that coordinates with the SynchronizationManager.
  */
 export class SynchronizationBarrier {
-    /**
-     * Waits until the required synchronization profile is satisfied for the browser.
-     * @param {Object} syncContext { browserId, page, browserState, context, deadline }
-     * @returns {Promise<Object>} BarrierResult
-     */
     static async wait(syncContext) {
         const { browserId, profile, context: executionContext, deadline } = syncContext;
-        const capabilities = profile.level; // Array of required capabilities
+        const capabilities = profile.level; 
 
-        // Instantly satisfied?
         if (!capabilities || capabilities.length === 0) {
-            return {
-                status: 'PASSED',
-                satisfiedCapabilities: [],
-                missingCapabilities: [],
-                blockingCapability: null,
-                elapsed: 0,
-                providerTelemetry: []
-            };
+            return { status: 'PASSED', satisfiedCapabilities: [], missingCapabilities: [], blockingCapability: null, elapsed: 0, providerTelemetry: [] };
         }
 
         const startTime = Date.now();
         executionContext.addTrace('BarrierWaitStarted');
 
-        // Delegate to active providers
-        const managerResult = await SynchronizationManager.awaitCapabilities(syncContext, capabilities);
+        let managerResult = await SynchronizationManager.awaitCapabilities(syncContext, capabilities);
+        let elapsed = Date.now() - startTime;
+        let recoveryAction = null;
+        let diagnostics = null;
 
-        const elapsed = Date.now() - startTime;
-
-        if (managerResult.satisfied) {
-            executionContext.addTrace('BarrierSatisfied');
-            return {
-                status: 'PASSED',
-                satisfiedCapabilities: managerResult.satisfiedCapabilities,
-                missingCapabilities: [],
-                blockingCapability: null,
-                elapsed,
-                providerTelemetry: managerResult.providerTelemetry
-            };
+        if (SynchronizationManager.timeline) {
+            SynchronizationManager.timeline.record({ type: 'BarrierEvaluated', satisfied: managerResult.satisfied, browserId });
         }
 
-        const enrichTelemetry = (result) => {
-            if (!result.missingCapabilities || result.missingCapabilities.length === 0) return result;
+        const enrichTelemetry = (resultStatus) => {
+            const snapshot = managerResult.snapshot;
+            const consistencyScore = snapshot ? snapshot.consistency : 0;
             
-            // Look into provider telemetry to extract mismatch contexts
-            const blockingTel = result.providerTelemetry.find(t => t.capability === result.blockingCapability);
-            if (blockingTel && blockingTel.error) {
-                // If the wait strategy threw an error with context (expected vs got), it will be in the error message
-                result.failureReason = blockingTel.error.message;
+            if (SynchronizationManager.timeline && snapshot) {
+                diagnostics = SynchronizationDiagnostics.generateReport(snapshot, SynchronizationManager.timeline);
             }
-            return result;
+
+            let failureReason = null;
+            if (managerResult.blockingCapability) {
+                const blockingTel = managerResult.providerTelemetry.find(t => t.capability === managerResult.blockingCapability);
+                if (blockingTel && blockingTel.error) {
+                    failureReason = blockingTel.error.message;
+                } else if (blockingTel && blockingTel.reason) {
+                    failureReason = blockingTel.reason;
+                }
+            }
+
+            if (SynchronizationManager.telemetry) {
+                SynchronizationManager.telemetry.recordBarrier(elapsed, resultStatus === 'PASSED');
+            }
+
+            return {
+                status: resultStatus,
+                consistencyScore,
+                blockingCapability: managerResult.blockingCapability,
+                recoveryAction,
+                elapsed,
+                diagnostics,
+                satisfiedCapabilities: managerResult.satisfiedCapabilities,
+                missingCapabilities: managerResult.missingCapabilities,
+                providerTelemetry: managerResult.providerTelemetry,
+                failureReason
+            };
         };
+
+        if (managerResult.satisfied) {
+            executionContext.addTrace('BarrierPassed');
+            if (SynchronizationManager.timeline) SynchronizationManager.timeline.record({ type: 'BarrierPassed', browserId });
+            return enrichTelemetry('PASSED');
+        }
 
         if (Date.now() >= deadline) {
             executionContext.addTrace('BarrierTimeout');
-            return enrichTelemetry({
-                status: 'TIMEOUT',
-                satisfiedCapabilities: managerResult.satisfiedCapabilities,
-                missingCapabilities: managerResult.missingCapabilities,
-                blockingCapability: managerResult.blockingCapability,
-                elapsed,
-                providerTelemetry: managerResult.providerTelemetry
-            });
+            return enrichTelemetry('TIMEOUT');
+        }
+
+        const consistencyScore = managerResult.snapshot ? managerResult.snapshot.consistency : 0;
+        if (consistencyScore < 30 && managerResult.snapshot) { 
+            return enrichTelemetry('CONSISTENCY_TOO_LOW');
+        }
+
+        if (SynchronizationManager.recoveryCoordinator && managerResult.snapshot) {
+            if (SynchronizationManager.timeline) SynchronizationManager.timeline.record({ type: 'RecoveryStarted', capability: managerResult.blockingCapability, browserId });
+            const recoveryResult = await SynchronizationManager.recoveryCoordinator.recover(managerResult.snapshot, managerResult.blockingCapability);
+            
+            recoveryAction = recoveryResult.strategy;
+
+            if (SynchronizationManager.telemetry) {
+                SynchronizationManager.telemetry.recordRecovery(recoveryResult);
+            }
+
+            if (recoveryResult.status === 'ABORTED') {
+                return enrichTelemetry('RECOVERING');
+            }
+
+            if (recoveryResult.status === 'SUCCESS' || recoveryResult.status === 'PARTIAL') {
+                managerResult = await SynchronizationManager.awaitCapabilities(syncContext, capabilities);
+                elapsed = Date.now() - startTime;
+                if (managerResult.satisfied) {
+                    executionContext.addTrace('BarrierPassedAfterRecovery');
+                    if (SynchronizationManager.timeline) SynchronizationManager.timeline.record({ type: 'BarrierPassed', browserId });
+                    return enrichTelemetry('PASSED');
+                }
+            }
         }
 
         executionContext.addTrace('BarrierFailed');
-        return enrichTelemetry({
-            status: 'FAILED',
-            satisfiedCapabilities: managerResult.satisfiedCapabilities,
-            missingCapabilities: managerResult.missingCapabilities,
-            blockingCapability: managerResult.blockingCapability,
-            elapsed,
-            providerTelemetry: managerResult.providerTelemetry
-        });
+        return enrichTelemetry('FAILED');
     }
 }
