@@ -35,6 +35,53 @@ export const ViewportLifecycle = {
     READY: 'READY'
 };
 
+export const ScrollLifecycle = {
+    UNKNOWN: 'UNKNOWN',
+    IDLE: 'IDLE',
+    SCROLLING: 'SCROLLING',
+    SETTLING: 'SETTLING',
+    WAITING_FOR_CONTENT: 'WAITING_FOR_CONTENT',
+    VALIDATING: 'VALIDATING',
+    READY: 'READY'
+};
+
+/**
+ * Encapsulates the visual and layout boundaries of the page.
+ */
+export class ViewportContext {
+    constructor(data = {}) {
+        this.version = data.version || 0;
+        this.viewportId = data.viewportId || 'window';
+        this.layoutViewportWidth = data.layoutViewportWidth || 0;
+        this.layoutViewportHeight = data.layoutViewportHeight || 0;
+        this.dpr = data.dpr || 1;
+        this.orientation = data.orientation || 'landscape-primary';
+        this.visualViewportScale = data.visualViewportScale || 1;
+        this.capturedAt = data.capturedAt || Date.now();
+        this.lifecycle = data.lifecycle || ViewportLifecycle.UNKNOWN;
+    }
+}
+
+/**
+ * Encapsulates the scroll positions and kinematics of the page and nested containers.
+ */
+export class ScrollContext {
+    constructor(data = {}) {
+        this.version = data.version || 0;
+        this.scrollId = data.scrollId || null;
+        this.source = data.source || 'UNKNOWN'; // WINDOW_SCROLL, ELEMENT_SCROLL, PROGRAMMATIC_SCROLL, AUTO_SCROLL
+        this.pageScrollX = data.pageScrollX || 0;
+        this.pageScrollY = data.pageScrollY || 0;
+        this.containerScrollX = data.containerScrollX || 0;
+        this.containerScrollY = data.containerScrollY || 0;
+        this.activeContainerId = data.activeContainerId || null;
+        this.direction = data.direction || 'none';
+        this.velocity = data.velocity || 0;
+        this.lastScrollTime = data.lastScrollTime || 0;
+        this.lifecycle = data.lifecycle || ScrollLifecycle.UNKNOWN;
+    }
+}
+
 /**
  * A pure data container tracking the factual reality of a specific browser context.
  * It is never mutated by itself. Only the BrowserStateRegistry updates it.
@@ -98,6 +145,21 @@ export class BrowserStateModel {
             visualViewportScale: 1,
             visualViewportWidth: 0,
             visualViewportHeight: 0
+        };
+
+        this.scrollContext = {
+            version: 0,
+            lifecycle: ScrollLifecycle.UNKNOWN,
+            source: 'UNKNOWN',
+            scrollId: null,
+            pageScrollX: 0,
+            pageScrollY: 0,
+            containerScrollX: 0,
+            containerScrollY: 0,
+            activeContainerId: null,
+            direction: 'none',
+            velocity: 0,
+            lastScrollTime: 0
         };
 
         this.capabilities = new BrowserCapabilities();

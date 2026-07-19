@@ -214,6 +214,9 @@ export class AutomationController {
         const { ViewportCapabilityProvider } = await import('./synchronization/providers/ViewportCapabilityProvider.mjs');
         CapabilityRegistry.registerProvider(new ViewportCapabilityProvider());
 
+        const { ScrollCapabilityProvider } = await import('./synchronization/providers/scroll/ScrollCapabilityProvider.mjs');
+        CapabilityRegistry.registerProvider(new ScrollCapabilityProvider());
+
         let maxAccounts = parseInt(this.settings.Spawning.max_accounts_to_spawn, 10);
         if (!Number.isInteger(maxAccounts) || maxAccounts <= 0) {
             logger.warn(`Invalid or missing max_accounts_to_spawn ("${this.settings.Spawning.max_accounts_to_spawn}") — defaulting to all ${this.accounts.length} configured accounts.`);

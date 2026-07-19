@@ -18,7 +18,7 @@ export const SynchronizationProfiles = Object.freeze({
         retryPolicy: { retries: 3, backoff: 500 }
     }),
     hover: Object.freeze({
-        level: SynchronizationLevel.LEVEL_3,
+        level: SynchronizationLevel.LEVEL_4,
         timeoutMs: 3000,
         domQuietPeriod: 100,
         retryPolicy: { retries: 1, backoff: 300 }

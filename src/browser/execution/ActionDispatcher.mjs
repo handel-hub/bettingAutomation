@@ -42,6 +42,7 @@ export class ActionDispatcher extends EventEmitter {
             const masterState = BrowserStateRegistry.getState('master');
             const navCtx = masterState.navigationContext;
             const viewCtx = masterState.viewportContext;
+            const scrollCtx = masterState.scrollContext;
 
             const metadata = {
                 navigation: navCtx ? {
@@ -62,6 +63,18 @@ export class ActionDispatcher extends EventEmitter {
                     dpr: viewCtx.dpr,
                     orientation: viewCtx.orientation,
                     visualScale: viewCtx.visualViewportScale,
+                    capturedAt: Date.now()
+                } : null,
+                scroll: scrollCtx ? {
+                    scrollId: scrollCtx.scrollId,
+                    source: scrollCtx.source,
+                    pageX: scrollCtx.pageScrollX,
+                    pageY: scrollCtx.pageScrollY,
+                    containerId: scrollCtx.activeContainerId,
+                    containerX: scrollCtx.containerScrollX,
+                    containerY: scrollCtx.containerScrollY,
+                    direction: scrollCtx.direction,
+                    velocity: scrollCtx.velocity,
                     capturedAt: Date.now()
                 } : null
             };
