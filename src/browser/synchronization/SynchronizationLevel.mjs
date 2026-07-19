@@ -13,7 +13,8 @@ export const SynchronizationLevel = {
         Capabilities.NAVIGATION_READY, 
         Capabilities.DOM_READY, 
         Capabilities.VIEWPORT_READY, 
-        Capabilities.SCROLL_READY
+        Capabilities.SCROLL_READY,
+        Capabilities.FRAME_READY
     ],
     LEVEL_5: [
         Capabilities.CONNECTED, 

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import EventEmitter from 'node:events';
 import { Command } from './Command.mjs';
 import { BrowserStateRegistry } from '../synchronization/BrowserStateRegistry.mjs';
+import { FramePathBuilder } from '../synchronization/providers/frame/FramePathBuilder.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,7 +33,7 @@ export class ActionDispatcher extends EventEmitter {
             logger.info(`[INSTRUMENTATION] [${eventData.captureTime}] Type: ${eventData.type} | Target: ${eventData.tag}#${eventData.id}.${eventData.class} | Selector: ${eventData.selector} | Extra: ${eventData.extra} | Error: ${eventData.error}`);
         });
 
-        await masterPage.exposeFunction('dispatchExecutionEvent', async (eventData) => {
+        await masterPage.exposeBinding('dispatchExecutionEvent', async ({ frame }, eventData) => {
             logger.info(`[Master Dispatch] ${eventData.type}`);
             
             if (this.memorySettings.record_action_sequence === 'true') {
@@ -43,6 +44,9 @@ export class ActionDispatcher extends EventEmitter {
             const navCtx = masterState.navigationContext;
             const viewCtx = masterState.viewportContext;
             const scrollCtx = masterState.scrollContext;
+            const execCtx = masterState.executionContext;
+            
+            const framePath = FramePathBuilder.build(frame);
 
             const metadata = {
                 navigation: navCtx ? {
@@ -76,7 +80,15 @@ export class ActionDispatcher extends EventEmitter {
                     direction: scrollCtx.direction,
                     velocity: scrollCtx.velocity,
                     capturedAt: Date.now()
-                } : null
+                } : null,
+                executionContext: {
+                    framePath,
+                    // Note: shadowPath will be added by the locator intelligence engine logic
+                    // if it occurs within a shadow root.
+                    shadowPath: eventData.payload && eventData.payload.locators && eventData.payload.locators.shadowPath ? eventData.payload.locators.shadowPath : [],
+                    contextVersion: execCtx ? execCtx.version : 0,
+                    capturedAt: Date.now()
+                }
             };
 
             const command = new Command({

@@ -45,6 +45,21 @@ export const ScrollLifecycle = {
     READY: 'READY'
 };
 
+export const ExecutionContextLifecycle = {
+    UNKNOWN: 'UNKNOWN',
+    DISCOVERING: 'DISCOVERING',
+    ATTACHING: 'ATTACHING',
+    VALIDATING: 'VALIDATING',
+    READY: 'READY',
+    FRAME_NOT_FOUND: 'FRAME_NOT_FOUND',
+    FRAME_DETACHED: 'FRAME_DETACHED',
+    SHADOW_NOT_FOUND: 'SHADOW_NOT_FOUND',
+    SHADOW_DETACHED: 'SHADOW_DETACHED',
+    CROSS_ORIGIN: 'CROSS_ORIGIN',
+    TIMEOUT: 'TIMEOUT',
+    UNSUPPORTED: 'UNSUPPORTED'
+};
+
 /**
  * Encapsulates the visual and layout boundaries of the page.
  */
@@ -160,6 +175,18 @@ export class BrowserStateModel {
             direction: 'none',
             velocity: 0,
             lastScrollTime: 0
+        };
+
+        this.executionContext = {
+            version: 0,
+            lifecycle: ExecutionContextLifecycle.UNKNOWN,
+            currentFrame: null,
+            frameHierarchy: [],
+            parentFrame: null,
+            childFrames: [],
+            shadowHierarchy: [],
+            contextState: 'UNKNOWN',
+            lastContextChange: 0
         };
 
         this.capabilities = new BrowserCapabilities();
