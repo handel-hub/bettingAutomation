@@ -54,44 +54,48 @@ export class NavigationWaitStrategy {
                 
                 if (!targetUrl) {
                     if (navCtx.lifecycle === NavigationLifecycle.READY || navCtx.lifecycle === NavigationLifecycle.IDLE) {
-                        return complete({
+                        complete({
                             satisfied: true,
                             capability: 'NAVIGATION_READY',
                             latency: Date.now() - startTime,
                             error: null
                         });
+                        return true;
                     }
-                    return; // Keep waiting
+                    return false; // Keep waiting
                 }
 
                 const comparison = NavigationComparator.compare(targetUrl, navCtx);
                 
                 if (comparison === NavigationComparisonResult.MATCH || comparison === NavigationComparisonResult.NORMALIZED_MATCH) {
                     if (navCtx.lifecycle === NavigationLifecycle.READY || navCtx.lifecycle === NavigationLifecycle.IDLE) {
-                        return complete({
+                        complete({
                             satisfied: true,
                             capability: 'NAVIGATION_READY',
                             latency: Date.now() - startTime,
                             error: null
                         });
+                        return true;
                     }
                 } else if (comparison === NavigationComparisonResult.MISMATCH) {
                     // Check if the navigation is complete but we ended up somewhere else
                     if (navCtx.lifecycle === NavigationLifecycle.READY) {
                         // SY-114 Navigation Divergence
-                        return complete({
+                        complete({
                             satisfied: false,
                             error: `[SY-114] Navigation Divergence: Expected ${targetUrl}, but arrived at ${navCtx.currentURL}`
                         });
+                        return true;
                     }
                 }
                 
                 // If redirecting or temporarily diverged, we keep waiting
+                return false;
             };
 
             const onStateUpdate = ({ browserId, state }) => {
                 if (browserId === this.browserId) {
-                    evaluate();
+                    try { evaluate(); } catch (e) { complete({ satisfied: false, error: e.message }); }
                 }
             };
 
@@ -103,27 +107,35 @@ export class NavigationWaitStrategy {
                 complete({ satisfied: false, error: '[SY-113] Navigation cancelled: Page closed' });
             };
 
-            // Setup listeners
-            BrowserStateRegistry.on('StateUpdated', onStateUpdate);
-            this.providerEventEmitter.on('navigationFailed', onNavigationFailed);
-            page.on('close', onPageClose);
+            try {
+                if (evaluate()) return;
+            } catch (e) {
+                return reject(e);
+            }
 
-            // Setup timeout
-            timeoutId = setTimeout(() => {
-                const state = BrowserStateRegistry.getState(this.browserId);
-                const navCtx = state.navigationContext;
-                
-                if (navCtx.lifecycle === NavigationLifecycle.REDIRECTING) {
-                    complete({ satisfied: false, error: '[SY-110] Redirect timeout' });
-                } else if (navCtx.navigationType !== 'traditional') {
-                    complete({ satisfied: false, error: '[SY-111] SPA route timeout' });
-                } else {
-                    complete({ satisfied: false, error: '[SY-101] Navigation timeout' });
-                }
-            }, timeoutMs);
+            try {
+                // Setup listeners
+                BrowserStateRegistry.on('StateUpdated', onStateUpdate);
+                this.providerEventEmitter.on('navigationFailed', onNavigationFailed);
+                if (page) page.on('close', onPageClose);
 
-            // Initial evaluation
-            evaluate();
+                // Setup timeout
+                timeoutId = setTimeout(() => {
+                    const state = BrowserStateRegistry.getState(this.browserId);
+                    const navCtx = state.navigationContext;
+                    
+                    if (navCtx.lifecycle === NavigationLifecycle.REDIRECTING) {
+                        complete({ satisfied: false, error: '[SY-110] Redirect timeout' });
+                    } else if (navCtx.navigationType !== 'traditional') {
+                        complete({ satisfied: false, error: '[SY-111] SPA route timeout' });
+                    } else {
+                        complete({ satisfied: false, error: '[SY-101] Navigation timeout' });
+                    }
+                }, timeoutMs);
+            } catch (e) {
+                cleanup();
+                reject(e);
+            }
         });
     }
 }

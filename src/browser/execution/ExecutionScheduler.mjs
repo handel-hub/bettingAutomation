@@ -270,6 +270,7 @@ export class ExecutionScheduler {
                     // Barrier wait
                     const barrierResult = await SynchronizationBarrier.wait({
                         browserId,
+                        page: browserObj.page,
                         profile,
                         context,
                         deadline

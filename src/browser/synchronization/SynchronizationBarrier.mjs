@@ -45,26 +45,38 @@ export class SynchronizationBarrier {
             };
         }
 
+        const enrichTelemetry = (result) => {
+            if (!result.missingCapabilities || result.missingCapabilities.length === 0) return result;
+            
+            // Look into provider telemetry to extract mismatch contexts
+            const blockingTel = result.providerTelemetry.find(t => t.capability === result.blockingCapability);
+            if (blockingTel && blockingTel.error) {
+                // If the wait strategy threw an error with context (expected vs got), it will be in the error message
+                result.failureReason = blockingTel.error.message;
+            }
+            return result;
+        };
+
         if (Date.now() >= deadline) {
             executionContext.addTrace('BarrierTimeout');
-            return {
+            return enrichTelemetry({
                 status: 'TIMEOUT',
                 satisfiedCapabilities: managerResult.satisfiedCapabilities,
                 missingCapabilities: managerResult.missingCapabilities,
                 blockingCapability: managerResult.blockingCapability,
                 elapsed,
                 providerTelemetry: managerResult.providerTelemetry
-            };
+            });
         }
 
         executionContext.addTrace('BarrierFailed');
-        return {
+        return enrichTelemetry({
             status: 'FAILED',
             satisfiedCapabilities: managerResult.satisfiedCapabilities,
             missingCapabilities: managerResult.missingCapabilities,
             blockingCapability: managerResult.blockingCapability,
             elapsed,
             providerTelemetry: managerResult.providerTelemetry
-        };
+        });
     }
 }

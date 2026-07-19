@@ -27,6 +27,14 @@ export const NavigationResult = {
     CANCELLED: 'CANCELLED'
 };
 
+export const ViewportLifecycle = {
+    UNKNOWN: 'UNKNOWN',
+    MEASURING: 'MEASURING',
+    SYNCING: 'SYNCING',
+    VALIDATING: 'VALIDATING',
+    READY: 'READY'
+};
+
 /**
  * A pure data container tracking the factual reality of a specific browser context.
  * It is never mutated by itself. Only the BrowserStateRegistry updates it.
@@ -64,6 +72,32 @@ export class BrowserStateModel {
             startedAt: null,
             completedAt: null,
             duration: 0
+        };
+
+        this.windowContext = {
+            outerWidth: 0,
+            outerHeight: 0,
+            screenX: 0,
+            screenY: 0,
+            maximized: false,
+            minimized: false,
+            fullscreen: false
+        };
+
+        this.viewportContext = {
+            version: 0,
+            lifecycle: ViewportLifecycle.UNKNOWN,
+            lastResize: null,
+            viewportId: null,
+            dpr: 1,
+            orientation: null,
+            layoutViewportWidth: 0,
+            layoutViewportHeight: 0,
+            visualViewportOffsetX: 0,
+            visualViewportOffsetY: 0,
+            visualViewportScale: 1,
+            visualViewportWidth: 0,
+            visualViewportHeight: 0
         };
 
         this.capabilities = new BrowserCapabilities();

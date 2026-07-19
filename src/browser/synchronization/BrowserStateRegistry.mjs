@@ -47,6 +47,14 @@ class BrowserStateRegistryImpl extends EventEmitter {
             Object.assign(state.navigationContext, updates.navigationContext);
         }
 
+        if (updates.windowContext) {
+            Object.assign(state.windowContext, updates.windowContext);
+        }
+
+        if (updates.viewportContext) {
+            Object.assign(state.viewportContext, updates.viewportContext);
+        }
+
         if (updates.capabilities) {
             for (const [cap, value] of Object.entries(updates.capabilities)) {
                 state.capabilities.setSatisfied(cap, value);

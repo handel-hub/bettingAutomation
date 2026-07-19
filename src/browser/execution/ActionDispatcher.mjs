@@ -41,6 +41,7 @@ export class ActionDispatcher extends EventEmitter {
 
             const masterState = BrowserStateRegistry.getState('master');
             const navCtx = masterState.navigationContext;
+            const viewCtx = masterState.viewportContext;
 
             const metadata = {
                 navigation: navCtx ? {
@@ -53,7 +54,16 @@ export class ActionDispatcher extends EventEmitter {
                     navigationId: 'master-nav-fallback',
                     timestamp: Date.now(),
                     navigationType: 'fallback'
-                }
+                },
+                viewport: viewCtx ? {
+                    viewportId: viewCtx.viewportId,
+                    width: viewCtx.layoutViewportWidth,
+                    height: viewCtx.layoutViewportHeight,
+                    dpr: viewCtx.dpr,
+                    orientation: viewCtx.orientation,
+                    visualScale: viewCtx.visualViewportScale,
+                    capturedAt: Date.now()
+                } : null
             };
 
             const command = new Command({
