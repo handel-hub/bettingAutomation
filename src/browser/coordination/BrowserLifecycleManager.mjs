@@ -110,11 +110,12 @@ export class BrowserLifecycleManager {
             
             this.registry.register(id, role, browser, context, page, { proxyUrl, username });
             
+            // Capability Registry should initialize capabilities before we set lifecycle state
+            const { CapabilityRegistry } = await import('../synchronization/CapabilityRegistry.mjs');
+            await CapabilityRegistry.initializeAll(id, page);
+
             BrowserStateRegistry.update(id, {
-                lifecycleState: LifecycleState.READY,
-                capabilities: {
-                    [Capabilities.CONNECTED]: true
-                }
+                lifecycleState: LifecycleState.READY
             });
             
             return { browser, context, page };

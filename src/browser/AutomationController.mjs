@@ -21,6 +21,10 @@ import {
     WorkflowEngine
 } from './execution/index.mjs';
 
+import { CapabilityRegistry } from './synchronization/CapabilityRegistry.mjs';
+import { DOMCapabilityProvider } from './synchronization/providers/DOMCapabilityProvider.mjs';
+import { ConnectionCapabilityProvider } from './synchronization/providers/ConnectionCapabilityProvider.mjs';
+
 export class AutomationController {
     constructor(settings, accounts, proxyManager, stealthEngine) {
         this.settings = settings;
@@ -198,6 +202,14 @@ export class AutomationController {
 
     async start() {
         logger.info('Starting Automation Controller...');
+
+        // DI Bootstrap: Register synchronization providers
+        CapabilityRegistry.registerProvider(new ConnectionCapabilityProvider());
+        CapabilityRegistry.registerProvider(new DOMCapabilityProvider());
+        
+        // Dynamic import to prevent circular dependencies if any, but regular import is fine.
+        const { NavigationCapabilityProvider } = await import('./synchronization/providers/NavigationCapabilityProvider.mjs');
+        CapabilityRegistry.registerProvider(new NavigationCapabilityProvider());
 
         let maxAccounts = parseInt(this.settings.Spawning.max_accounts_to_spawn, 10);
         if (!Number.isInteger(maxAccounts) || maxAccounts <= 0) {

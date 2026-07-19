@@ -1,34 +1,49 @@
 /**
  * A pure interface representing an extension point for capability satisfaction.
- * Future stages (DOMProvider, ViewportProvider, etc.) will implement this.
+ * Providers do not access infrastructure directly. They operate on `syncContext`.
  */
 export class CapabilityProvider {
     /**
-     * Declares whether this provider knows how to satisfy the given capability.
-     * @param {string} capability 
-     * @returns {boolean}
+     * Returns the array of capabilities this provider owns.
+     * @returns {string[]} e.g., ['DOM_READY']
      */
-    canSatisfy(capability) {
-        throw new Error("Method 'canSatisfy()' must be implemented.");
+    supportedCapabilities() {
+        throw new Error("CapabilityProvider.supportedCapabilities() must be implemented by subclasses");
     }
 
     /**
-     * Attempts to satisfy the capability asynchronously.
-     * @param {string} capability 
+     * Initializes the provider when a new browser or page is spawned.
      * @param {string} browserId
-     * @returns {Promise<boolean>} True if satisfied, false otherwise.
+     * @param {Object} page
      */
-    async satisfy(capability, browserId) {
-        throw new Error("Method 'satisfy()' must be implemented.");
+    async initialize(browserId, page) {
+        // Optional override
     }
 
     /**
-     * Synchronously checks if the capability is currently satisfied.
-     * @param {string} capability 
-     * @param {string} browserId
-     * @returns {boolean}
+     * Instantly evaluates the current status of the capabilities.
+     * @param {Object} syncContext { browserId, page, browserState, executionContext, deadline }
+     * @returns {Promise<CapabilityResult>}
      */
-    isSatisfied(capability, browserId) {
-        throw new Error("Method 'isSatisfied()' must be implemented.");
+    async currentStatus(syncContext) {
+        throw new Error("CapabilityProvider.currentStatus() must be implemented by subclasses");
+    }
+
+    /**
+     * Event-driven wait for the capabilities to become satisfied.
+     * Must emit CapabilityPending, CapabilitySatisfied, or CapabilityLost.
+     * @param {Object} syncContext { browserId, page, browserState, executionContext, deadline }
+     * @returns {Promise<CapabilityResult>}
+     */
+    async waitFor(syncContext) {
+        throw new Error("CapabilityProvider.waitFor() must be implemented by subclasses");
+    }
+
+    /**
+     * Invalidates the current capabilities if conditions change (e.g., page navigated).
+     * @param {Object} syncContext
+     */
+    async invalidate(syncContext) {
+        throw new Error("CapabilityProvider.invalidate() must be implemented by subclasses");
     }
 }

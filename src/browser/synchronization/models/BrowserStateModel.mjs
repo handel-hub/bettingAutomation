@@ -11,6 +11,22 @@ export const LifecycleState = {
     HUNGOVER: 'HUNGOVER'
 };
 
+export const NavigationLifecycle = {
+    IDLE: 'IDLE',
+    NAVIGATING: 'NAVIGATING',
+    REDIRECTING: 'REDIRECTING',
+    WAITING_FOR_LOAD: 'WAITING_FOR_LOAD',
+    WAITING_FOR_DOM: 'WAITING_FOR_DOM',
+    READY: 'READY'
+};
+
+export const NavigationResult = {
+    SUCCESS: 'SUCCESS',
+    FAILED: 'FAILED',
+    TIMEOUT: 'TIMEOUT',
+    CANCELLED: 'CANCELLED'
+};
+
 /**
  * A pure data container tracking the factual reality of a specific browser context.
  * It is never mutated by itself. Only the BrowserStateRegistry updates it.
@@ -34,6 +50,20 @@ export class BrowserStateModel {
             lastExecution: 0,
             lastSynchronization: 0,
             averageResolutionTime: 0
+        };
+
+        this.navigationContext = {
+            targetURL: null,
+            currentURL: null,
+            previousURL: null,
+            lifecycle: NavigationLifecycle.IDLE,
+            result: null,
+            navigationId: null,
+            redirectCount: 0,
+            navigationType: null,
+            startedAt: null,
+            completedAt: null,
+            duration: 0
         };
 
         this.capabilities = new BrowserCapabilities();

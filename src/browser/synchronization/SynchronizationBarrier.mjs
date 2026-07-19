@@ -1,6 +1,4 @@
 import { SynchronizationManager } from './SynchronizationManager.mjs';
-import { RecoveryCoordinator } from './RecoveryCoordinator.mjs';
-import { BrowserStateRegistry } from './BrowserStateRegistry.mjs';
 
 /**
  * A completely stateless execution gate.
@@ -8,63 +6,65 @@ import { BrowserStateRegistry } from './BrowserStateRegistry.mjs';
 export class SynchronizationBarrier {
     /**
      * Waits until the required synchronization profile is satisfied for the browser.
-     * @param {Object} params 
-     * @param {string} params.browserId 
-     * @param {Object} params.profile 
-     * @param {import('../execution/ExecutionContext.mjs').ExecutionContext} params.context 
-     * @param {number} params.deadline 
+     * @param {Object} syncContext { browserId, page, browserState, context, deadline }
      * @returns {Promise<Object>} BarrierResult
      */
-    static async wait({ browserId, profile, context, deadline }) {
-        const start = Date.now();
-        let recoveryTriggered = false;
+    static async wait(syncContext) {
+        const { browserId, profile, context: executionContext, deadline } = syncContext;
+        const capabilities = profile.level; // Array of required capabilities
 
-        // Extract the required capabilities from the profile level
-        const requiredCapabilities = profile.level;
-
-        context.addTrace('BarrierStarted');
-
-        // Query the SynchronizationManager
-        const managerResult = await SynchronizationManager.awaitCapabilities(
-            browserId, 
-            requiredCapabilities, 
-            deadline
-        );
-
-        if (managerResult.satisfied) {
-            context.addTrace('BarrierSatisfied');
+        // Instantly satisfied?
+        if (!capabilities || capabilities.length === 0) {
             return {
                 status: 'PASSED',
-                elapsed: Date.now() - start,
-                blockingCapability: null,
+                satisfiedCapabilities: [],
                 missingCapabilities: [],
-                browserHealth: BrowserStateRegistry.getState(browserId).healthMetrics,
-                recoveryTriggered: false
+                blockingCapability: null,
+                elapsed: 0,
+                providerTelemetry: []
             };
         }
 
-        // If not satisfied, check if we've breached the deadline
+        const startTime = Date.now();
+        executionContext.addTrace('BarrierWaitStarted');
+
+        // Delegate to active providers
+        const managerResult = await SynchronizationManager.awaitCapabilities(syncContext, capabilities);
+
+        const elapsed = Date.now() - startTime;
+
+        if (managerResult.satisfied) {
+            executionContext.addTrace('BarrierSatisfied');
+            return {
+                status: 'PASSED',
+                satisfiedCapabilities: managerResult.satisfiedCapabilities,
+                missingCapabilities: [],
+                blockingCapability: null,
+                elapsed,
+                providerTelemetry: managerResult.providerTelemetry
+            };
+        }
+
         if (Date.now() >= deadline) {
-            context.addTrace('BarrierTimeout');
+            executionContext.addTrace('BarrierTimeout');
             return {
                 status: 'TIMEOUT',
-                elapsed: Date.now() - start,
-                blockingCapability: managerResult.blockingCapability,
+                satisfiedCapabilities: managerResult.satisfiedCapabilities,
                 missingCapabilities: managerResult.missingCapabilities,
-                browserHealth: BrowserStateRegistry.getState(browserId).healthMetrics,
-                recoveryTriggered: false
+                blockingCapability: managerResult.blockingCapability,
+                elapsed,
+                providerTelemetry: managerResult.providerTelemetry
             };
         }
 
-        // Future stages: implement recovery loops based on profile.retryPolicy here
-        context.addTrace('BarrierFailed');
+        executionContext.addTrace('BarrierFailed');
         return {
             status: 'FAILED',
-            elapsed: Date.now() - start,
-            blockingCapability: managerResult.blockingCapability,
+            satisfiedCapabilities: managerResult.satisfiedCapabilities,
             missingCapabilities: managerResult.missingCapabilities,
-            browserHealth: BrowserStateRegistry.getState(browserId).healthMetrics,
-            recoveryTriggered: recoveryTriggered
+            blockingCapability: managerResult.blockingCapability,
+            elapsed,
+            providerTelemetry: managerResult.providerTelemetry
         };
     }
 }

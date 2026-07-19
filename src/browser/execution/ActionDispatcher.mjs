@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import EventEmitter from 'node:events';
 import { Command } from './Command.mjs';
+import { BrowserStateRegistry } from '../synchronization/BrowserStateRegistry.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,6 +39,23 @@ export class ActionDispatcher extends EventEmitter {
                 this.recordAction(eventData);
             }
 
+            const masterState = BrowserStateRegistry.getState('master');
+            const navCtx = masterState.navigationContext;
+
+            const metadata = {
+                navigation: navCtx ? {
+                    url: navCtx.currentURL,
+                    navigationId: navCtx.navigationId,
+                    timestamp: navCtx.startedAt,
+                    navigationType: navCtx.navigationType
+                } : {
+                    url: masterPage.url(),
+                    navigationId: 'master-nav-fallback',
+                    timestamp: Date.now(),
+                    navigationType: 'fallback'
+                }
+            };
+
             const command = new Command({
                 version: 2,
                 lifecycle: 'CAPTURED',
@@ -45,7 +63,8 @@ export class ActionDispatcher extends EventEmitter {
                 type: eventData.type,
                 payload: eventData.payload,
                 source: 'Master Browser',
-                executionMode: 'SLAVES_ONLY'
+                executionMode: 'SLAVES_ONLY',
+                metadata
             });
 
             this.emit('Command', command);
