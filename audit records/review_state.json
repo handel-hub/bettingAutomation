@@ -1,0 +1,22 @@
+{
+  "currentReview": {
+    "domainId": "3.1",
+    "domainName": "Stealth Module Navigation Audit",
+    "auditReport": "3.1_stealth_module_navigation.md",
+    "reviewReport": "3.1_review.md"
+  },
+
+  "review": {
+    "status": "APPROVED",
+    "attempt": 1,
+    "verdict": "APPROVED",
+    "qualityScore": 100
+  },
+
+  "history": [],
+
+  "timestamps": {
+    "started": null,
+    "completed": null
+  }
+}
