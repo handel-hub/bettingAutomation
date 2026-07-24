@@ -5,106 +5,35 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import EventEmitter from 'node:events';
 import { Command } from './Command.mjs';
-import { BrowserStateRegistry } from '../synchronization/BrowserStateRegistry.mjs';
 import { FramePathBuilder } from '../synchronization/providers/frame/FramePathBuilder.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export class ActionDispatcher extends EventEmitter {
-    constructor(settings) {
+    constructor(settings, registry) {
         super();
+        this.registry = registry;
         this.memorySettings = settings.Memory || {};
         
         this.sequenceFile = path.join(__dirname, '..', '..', '..', 'sequences', 'startup.json');
         this.actions = [];
         this.saveTimeout = null;
-
-        if (fs.existsSync(this.sequenceFile)) {
-            try { this.actions = JSON.parse(fs.readFileSync(this.sequenceFile, 'utf-8')); } catch(e) {}
-        }
+        this.isSaving = false;
+        this.savePending = false;
 
         process.on('SIGINT', () => this.flushSync());
         process.on('beforeExit', () => this.flushSync());
     }
 
-    async injectMasterListeners(masterPage) {
-        await masterPage.exposeFunction('dispatchInstrumentationEvent', async (eventData) => {
-            logger.info(`[INSTRUMENTATION] [${eventData.captureTime}] Type: ${eventData.type} | Target: ${eventData.tag}#${eventData.id}.${eventData.class} | Selector: ${eventData.selector} | Extra: ${eventData.extra} | Error: ${eventData.error}`);
-        });
+    async init() {
+        if (fs.existsSync(this.sequenceFile)) {
+            try { this.actions = JSON.parse(await fsPromises.readFile(this.sequenceFile, 'utf-8')); } catch(e) {}
+        }
+        await this.buildInjectedScript();
+    }
 
-        await masterPage.exposeBinding('dispatchExecutionEvent', async ({ frame }, eventData) => {
-            logger.info(`[Master Dispatch] ${eventData.type}`);
-            
-            if (this.memorySettings.record_action_sequence === 'true') {
-                this.recordAction(eventData);
-            }
-
-            const masterState = BrowserStateRegistry.getState('master');
-            const navCtx = masterState.navigationContext;
-            const viewCtx = masterState.viewportContext;
-            const scrollCtx = masterState.scrollContext;
-            const execCtx = masterState.executionContext;
-            
-            const framePath = FramePathBuilder.build(frame);
-
-            const metadata = {
-                navigation: navCtx ? {
-                    url: navCtx.currentURL,
-                    navigationId: navCtx.navigationId,
-                    timestamp: navCtx.startedAt,
-                    navigationType: navCtx.navigationType
-                } : {
-                    url: masterPage.url(),
-                    navigationId: 'master-nav-fallback',
-                    timestamp: Date.now(),
-                    navigationType: 'fallback'
-                },
-                viewport: viewCtx ? {
-                    viewportId: viewCtx.viewportId,
-                    width: viewCtx.layoutViewportWidth,
-                    height: viewCtx.layoutViewportHeight,
-                    dpr: viewCtx.dpr,
-                    orientation: viewCtx.orientation,
-                    visualScale: viewCtx.visualViewportScale,
-                    capturedAt: Date.now()
-                } : null,
-                scroll: scrollCtx ? {
-                    scrollId: scrollCtx.scrollId,
-                    source: scrollCtx.source,
-                    pageX: scrollCtx.pageScrollX,
-                    pageY: scrollCtx.pageScrollY,
-                    containerId: scrollCtx.activeContainerId,
-                    containerX: scrollCtx.containerScrollX,
-                    containerY: scrollCtx.containerScrollY,
-                    direction: scrollCtx.direction,
-                    velocity: scrollCtx.velocity,
-                    capturedAt: Date.now()
-                } : null,
-                executionContext: {
-                    framePath,
-                    // Note: shadowPath will be added by the locator intelligence engine logic
-                    // if it occurs within a shadow root.
-                    shadowPath: eventData.payload && eventData.payload.locators && eventData.payload.locators.shadowPath ? eventData.payload.locators.shadowPath : [],
-                    contextVersion: execCtx ? execCtx.version : 0,
-                    capturedAt: Date.now()
-                }
-            };
-
-            const command = new Command({
-                version: 2,
-                lifecycle: 'CAPTURED',
-                category: 'Execution',
-                type: eventData.type,
-                payload: eventData.payload,
-                source: 'Master Browser',
-                executionMode: 'SLAVES_ONLY',
-                metadata
-            });
-
-            this.emit('Command', command);
-        });
-
+    async buildInjectedScript() {
         const pipelineFiles = [
             'models/ValidationResult.mjs',
             'models/RankingResult.mjs',
@@ -143,16 +72,18 @@ export class ActionDispatcher extends EventEmitter {
         let locatorIntelligenceCode = '';
         for (const file of pipelineFiles) {
             const filePath = path.join(__dirname, 'locatorIntelligence', file);
-            let content = fs.readFileSync(filePath, 'utf8');
-            // Strip 'export ' and 'import '
-            content = content.replace(/^\uFEFF/, '')
-                             .replace(/^export\s+/gm, '')
-                             .replace(/^import\s+.*$/gm, '');
-            locatorIntelligenceCode += content + '\n\n';
+            let content = await fsPromises.readFile(filePath, 'utf8');
+            content = content.replace(/^\\uFEFF/, '')
+                             .replace(/^export\\s+/gm, '')
+                             .replace(/^import\\s+.*$/gm, '');
+            locatorIntelligenceCode += content + '\\n\\n';
         }
 
         const scriptContent = `
             (() => {
+            if (window.__locatorIntelligenceInjected) return;
+            window.__locatorIntelligenceInjected = true;
+
             const locatorIntelligencePipelineStart = Date.now();
             function generateUUID() {
                 return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -187,7 +118,7 @@ export class ActionDispatcher extends EventEmitter {
             class InteractionRecognizer {
                 constructor() {
                     this.pointerState = 'IDLE';
-                    this.pointerData = { path: [], startTarget: null, clickTimeout: null, consumed: [], startTime: 0 };
+                    this.pointerData = { path: [], startTarget: null, composedPath: [], clickTimeout: null, consumed: [], startTime: 0 };
                     
                     this.scrollState = 'IDLE';
                     this.scrollData = { deltaX: 0, deltaY: 0, timeout: null, consumed: [], target: null };
@@ -211,10 +142,11 @@ export class ActionDispatcher extends EventEmitter {
 
                     if (data.target && ['CLICK', 'DOUBLE_CLICK', 'DRAG', 'INPUT'].includes(type)) {
                         const engine = new LocatorIntelligenceEngine();
-                        const resolution = engine.process(data.target);
+                        const resolution = engine.process(data.target, data.composedPath || []);
                         if (resolution) {
                             payload.locators = resolution.locators;
                             payload.locatorMetadata = resolution.metadata;
+                            payload.shadowPath = resolution.shadowPath;
                         }
                     }
 
@@ -234,7 +166,7 @@ export class ActionDispatcher extends EventEmitter {
                         this.pointerData.clickTimeout = null;
                     }
                     this.pointerState = 'IDLE';
-                    this.pointerData = { path: [], startTarget: null, clickTimeout: null, consumed: [], startTime: 0 };
+                    this.pointerData = { path: [], startTarget: null, composedPath: [], clickTimeout: null, consumed: [], startTime: 0 };
                 }
 
                 processPointerEvent(e) {
@@ -248,7 +180,8 @@ export class ActionDispatcher extends EventEmitter {
                         }
                         this.flushPointer();
                         this.pointerState = 'POINTER_DOWN';
-                        this.pointerData.startTarget = e.target;
+                        this.pointerData.startTarget = (e.composedPath && e.composedPath().length > 0) ? e.composedPath()[0] : e.target;
+                        this.pointerData.composedPath = e.composedPath ? e.composedPath() : [];
                         this.pointerData.path = [{x: e.clientX, y: e.clientY}];
                         this.pointerData.consumed.push(type);
                         this.pointerData.startTime = now;
@@ -298,6 +231,7 @@ export class ActionDispatcher extends EventEmitter {
                                 consumed: this.pointerData.consumed,
                                 context: 'Pointer Context',
                                 target: this.pointerData.startTarget,
+                                composedPath: this.pointerData.composedPath,
                                 path: this.pointerData.path,
                                 startTime: this.pointerData.startTime
                             });
@@ -310,6 +244,7 @@ export class ActionDispatcher extends EventEmitter {
                                     consumed: this.pointerData.consumed,
                                     context: 'Pointer Context',
                                     target: this.pointerData.startTarget,
+                                    composedPath: this.pointerData.composedPath,
                                     coordinates: { x: e.clientX, y: e.clientY },
                                     startTime: this.pointerData.startTime
                                 });
@@ -325,21 +260,24 @@ export class ActionDispatcher extends EventEmitter {
                         } else {
                             this.pointerState = 'CLICK_PENDING';
                             this.pointerData.consumed.push(type);
-                            if (!this.pointerData.startTarget) this.pointerData.startTarget = e.target;
+                            if (!this.pointerData.startTarget) {
+                                this.pointerData.startTarget = (e.composedPath && e.composedPath().length > 0) ? e.composedPath()[0] : e.target;
+                                this.pointerData.composedPath = e.composedPath ? e.composedPath() : [];
+                            }
                             if (this.pointerData.path.length === 0) this.pointerData.path.push({x: e.clientX, y: e.clientY});
                             if (!this.pointerData.startTime) this.pointerData.startTime = now;
 
-                            this.pointerData.clickTimeout = setTimeout(() => {
-                                this.emit('CLICK', {
-                                    originEvent: 'click',
-                                    consumed: this.pointerData.consumed,
-                                    context: 'Pointer Context',
-                                    target: this.pointerData.startTarget,
-                                    coordinates: this.pointerData.path[0],
-                                    startTime: this.pointerData.startTime
-                                });
-                                this.flushPointer();
-                            }, AggregationConfig.clickWindow);
+                            // IMMEDIATE EMIT - Zero Latency Click
+                            this.emit('CLICK', {
+                                originEvent: 'click',
+                                consumed: this.pointerData.consumed,
+                                context: 'Pointer Context',
+                                target: this.pointerData.startTarget,
+                                composedPath: this.pointerData.composedPath,
+                                coordinates: this.pointerData.path[0],
+                                startTime: this.pointerData.startTime
+                            });
+                            this.flushPointer();
                         }
                     }
                     else if (type === 'dblclick') {
@@ -350,7 +288,8 @@ export class ActionDispatcher extends EventEmitter {
                             originEvent: 'dblclick',
                             consumed: this.pointerData.consumed,
                             context: 'Pointer Context',
-                            target: this.pointerData.startTarget || e.target,
+                            target: this.pointerData.startTarget || ((e.composedPath && e.composedPath().length > 0) ? e.composedPath()[0] : e.target),
+                            composedPath: this.pointerData.composedPath || (e.composedPath ? e.composedPath() : []),
                             coordinates: { x: e.clientX, y: e.clientY },
                             startTime: this.pointerData.startTime || now
                         });
@@ -395,7 +334,8 @@ export class ActionDispatcher extends EventEmitter {
                     if (this.inputState === 'IDLE') {
                         this.inputState = 'TYPING';
                         this.inputData.startTime = now;
-                        this.inputData.target = e.target;
+                        this.inputData.target = (e.composedPath && e.composedPath().length > 0) ? e.composedPath()[0] : e.target;
+                        this.inputData.composedPath = e.composedPath ? e.composedPath() : [];
                     }
                     
                     this.inputData.value = e.target.value;
@@ -409,6 +349,7 @@ export class ActionDispatcher extends EventEmitter {
                             consumed: this.inputData.consumed,
                             context: 'Input Context',
                             target: this.inputData.target,
+                            composedPath: this.inputData.composedPath,
                             value: this.inputData.value,
                             startTime: this.inputData.startTime
                         });
@@ -476,10 +417,92 @@ export class ActionDispatcher extends EventEmitter {
             })();
         `;
         
-        fs.writeFileSync(path.join(__dirname, 'debug_injected.js'), scriptContent);
-        
-        await masterPage.addInitScript(scriptContent);
-        await masterPage.evaluate(scriptContent).catch(err => logger.warn('Failed to immediately evaluate ActionDispatcher script: ' + err.message));
+        await fsPromises.writeFile(path.join(__dirname, 'debug_injected.js'), scriptContent);
+        this.cachedScriptContent = scriptContent;
+    }
+
+    async injectMasterListeners(masterPage) {
+        if (!this.cachedScriptContent) {
+            await this.buildInjectedScript();
+        }
+        await masterPage.addInitScript(this.cachedScriptContent);
+        await masterPage.evaluate(this.cachedScriptContent).catch(err => logger.warn('Failed to immediately evaluate ActionDispatcher script: ' + err.message));
+
+        await masterPage.exposeFunction('dispatchInstrumentationEvent', async (eventData) => {
+            logger.info(`[INSTRUMENTATION] [${eventData.captureTime}] Type: ${eventData.type} | Target: ${eventData.tag}#${eventData.id}.${eventData.class} | Selector: ${eventData.selector} | Extra: ${eventData.extra} | Error: ${eventData.error}`);
+        });
+
+        await masterPage.exposeBinding('dispatchExecutionEvent', async ({ frame }, eventData) => {
+            logger.info(`[Master Dispatch] ${eventData.type}`);
+            
+            if (this.memorySettings.record_action_sequence === 'true') {
+                this.recordAction(eventData);
+            }
+
+            const masterState = this.registry.getState('master');
+            const navCtx = masterState.navigationContext;
+            const viewCtx = masterState.viewportContext;
+            const scrollCtx = masterState.scrollContext;
+            const execCtx = masterState.executionContext;
+            
+            const framePath = FramePathBuilder.build(frame);
+
+            const metadata = {
+                navigation: navCtx ? {
+                    url: navCtx.currentURL,
+                    navigationId: navCtx.navigationId,
+                    timestamp: navCtx.startedAt,
+                    navigationType: navCtx.navigationType
+                } : {
+                    url: masterPage.url(),
+                    navigationId: 'master-nav-fallback',
+                    timestamp: Date.now(),
+                    navigationType: 'fallback'
+                },
+                viewport: viewCtx ? {
+                    viewportId: viewCtx.viewportId,
+                    width: viewCtx.layoutViewportWidth,
+                    height: viewCtx.layoutViewportHeight,
+                    dpr: viewCtx.dpr,
+                    orientation: viewCtx.orientation,
+                    visualScale: viewCtx.visualViewportScale,
+                    capturedAt: Date.now()
+                } : null,
+                scroll: scrollCtx ? {
+                    scrollId: scrollCtx.scrollId,
+                    source: scrollCtx.source,
+                    pageX: scrollCtx.pageScrollX,
+                    pageY: scrollCtx.pageScrollY,
+                    containerId: scrollCtx.activeContainerId,
+                    containerX: scrollCtx.containerScrollX,
+                    containerY: scrollCtx.containerScrollY,
+                    direction: scrollCtx.direction,
+                    velocity: scrollCtx.velocity,
+                    capturedAt: Date.now()
+                } : null,
+                executionContext: {
+                    framePath,
+                    shadowPath: eventData.payload && eventData.payload.shadowPath ? eventData.payload.shadowPath : [],
+                    contextVersion: execCtx ? execCtx.version : 0,
+                    capturedAt: Date.now()
+                }
+            };
+
+            const command = new Command({
+                version: 2,
+                lifecycle: 'CAPTURED',
+                category: 'Execution',
+                type: eventData.type,
+                payload: eventData.payload,
+                source: 'Master Browser',
+                executionMode: 'SLAVES_ONLY',
+                metadata
+            });
+
+            this.emit('Command', command);
+        });
+
+
     }
 
     recordAction(action) {
@@ -498,16 +521,36 @@ export class ActionDispatcher extends EventEmitter {
         const elapsed = now - this.firstPendingAt;
         const delay = Math.min(1000, Math.max(0, 5000 - elapsed));
 
-        this.saveTimeout = setTimeout(async () => {
+        this.saveTimeout = setTimeout(() => {
             this.firstPendingAt = null;
-            try {
-                const dir = path.dirname(this.sequenceFile);
-                if (!fs.existsSync(dir)) await fsPromises.mkdir(dir, { recursive: true });
-                await fsPromises.writeFile(this.sequenceFile, JSON.stringify(this.actions, null, 2));
-            } catch (err) {
-                logger.error(`ActionDispatcher: Failed to flush sequence async: ${err.message}`);
-            }
+            this.scheduleSave();
         }, delay);
+    }
+
+    async scheduleSave() {
+        if (this.isSaving) {
+            this.savePending = true;
+            return;
+        }
+        
+        this.isSaving = true;
+        this.savePending = false;
+        
+        try {
+            const dir = path.dirname(this.sequenceFile);
+            await fsPromises.mkdir(dir, { recursive: true });
+            
+            const tmpFile = `${this.sequenceFile}.${Date.now()}.${Math.random().toString(36).substring(2)}.tmp`;
+            await fsPromises.writeFile(tmpFile, JSON.stringify(this.actions, null, 2));
+            await fsPromises.rename(tmpFile, this.sequenceFile);
+        } catch (err) {
+            logger.error(`ActionDispatcher: Failed to flush sequence async: ${err.message}`);
+        } finally {
+            this.isSaving = false;
+            if (this.savePending) {
+                this.scheduleSave();
+            }
+        }
     }
 
     flushSync() {
@@ -518,8 +561,11 @@ export class ActionDispatcher extends EventEmitter {
         if (this.actions.length > 0) {
             try {
                 const dir = path.dirname(this.sequenceFile);
-                if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-                fs.writeFileSync(this.sequenceFile, JSON.stringify(this.actions, null, 2));
+                fs.mkdirSync(dir, { recursive: true });
+                
+                const tmpFile = `${this.sequenceFile}.${Date.now()}.sync.tmp`;
+                fs.writeFileSync(tmpFile, JSON.stringify(this.actions, null, 2));
+                fs.renameSync(tmpFile, this.sequenceFile);
             } catch (e) {
                 console.error(`ActionDispatcher: Failed to flush sequence sync on exit: ${e.message}`);
             }

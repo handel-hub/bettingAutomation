@@ -67,7 +67,7 @@ export class PlaywrightTimeoutError extends PlaywrightExecutionFailure { constru
 // 5. Browser Failure (Slave)
 // ----------------------------------------------------
 export class BrowserFailure extends AutomationError {
-    constructor(code, message, severity = 'FATAL', owner = 'BrowserRegistry') {
+    constructor(code, message, severity = 'FATAL', owner = 'BrowserStateRegistry') {
         super(code, message, severity, owner);
     }
 }

@@ -6,7 +6,25 @@ export class LocatorSerializer extends PipelineStep {
     execute(context) {
         const candidates = context.candidates || [];
         
+        let shadowPath = [];
+        if (context.composedPath && Array.isArray(context.composedPath)) {
+            for (let i = 0; i < context.composedPath.length; i++) {
+                const node = context.composedPath[i];
+                if (node && node.nodeType === 11) { // ShadowRoot
+                    const host = node.host || context.composedPath[i + 1];
+                    if (host && host.nodeType === 1) {
+                        let selector = host.nodeName.toLowerCase();
+                        if (host.id && !/\\d+/.test(host.id)) {
+                            selector += '#' + CSS.escape(host.id);
+                        }
+                        shadowPath.unshift(selector);
+                    }
+                }
+            }
+        }
+        
         context.output = {
+            shadowPath,
             locators: candidates.map(c => ({
                 id: c.id,
                 strategy: c.strategy,

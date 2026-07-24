@@ -1,14 +1,14 @@
 import { chromium } from 'playwright-extra';
 import { devices } from 'playwright';
 import { logger } from '../../config.mjs';
-import { BrowserStateRegistry } from '../synchronization/BrowserStateRegistry.mjs';
 import { LifecycleState } from '../synchronization/models/BrowserStateModel.mjs';
 import { Capabilities } from '../synchronization/capabilities.mjs';
 
 
 export class BrowserLifecycleManager {
-    constructor(registry, settings, stealthEngine = null) {
+    constructor(registry, capabilityRegistry, settings, stealthEngine = null) {
         this.registry = registry;
+        this.capabilityRegistry = capabilityRegistry;
         this.spawning = settings.Spawning || {};
         this.stealthEngine = stealthEngine;
 
@@ -82,6 +82,7 @@ export class BrowserLifecycleManager {
             // Defeat Stealth Plugin's desktop spoofing by enforcing mobile properties
             await context.addInitScript(() => {
                 Object.defineProperty(navigator, 'platform', { get: () => 'iPhone' });
+                Object.defineProperty(navigator, 'vendor', { get: () => 'Apple Computer, Inc.' });
                 Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 5 });
                 Object.defineProperty(window, 'outerWidth', { get: () => 390 });
                 Object.defineProperty(window, 'outerHeight', { get: () => 844 });
@@ -111,11 +112,26 @@ export class BrowserLifecycleManager {
             this.registry.register(id, role, browser, context, page, { proxyUrl, username });
             
             // Capability Registry should initialize capabilities before we set lifecycle state
-            const { CapabilityRegistry } = await import('../synchronization/CapabilityRegistry.mjs');
-            await CapabilityRegistry.initializeAll(id, page);
+            await this.capabilityRegistry.initializeAll(id, page);
 
-            BrowserStateRegistry.update(id, {
+            this.registry.update(id, {
                 lifecycleState: LifecycleState.READY
+            });
+            
+            // Register lifecycle listeners to catch crashes and disconnects immediately
+            browser.on('disconnected', () => {
+                logger.warn(`[LifecycleManager] Browser [${id}] disconnected unexpectedly.`);
+                this.registry.updateState(id, 'Error');
+            });
+            
+            page.on('close', () => {
+                logger.warn(`[LifecycleManager] Page for [${id}] closed unexpectedly.`);
+                this.registry.updateState(id, 'Error');
+            });
+            
+            page.on('crash', () => {
+                logger.error(`[LifecycleManager] Page for [${id}] CRASHED.`);
+                this.registry.updateState(id, 'Error');
             });
             
             return { browser, context, page };

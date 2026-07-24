@@ -3,6 +3,10 @@
  * Providers do not access infrastructure directly. They operate on `syncContext`.
  */
 export class CapabilityProvider {
+    constructor(registry, syncManager) {
+        this.registry = registry;
+        this.syncManager = syncManager;
+    }
     /**
      * Returns the array of capabilities this provider owns.
      * @returns {string[]} e.g., ['DOM_READY']

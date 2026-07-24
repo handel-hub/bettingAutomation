@@ -1,13 +1,14 @@
 import { NavigationEvent, NavigationEventType } from './NavigationEvent.mjs';
 import { NavigationStateMachine } from './NavigationStateMachine.mjs';
 
-import { BrowserStateRegistry } from '../../BrowserStateRegistry.mjs';
 
 /**
  * Strictly limits its responsibility to event subscription and normalization.
  */
 export class NavigationTracker {
-    constructor(browserId, page) {
+    constructor(browserId, page, registry, syncManager) {
+        this.registry = registry;
+        this.syncManager = syncManager;
         this.browserId = browserId;
         this.page = page;
         this.stateMachine = new NavigationStateMachine(browserId);
@@ -96,7 +97,7 @@ export class NavigationTracker {
             const currentUrl = this.page.url();
             if (currentUrl !== this._lastUrl) {
                 // Check if this URL change belongs to an already active navigation that we missed
-                const state = BrowserStateRegistry.getState(this.browserId);
+                const state = this.registry.getState(this.browserId);
                 const ctx = state?.navigationContext || {};
                 
                 if (ctx.lifecycle && ctx.lifecycle !== 'IDLE' && ctx.lifecycle !== 'READY' && ctx.currentURL === currentUrl) {
@@ -112,7 +113,7 @@ export class NavigationTracker {
     }
 
     _emit(type, url, metadata = {}) {
-        const state = BrowserStateRegistry.getState(this.browserId);
+        const state = this.registry.getState(this.browserId);
         const ctx = state?.navigationContext || {};
         const isIdleOrReady = !ctx.lifecycle || ctx.lifecycle === 'IDLE' || ctx.lifecycle === 'READY';
         

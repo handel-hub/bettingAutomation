@@ -1,13 +1,13 @@
-import { SynchronizationManager } from './SynchronizationManager.mjs';
 import { SynchronizationDiagnostics } from './telemetry/SynchronizationDiagnostics.mjs';
+import { logger } from '../../config.mjs';
 
 /**
  * A stateless execution gate that coordinates with the SynchronizationManager.
  */
 export class SynchronizationBarrier {
     static async wait(syncContext) {
-        const { browserId, profile, context: executionContext, deadline } = syncContext;
-        const capabilities = profile.level; 
+        const { browserId, profile, context: executionContext, deadline, syncManager } = syncContext;
+        const capabilities = profile.level;
 
         if (!capabilities || capabilities.length === 0) {
             return { status: 'PASSED', satisfiedCapabilities: [], missingCapabilities: [], blockingCapability: null, elapsed: 0, providerTelemetry: [] };
@@ -28,8 +28,8 @@ export class SynchronizationBarrier {
             const snapshot = managerResult.snapshot;
             const consistencyScore = snapshot ? snapshot.consistency : 0;
             
-            if (SynchronizationManager.timeline && snapshot) {
-                diagnostics = SynchronizationDiagnostics.generateReport(snapshot, SynchronizationManager.timeline);
+            if (syncManager.timeline && snapshot) {
+                diagnostics = SynchronizationDiagnostics.generateReport(snapshot, syncManager.timeline);
             }
 
             let failureReason = null;
@@ -42,8 +42,8 @@ export class SynchronizationBarrier {
                 }
             }
 
-            if (SynchronizationManager.telemetry) {
-                SynchronizationManager.telemetry.recordBarrier(elapsed, resultStatus === 'PASSED');
+            if (syncManager.telemetry) {
+                syncManager.telemetry.recordBarrier(elapsed, resultStatus === 'PASSED');
             }
 
             return {
@@ -62,17 +62,17 @@ export class SynchronizationBarrier {
 
         // 1. Evaluate & Re-evaluate Loop
         while (true) {
-            managerResult = await SynchronizationManager.awaitCapabilities(syncContext, capabilities);
+            managerResult = await syncManager.awaitCapabilities(syncContext, capabilities);
             elapsed = Date.now() - startTime;
             
-            if (SynchronizationManager.timeline) {
-                SynchronizationManager.timeline.record({ type: 'BarrierEvaluated', satisfied: managerResult.satisfied, browserId });
+            if (syncManager.timeline) {
+                syncManager.timeline.record({ type: 'BarrierEvaluated', satisfied: managerResult.satisfied, browserId });
             }
 
             // 2. Capability Result Evaluation
             if (managerResult.satisfied) {
                 executionContext.addTrace(recoveryAttempts > 0 ? 'BarrierPassedAfterRecovery' : 'BarrierPassed');
-                if (SynchronizationManager.timeline) SynchronizationManager.timeline.record({ type: 'BarrierPassed', browserId });
+                if (syncManager.timeline) syncManager.timeline.record({ type: 'BarrierPassed', browserId });
                 return enrichTelemetry('PASSED');
             }
 
@@ -82,23 +82,23 @@ export class SynchronizationBarrier {
                 return enrichTelemetry('CONSISTENCY_TOO_LOW');
             }
 
-            if (!SynchronizationManager.recoveryCoordinator || !managerResult.snapshot || recoveryAttempts >= maxRecoveryAttempts) {
+            if (!syncManager.recoveryCoordinator || !managerResult.snapshot || recoveryAttempts >= maxRecoveryAttempts) {
                 break;
             }
 
             // 4. Recovery Execution
             recoveryAttempts++;
-            if (SynchronizationManager.timeline) SynchronizationManager.timeline.record({ type: 'RecoveryStarted', capability: managerResult.blockingCapability, browserId });
+            if (syncManager.timeline) syncManager.timeline.record({ type: 'RecoveryStarted', capability: managerResult.blockingCapability, browserId });
             
-            const recoveryPlan = await SynchronizationManager.recoveryCoordinator.recover(managerResult.snapshot, managerResult.blockingCapability);
+            const recoveryPlan = await syncManager.recoveryCoordinator.recover(managerResult.snapshot, managerResult.blockingCapability);
             recoveryAction = recoveryPlan.strategy;
 
-            if (SynchronizationManager.telemetry) {
-                SynchronizationManager.telemetry.recordRecovery(recoveryPlan);
+            if (syncManager.telemetry) {
+                syncManager.telemetry.recordRecovery(recoveryPlan);
             }
 
-            if (SynchronizationManager.recoveryActionExecutor) {
-                await SynchronizationManager.recoveryActionExecutor.execute(recoveryPlan, syncContext);
+            if (syncManager.recoveryActionExecutor) {
+                await syncManager.recoveryActionExecutor.execute(recoveryPlan, syncContext);
             }
 
             if (recoveryPlan.strategy === 'PAGE_RELOAD' || recoveryPlan.strategy === 'BROWSER_RESTART') {

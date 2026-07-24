@@ -1,6 +1,5 @@
 import { CapabilityResult } from '../../models/CapabilityResult.mjs';
 import { Capabilities } from '../../capabilities.mjs';
-import { BrowserStateRegistry } from '../../BrowserStateRegistry.mjs';
 
 export class FrameWaitStrategy {
     constructor(browserId, stateMachine, comparator, policy) {
@@ -18,7 +17,7 @@ export class FrameWaitStrategy {
 
         return new Promise((resolve) => {
             const check = () => {
-                const state = BrowserStateRegistry.getState(this.browserId);
+                const state = this.registry.getState(this.browserId);
                 const result = this.comparator.compare(metadata, state);
                 
                 if (result.match) {

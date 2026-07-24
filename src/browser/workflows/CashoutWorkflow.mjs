@@ -1,6 +1,6 @@
 import { logger } from '../../config.mjs';
 import { Workflow } from './Workflow.mjs';
-import { raceWithCleanup } from '../../utils/playwright.mjs';
+import { redactUsername } from '../../utils/redact.mjs';
 
 export class CashoutWorkflow extends Workflow {
     async execute(browserObj, payload = {}, lockManager, registry) {
@@ -11,9 +11,14 @@ export class CashoutWorkflow extends Workflow {
             throw new Error(`CashoutWorkflow requires a valid username, but none was provided for slave [${id}]`);
         }
 
-        logger.info(`Starting Cashout Workflow on ${accountUsername} [${id}]`);
+        logger.info(`Starting Cashout Workflow on ${redactUsername(accountUsername)} [${id}]`);
 
-        if (lockManager) lockManager.acquireLock(accountUsername);
+        if (lockManager) {
+            if (!lockManager.tryAcquireLock(accountUsername)) {
+                logger.warn(`CashoutWorkflow aborted for [${id}]: Account ${redactUsername(accountUsername)} is locked by another process.`);
+                return false;
+            }
+        }
 
         try {
             // 1. Navigate to Open Bets
@@ -32,11 +37,11 @@ export class CashoutWorkflow extends Workflow {
             const count = await tickets.count();
             
             if (count === 0) {
-                logger.info(`No cashable tickets found for ${accountUsername} [${id}]`);
+                logger.info(`No cashable tickets found for ${redactUsername(accountUsername)} [${id}]`);
                 return true;
             }
 
-            logger.info(`Found ${count} cashable tickets for ${accountUsername}. Proceeding...`);
+            logger.info(`Found ${count} cashable tickets for ${redactUsername(accountUsername)}. Proceeding...`);
 
             // 3. Process each ticket
             let processedCount = 0;
@@ -62,34 +67,35 @@ export class CashoutWorkflow extends Workflow {
                         await confirmBtn.waitFor({ state: 'visible', timeout: 3000 });
                         await confirmBtn.click();
                     } catch (err) {
-                        logger.warn(`Confirm button did not appear for ${accountUsername} [${id}]`);
+                        logger.warn(`Confirm button did not appear for ${redactUsername(accountUsername)} [${id}]`);
                         continue;
                     }
 
                     // 5. Verify outcome
                     try {
-                        const result = await raceWithCleanup(page,
-                            async () => await page.$(this.selectors.toastSuccess),
-                            async () => {
-                                const el = await page.$(this.selectors.toastError);
-                                if (el) return await el.textContent();
-                                return null;
-                            },
-                            10000
-                        );
+                        const successPromise = page.waitForSelector(this.selectors.toastSuccess, { timeout: 10000 })
+                            .then(() => ({ outcome: 'success' })).catch(() => ({ outcome: 'timeout' }));
+                        const errorPromise = page.waitForSelector(this.selectors.toastError, { timeout: 10000 })
+                            .then(async (el) => ({ outcome: 'error', message: await el.textContent() })).catch(() => ({ outcome: 'timeout' }));
+
+                        const result = await Promise.race([successPromise, errorPromise]);
+                        
+                        if (result.outcome === 'timeout') {
+                            throw new Error('Cashout verification timed out.');
+                        }
                         
                         if (result.outcome === 'error') {
                             throw new Error(result.message.trim());
                         }
-                        logger.info(`Cashout successful on ticket for ${accountUsername} [${id}]`);
+                        logger.info(`Cashout successful on ticket for ${redactUsername(accountUsername)} [${id}]`);
                     } catch (err) {
-                        logger.warn(`Cashout rejected/failed for ${accountUsername} [${id}]: ${err.message}`);
+                        logger.warn(`Cashout rejected/failed for ${redactUsername(accountUsername)} [${id}]: ${err.message}`);
                     }
                 }
             }
             return true;
         } catch (err) {
-            logger.error(`Cashout workflow failed on ${accountUsername} [${id}]: ${err.message}`);
+            logger.error(`Cashout workflow failed on ${redactUsername(accountUsername)} [${id}]: ${err.message}`);
             return false;
         } finally {
             if (lockManager) lockManager.releaseLock(accountUsername);

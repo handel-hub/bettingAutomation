@@ -1,7 +1,7 @@
 /**
  * Registry connecting Synchronization Capabilities to their respective Providers.
  */
-class CapabilityRegistryImpl {
+export class CapabilityRegistry {
     constructor() {
         this.providers = new Map();
     }
@@ -40,4 +40,4 @@ class CapabilityRegistryImpl {
     }
 }
 
-export const CapabilityRegistry = new CapabilityRegistryImpl();
+

@@ -1,6 +1,5 @@
 import EventEmitter from 'node:events';
 import { ViewportLifecycle } from '../../models/BrowserStateModel.mjs';
-import { BrowserStateRegistry } from '../../BrowserStateRegistry.mjs';
 import { ViewportEventType } from './ViewportEvent.mjs';
 import { logger } from '../../../../config.mjs';
 
@@ -62,7 +61,7 @@ export class ViewportStateMachine extends EventEmitter {
     }
 
     updateRegistry(windowContext, partialViewportContext, lifecycle) {
-        const state = BrowserStateRegistry.getState(this.browserId);
+        const state = this.registry.getState(this.browserId);
         const currentVersion = state.viewportContext?.version || 0;
 
         const updatedViewportContext = {
@@ -72,7 +71,7 @@ export class ViewportStateMachine extends EventEmitter {
             lastResize: Date.now()
         };
 
-        BrowserStateRegistry.update(this.browserId, {
+        this.registry.update(this.browserId, {
             windowContext,
             viewportContext: updatedViewportContext
         });

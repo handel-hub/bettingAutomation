@@ -5,8 +5,10 @@ import { logger } from '../../config.mjs';
 /**
  * The orchestrator. Coordinates the barrier and executes Capability Providers.
  */
-class SynchronizationManagerImpl {
-    constructor() {
+export class SynchronizationManager {
+    constructor(registry, capabilityRegistry) {
+        this.registry = registry;
+        this.capabilityRegistry = capabilityRegistry;
         this.coordinator = null;
         this.recoveryCoordinator = null;
         this.recoveryActionExecutor = null;
@@ -20,7 +22,7 @@ class SynchronizationManagerImpl {
         this.coordinator.on('InvalidationRequested', async (event) => {
             const context = this.activeSyncContexts.get(event.browserId);
             if (context) {
-                const provider = CapabilityRegistry.getProvider(event.capability);
+                const provider = this.capabilityRegistry.getProvider(event.capability);
                 if (provider) {
                     await provider.invalidate(context);
                 }
@@ -50,7 +52,7 @@ class SynchronizationManagerImpl {
     async awaitCapabilities(syncContext, capabilities) {
         this.activeSyncContexts.set(syncContext.browserId, syncContext);
         try {
-            const providers = this.collectProviders(capabilities);
+            const providers = this.collectProviders(capabilities, syncContext.browserId);
             const settledResults = await this.executeProviders(providers, syncContext);
             return this.aggregateResults(settledResults, capabilities, syncContext.browserId);
         } finally {
@@ -58,10 +60,18 @@ class SynchronizationManagerImpl {
         }
     }
 
-    collectProviders(capabilities) {
+    collectProviders(capabilities, browserId) {
         const uniqueProviders = new Set();
+        const currentState = this.registry.getState(browserId);
+        const currentEpoch = currentState.navigationEpoch;
+        
         for (const cap of capabilities) {
-            const provider = CapabilityRegistry.getProvider(cap);
+            // FAST PATH: Skip provider if the capability is already satisfied for the current epoch
+            if (currentState.capabilities.isSatisfied(cap, currentEpoch)) {
+                continue;
+            }
+
+            const provider = this.capabilityRegistry.getProvider(cap);
             if (provider) {
                 uniqueProviders.add(provider);
             }
@@ -83,7 +93,7 @@ class SynchronizationManagerImpl {
             if (result.status === 'fulfilled') {
                 const capResult = result.value;
                 const isSatisfied = capResult.status === 'SATISFIED';
-                const currentEpoch = BrowserStateRegistry.getState(browserId).navigationEpoch;
+                const currentEpoch = this.registry.getState(browserId).navigationEpoch;
                 capabilityUpdates[capResult.capability] = { 
                     value: isSatisfied, 
                     epoch: capResult.epoch !== undefined ? capResult.epoch : currentEpoch 
@@ -97,7 +107,7 @@ class SynchronizationManagerImpl {
 
         // Apply raw updates to capabilities
         if (Object.keys(capabilityUpdates).length > 0) {
-            BrowserStateRegistry.update(browserId, { capabilities: capabilityUpdates });
+            this.registry.update(browserId, { capabilities: capabilityUpdates });
         }
 
         // Pass to coordinator for cascading logic, snapshots, and consistency score updates
@@ -108,7 +118,7 @@ class SynchronizationManagerImpl {
         }
 
         const snapshot = this.coordinator ? this.coordinator.getSnapshot(browserId) : null;
-        const currentState = BrowserStateRegistry.getState(browserId);
+        const currentState = this.registry.getState(browserId);
 
         const missingCapabilities = [];
         for (const cap of requiredCapabilities) {
@@ -129,4 +139,4 @@ class SynchronizationManagerImpl {
     }
 }
 
-export const SynchronizationManager = new SynchronizationManagerImpl();
+

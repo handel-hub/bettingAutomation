@@ -4,7 +4,7 @@ import { Command } from '../execution/Command.mjs';
 
 export class NavigationSynchronizer extends EventEmitter {
     /**
-     * @param {BrowserRegistry} registry
+     * @param {BrowserStateRegistry} registry
      * @param {{ dedupeWindowMs?: number }} options
      */
     constructor(registry, options = {}) {
@@ -45,6 +45,11 @@ export class NavigationSynchronizer extends EventEmitter {
             const originalPushState = history.pushState;
             history.pushState = function() {
                 originalPushState.apply(this, arguments);
+                if (window.reportHistorySync) window.reportHistorySync(location.href);
+            };
+            const originalReplaceState = history.replaceState;
+            history.replaceState = function() {
+                originalReplaceState.apply(this, arguments);
                 if (window.reportHistorySync) window.reportHistorySync(location.href);
             };
             window.addEventListener('popstate', () => {

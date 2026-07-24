@@ -1,7 +1,9 @@
-export { BrowserRegistry } from './BrowserRegistry.mjs';
 export { BrowserLifecycleManager } from './BrowserLifecycleManager.mjs';
-export { SessionManager } from './SessionManager.mjs';
 export { NavigationSynchronizer } from './NavigationSynchronizer.mjs';
-export { HealthMonitor } from './HealthMonitor.mjs';
+export { SessionManager } from './SessionManager.mjs';
+export { TargetResolver } from './TargetResolver.mjs';
 export { RecoveryManager } from './RecoveryManager.mjs';
+export { HealthMonitor } from './HealthMonitor.mjs';
 export { AccountLockManager } from './AccountLockManager.mjs';
+export { EventBusRegistrar } from './EventBusRegistrar.mjs';
+export { ClusterOrchestrator } from './ClusterOrchestrator.mjs';

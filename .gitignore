@@ -5,3 +5,6 @@ logs.txt
 /screenshots
 error_*.png
 
+.env
+*.enc
+/sessions

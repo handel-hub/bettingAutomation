@@ -1,4 +1,3 @@
-import { BrowserStateRegistry } from '../../BrowserStateRegistry.mjs';
 import { NavigationLifecycle, NavigationResult } from '../../models/BrowserStateModel.mjs';
 import { NavigationEventType } from './NavigationEvent.mjs';
 
@@ -6,7 +5,9 @@ import { NavigationEventType } from './NavigationEvent.mjs';
  * Governs transitions through the NavigationLifecycle based on normalized NavigationEvents.
  */
 export class NavigationStateMachine {
-    constructor(browserId) {
+    constructor(browserId, registry, syncManager) {
+        this.registry = registry;
+        this.syncManager = syncManager;
         this.browserId = browserId;
     }
 
@@ -14,7 +15,7 @@ export class NavigationStateMachine {
      * @param {NavigationEvent} event
      */
     processEvent(event) {
-        const state = BrowserStateRegistry.getState(this.browserId);
+        const state = this.registry.getState(this.browserId);
         const ctx = state.navigationContext;
 
         const updates = {};
@@ -65,18 +66,18 @@ export class NavigationStateMachine {
             
             if (event.type === NavigationEventType.HISTORY_API) {
                 // SPA Route: Push intermediate state to preserve telemetry timeline
-                BrowserStateRegistry.update(this.browserId, { navigationContext: { ...ctx, ...updates } });
+                this.registry.update(this.browserId, { navigationContext: { ...ctx, ...updates } });
                 
                 // Immediately transition to READY
                 updates.lifecycle = NavigationLifecycle.READY;
                 updates.result = NavigationResult.SUCCESS;
                 updates.completedAt = now;
                 updates.duration = now - (updates.startedAt || now);
-                BrowserStateRegistry.update(this.browserId, { navigationContext: updates });
+                this.registry.update(this.browserId, { navigationContext: updates });
                 return;
             }
             
-            BrowserStateRegistry.update(this.browserId, { navigationContext: updates });
+            this.registry.update(this.browserId, { navigationContext: updates });
             return;
         }
 
@@ -102,7 +103,7 @@ export class NavigationStateMachine {
         // (Note: Handled in the initial block above now to preserve NAVIGATING -> READY telemetry)
 
         if (Object.keys(updates).length > 0) {
-            BrowserStateRegistry.update(this.browserId, { navigationContext: updates });
+            this.registry.update(this.browserId, { navigationContext: updates });
         }
     }
 
@@ -110,11 +111,11 @@ export class NavigationStateMachine {
      * Can be invoked externally if navigation fails or is aborted
      */
     abort(reason) {
-        const state = BrowserStateRegistry.getState(this.browserId);
+        const state = this.registry.getState(this.browserId);
         const ctx = state.navigationContext;
         
         if (ctx.lifecycle !== NavigationLifecycle.READY && ctx.lifecycle !== NavigationLifecycle.IDLE) {
-            BrowserStateRegistry.update(this.browserId, {
+            this.registry.update(this.browserId, {
                 navigationContext: {
                     lifecycle: NavigationLifecycle.READY,
                     result: reason,

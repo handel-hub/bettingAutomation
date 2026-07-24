@@ -1,10 +1,12 @@
 import fs from 'node:fs';
+import { promises as fsPromises } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ini from 'ini';
 import pino from 'pino';
 import dotenv from 'dotenv';
 import { encrypt, decrypt } from './utils/crypto.mjs';
+import { redactUsername } from './utils/redact.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,10 +22,10 @@ export const logger = pino({
     }
 });
 
-export function loadConfig() {
+export async function loadConfig() {
     try {
         const settingsPath = path.join(__dirname, '..', 'settings.ini');
-        const settingsRaw = fs.readFileSync(settingsPath, 'utf-8');
+        const settingsRaw = await fsPromises.readFile(settingsPath, 'utf-8');
         const settings = ini.parse(settingsRaw);
 
         const accountsPath = path.join(__dirname, '..', 'accounts.txt');
@@ -36,7 +38,7 @@ export function loadConfig() {
             }
 
             logger.info('Migrating plaintext accounts.txt to encrypted accounts.enc...');
-            accountsRaw = fs.readFileSync(accountsPath, 'utf-8');
+            accountsRaw = await fsPromises.readFile(accountsPath, 'utf-8');
 
             const encrypted = encrypt(accountsRaw, 'accounts');
             const encryptedJson = JSON.stringify(encrypted);
@@ -50,13 +52,13 @@ export function loadConfig() {
             }
 
             const tmpPath = `${accountsEncPath}.tmp`;
-            fs.writeFileSync(tmpPath, encryptedJson, { mode: 0o600 });
-            fs.renameSync(tmpPath, accountsEncPath);
-            fs.unlinkSync(accountsPath);
+            await fsPromises.writeFile(tmpPath, encryptedJson, { mode: 0o600 });
+            await fsPromises.rename(tmpPath, accountsEncPath);
+            await fsPromises.unlink(accountsPath);
             logger.info('Successfully encrypted accounts (round-trip verified). Deleted plaintext accounts.txt.');
         } else if (fs.existsSync(accountsEncPath)) {
             try {
-                const encryptedData = JSON.parse(fs.readFileSync(accountsEncPath, 'utf-8'));
+                const encryptedData = JSON.parse(await fsPromises.readFile(accountsEncPath, 'utf-8'));
                 accountsRaw = decrypt(encryptedData, 'accounts');
             } catch (err) {
                 logger.fatal(
@@ -81,7 +83,7 @@ export function loadConfig() {
                 const username = line.slice(0, idx).trim();
                 const password = line.slice(idx + 1).trim();
                 if (line.slice(idx + 1).includes(',')) {
-                    logger.warn(`Account line for "${username}" contains extra commas in the password field — using everything after the first comma as-is.`);
+                    logger.warn(`Account line for "${redactUsername(username)}" contains extra commas in the password field — using everything after the first comma as-is.`);
                 }
                 return { username, password };
             })
@@ -90,7 +92,7 @@ export function loadConfig() {
         const proxiesPath = path.join(__dirname, '..', 'proxies.txt');
         let proxies = [];
         if (fs.existsSync(proxiesPath)) {
-            const proxiesRaw = fs.readFileSync(proxiesPath, 'utf-8');
+            const proxiesRaw = await fsPromises.readFile(proxiesPath, 'utf-8');
             proxies = proxiesRaw.split('\n').filter(line => line.trim() !== '').map(line => line.trim());
         }
 

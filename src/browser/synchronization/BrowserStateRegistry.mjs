@@ -5,7 +5,7 @@ import EventEmitter from 'node:events';
  * A central registry holding BrowserStateModel instances.
  * This is the authoritative owner of mutations for BrowserStateModel.
  */
-class BrowserStateRegistryImpl extends EventEmitter {
+export class BrowserStateRegistry extends EventEmitter {
     constructor() {
         super();
         this.states = new Map();
@@ -90,6 +90,75 @@ class BrowserStateRegistryImpl extends EventEmitter {
 
         this.emit('StateUpdated', { browserId, state });
     }
+
+    // --- Unified Legacy Registry Methods ---
+
+    register(id, role, browser, context, page, meta = {}) {
+        const state = this.getState(id);
+        state.role = role;
+        state.browser = browser;
+        state.context = context;
+        state.page = page;
+        state.username = meta.username ?? null;
+        state.proxyUrl = meta.proxyUrl ?? null;
+        
+        // Map legacy states to new states if possible, but maintain legacy strings for now
+        state.state = 'Initializing';
+        state.health = 'Good';
+        state.url = 'about:blank';
+        
+        this.emit('StateUpdated', { browserId: id, state });
+    }
+
+    get(id) {
+        // Return the BrowserStateModel. If it doesn't exist, legacy returned undefined.
+        return this.states.get(id);
+    }
+
+    getAll() {
+        return Array.from(this.states.values());
+    }
+
+    getReadySlaves() {
+        return this.getAll().filter(b => b.role === 'slave' && b.state === 'Ready');
+    }
+
+    getMaster() {
+        return this.getAll().find(b => b.role === 'master');
+    }
+
+    updateState(id, stateValue) {
+        if (this.states.has(id)) {
+            const state = this.states.get(id);
+            state.state = stateValue;
+            
+            // Bridge: 'Ready' -> LifecycleState.READY, 'Error' -> LifecycleState.DISCONNECTED
+            if (stateValue === 'Ready') state.lifecycleState = LifecycleState.READY;
+            if (stateValue === 'Error') state.lifecycleState = LifecycleState.DISCONNECTED;
+            
+            this.emit('StateUpdated', { browserId: id, state });
+        }
+    }
+
+    updateHealth(id, healthValue) {
+        if (this.states.has(id)) {
+            const state = this.states.get(id);
+            state.health = healthValue;
+            this.emit('StateUpdated', { browserId: id, state });
+        }
+    }
+
+    updateUrl(id, urlValue) {
+        if (this.states.has(id)) {
+            const state = this.states.get(id);
+            state.url = urlValue;
+            this.emit('StateUpdated', { browserId: id, state });
+        }
+    }
+
+    remove(id) {
+        this.states.delete(id);
+    }
 }
 
-export const BrowserStateRegistry = new BrowserStateRegistryImpl();
+

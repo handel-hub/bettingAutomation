@@ -11,8 +11,8 @@ export class LocatorIntelligenceEngine {
         ];
     }
 
-    process(el) {
-        const context = new PipelineContext(el);
+    process(el, composedPath) {
+        const context = new PipelineContext(el, composedPath);
         
         for (const step of this.pipeline) {
             const stepStart = Date.now();

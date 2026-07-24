@@ -1,7 +1,6 @@
 import { Capabilities } from '../../capabilities.mjs';
 import { ViewportComparisonResult } from './ViewportComparator.mjs';
 import { CapabilityResult } from '../../models/CapabilityResult.mjs';
-import { BrowserStateRegistry } from '../../BrowserStateRegistry.mjs';
 import { ViewportLifecycle } from '../../models/BrowserStateModel.mjs';
 import { logger } from '../../../../config.mjs';
 
@@ -95,7 +94,7 @@ export class ViewportWaitStrategy {
             };
 
             // Initial evaluation
-            const currentState = BrowserStateRegistry.getState(this.browserId);
+            const currentState = this.registry.getState(this.browserId);
             if (currentState && currentState.viewportContext) {
                 try {
                     if (evaluate(currentState.viewportContext)) return;
@@ -113,7 +112,7 @@ export class ViewportWaitStrategy {
                     cleanup();
                     
                     // Read current state to determine the failure reason
-                    const latestState = BrowserStateRegistry.getState(this.browserId)?.viewportContext;
+                    const latestState = this.registry.getState(this.browserId)?.viewportContext;
                     if (latestState && latestState.lifecycle !== ViewportLifecycle.READY) {
                         reject(new Error(`[SY-123] Viewport synchronization timeout. Lifecycle stuck in ${latestState.lifecycle}`));
                     } else {

@@ -1,10 +1,14 @@
 import { RecoveryPlan } from './RecoveryPlan.mjs';
-import { BrowserStateRegistry } from '../BrowserStateRegistry.mjs';
+import { logger } from '../../../config.mjs';
 
 export class RecoveryCoordinator {
+    constructor(registry) {
+        this.registry = registry;
+    }
+
     async recover(snapshot, failedCapability) {
         let attempts = (snapshot.recoveryState.attempts || 0) + 1;
-        BrowserStateRegistry.update(snapshot.browserId, {
+        this.registry.update(snapshot.browserId, {
             recoveryState: { attempts, lastRecovery: Date.now() }
         });
 

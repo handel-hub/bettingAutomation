@@ -1,6 +1,7 @@
 export class PipelineContext {
-    constructor(element) {
+    constructor(element, composedPath = []) {
         this.element = element;
+        this.composedPath = composedPath;
         this.features = null;
         this.candidates = []; // Array of LocatorCandidate
         this.metadata = {

@@ -105,6 +105,19 @@ export class BrowserStateModel {
     constructor(browserId) {
         this.browserId = browserId;
         
+        // --- Unified Physical State (from legacy BrowserRegistry) ---
+        this.id = browserId;
+        this.role = null;
+        this.browser = null;
+        this.context = null;
+        this.page = null;
+        this.username = null;
+        this.proxyUrl = null;
+        this.state = 'Initializing';
+        this.url = 'about:blank';
+        this.health = 'Good';
+
+        // --- Synchronization State ---
         this.lifecycleState = LifecycleState.DISCONNECTED;
         this.navigationEpoch = 0;
         

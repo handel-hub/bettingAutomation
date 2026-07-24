@@ -17,9 +17,7 @@ export class StealthEngine {
 
     getLaunchArgs() {
         const args = [
-            '--disable-blink-features=AutomationControlled',
-            '--disable-web-security',
-            '--disable-features=IsolateOrigins,site-per-process'
+            '--disable-blink-features=AutomationControlled'
         ];
 
         if (this.settings.block_webrtc === 'true') {
@@ -36,9 +34,9 @@ export class StealthEngine {
 
     getRandomUserAgent() {
         const userAgents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/114.0.5735.99 Mobile/15E148 Safari/604.1',
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/115.0.5790.130 Mobile/15E148 Safari/604.1',
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/116.0.5845.103 Mobile/15E148 Safari/604.1'
         ];
         return userAgents[Math.floor(Math.random() * userAgents.length)];
     }
@@ -61,6 +59,26 @@ export class StealthEngine {
                         };
                     }
                     return ctx;
+                };
+
+                const injectNoise = (canvas) => {
+                    const ctx = originalGetContext.call(canvas, '2d');
+                    if (ctx) {
+                        ctx.fillStyle = \`rgba(\${Math.floor(Math.random() * 255)}, \${Math.floor(Math.random() * 255)}, \${Math.floor(Math.random() * 255)}, 0.01)\`;
+                        ctx.fillRect(0, 0, 1, 1);
+                    }
+                };
+
+                const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+                HTMLCanvasElement.prototype.toDataURL = function() {
+                    injectNoise(this);
+                    return originalToDataURL.apply(this, arguments);
+                };
+
+                const originalToBlob = HTMLCanvasElement.prototype.toBlob;
+                HTMLCanvasElement.prototype.toBlob = function() {
+                    injectNoise(this);
+                    return originalToBlob.apply(this, arguments);
                 };
             });
             logger.info('Applied Canvas spoofing to context.');

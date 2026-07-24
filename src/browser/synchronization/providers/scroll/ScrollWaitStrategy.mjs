@@ -1,7 +1,6 @@
 import { Capabilities } from '../../capabilities.mjs';
 import { ScrollComparisonResult } from './ScrollComparator.mjs';
 import { CapabilityResult } from '../../models/CapabilityResult.mjs';
-import { BrowserStateRegistry } from '../../BrowserStateRegistry.mjs';
 import { ScrollLifecycle } from '../../models/BrowserStateModel.mjs';
 
 /**
@@ -86,7 +85,7 @@ export class ScrollWaitStrategy {
             };
 
             // Initial evaluation
-            const currentState = BrowserStateRegistry.getState(this.browserId);
+            const currentState = this.registry.getState(this.browserId);
             if (currentState && currentState.scrollContext) {
                 try {
                     if (evaluate(currentState.scrollContext)) return;
@@ -103,7 +102,7 @@ export class ScrollWaitStrategy {
                 timeoutId = setTimeout(() => {
                     cleanup();
                     
-                    const latestState = BrowserStateRegistry.getState(this.browserId)?.scrollContext;
+                    const latestState = this.registry.getState(this.browserId)?.scrollContext;
                     if (latestState) {
                         if (latestState.lifecycle === ScrollLifecycle.SCROLLING || latestState.lifecycle === ScrollLifecycle.SETTLING) {
                             if (latestState.velocity > this.policy.velocityThreshold) {

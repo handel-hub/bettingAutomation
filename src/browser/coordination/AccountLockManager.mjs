@@ -18,6 +18,17 @@ export class AccountLockManager {
     }
 
     /**
+     * Atomically checks and acquires the lock if available.
+     * @param {string} username 
+     * @returns {boolean} True if lock acquired, false if already locked.
+     */
+    tryAcquireLock(username, ttlMs = null) {
+        if (this.isLocked(username)) return false;
+        this.acquireLock(username, ttlMs);
+        return true;
+    }
+
+    /**
      * Checks if the username is currently locked. Auto-expires stale locks.
      * @param {string} username 
      * @returns {boolean}

@@ -1,4 +1,3 @@
-import { BrowserStateRegistry } from '../../BrowserStateRegistry.mjs';
 import { NavigationComparator, NavigationComparisonResult } from './NavigationComparator.mjs';
 import { NavigationLifecycle, NavigationResult } from '../../models/BrowserStateModel.mjs';
 
@@ -32,7 +31,7 @@ export class NavigationWaitStrategy {
             const cleanup = () => {
                 isResolved = true;
                 if (timeoutId) clearTimeout(timeoutId);
-                BrowserStateRegistry.removeListener('StateUpdated', onStateUpdate);
+                this.registry.removeListener('StateUpdated', onStateUpdate);
                 this.providerEventEmitter.removeListener('navigationFailed', onNavigationFailed);
                 page.removeListener('close', onPageClose);
             };
@@ -49,7 +48,7 @@ export class NavigationWaitStrategy {
             };
 
             const evaluate = () => {
-                const state = BrowserStateRegistry.getState(this.browserId);
+                const state = this.registry.getState(this.browserId);
                 const navCtx = state.navigationContext;
                 
                 if (!targetUrl) {
@@ -115,13 +114,13 @@ export class NavigationWaitStrategy {
 
             try {
                 // Setup listeners
-                BrowserStateRegistry.on('StateUpdated', onStateUpdate);
+                this.registry.on('StateUpdated', onStateUpdate);
                 this.providerEventEmitter.on('navigationFailed', onNavigationFailed);
                 if (page) page.on('close', onPageClose);
 
                 // Setup timeout
                 timeoutId = setTimeout(() => {
-                    const state = BrowserStateRegistry.getState(this.browserId);
+                    const state = this.registry.getState(this.browserId);
                     const navCtx = state.navigationContext;
                     
                     if (navCtx.lifecycle === NavigationLifecycle.REDIRECTING) {

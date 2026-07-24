@@ -145,8 +145,10 @@ export class QueueManager {
 }
 
 export class ExecutionScheduler {
-    constructor(actionSimulator) {
+    constructor(actionSimulator, registry, syncManager) {
         this.simulator = actionSimulator;
+        this.registry = registry;
+        this.syncManager = syncManager;
         this.browserQueues = new Map();
         this.drainLocks = new Set();
         this.telemetry = {
@@ -232,6 +234,12 @@ export class ExecutionScheduler {
                         this.telemetry.maxQueueWait = nextEntry.queueDelay;
                     }
 
+                    const currentState = this.registry.get(browserId);
+                    if (!currentState || !currentState.page) {
+                        logger.error(`[Scheduler] Dropping command ${nextEntry.command.id} on [${browserId}]: Browser/Page no longer exists in registry.`);
+                        continue;
+                    }
+
                     logger.info(`[Scheduler] Dispatching [${nextEntry.queueClass}] Command ${nextEntry.command.id} on [${browserId}] | QueueDelay: ${nextEntry.queueDelay}ms | Decision: ${nextEntry.schedulerDecision}`);
 
                     const finalCommand = new Command({
@@ -270,10 +278,11 @@ export class ExecutionScheduler {
                     // Barrier wait
                     const barrierResult = await SynchronizationBarrier.wait({
                         browserId,
-                        page: browserObj.page,
+                        browserState: currentState,
                         profile,
                         context,
-                        deadline
+                        deadline,
+                        syncManager: this.syncManager
                     });
 
                     if (barrierResult.status === 'RECOVERING') {
@@ -285,7 +294,7 @@ export class ExecutionScheduler {
                         continue;
                     }
 
-                    await this.simulator.execute(browserObj, finalCommand);
+                    await this.simulator.execute(currentState, finalCommand);
                 } catch(e) {
                     logger.error(`[Scheduler] Failed to process entry for ${nextEntry?.command?.id ?? 'unknown'}: ${e.message}`);
                 }

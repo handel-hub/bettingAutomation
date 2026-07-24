@@ -39,9 +39,15 @@ export class WorkflowEngine {
 
         const promises = targetBrowsers.map(async (b) => {
             try {
+                this.registry.updateState(b.id, 'Busy');
                 await workflow.execute(b, command.payload, this.lockManager, this.registry);
             } catch (err) {
                 logger.error(`WorkflowEngine: Unhandled error in '${command.type}' on [${b.id}]: ${err.message}`);
+            } finally {
+                const currentState = this.registry.get(b.id);
+                if (currentState && currentState.state === 'Busy') {
+                    this.registry.updateState(b.id, 'Ready');
+                }
             }
         });
 

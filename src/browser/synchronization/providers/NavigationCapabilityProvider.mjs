@@ -2,7 +2,6 @@ import { Capabilities } from '../capabilities.mjs';
 import { CapabilityProvider } from './CapabilityProvider.mjs';
 import { NavigationTracker } from './navigation/NavigationTracker.mjs';
 import { NavigationWaitStrategy } from './navigation/NavigationWaitStrategy.mjs';
-import { BrowserStateRegistry } from '../BrowserStateRegistry.mjs';
 import EventEmitter from 'node:events';
 import { NavigationLifecycle, NavigationResult } from '../models/BrowserStateModel.mjs';
 
@@ -16,7 +15,7 @@ export class NavigationCapabilityProvider extends CapabilityProvider {
         this.initializedPages = new WeakMap(); // page -> true
         
         // Listen to registry to emit provider-level events
-        BrowserStateRegistry.on('StateUpdated', ({ browserId, state }) => {
+        this.registry.on('StateUpdated', ({ browserId, state }) => {
             const ctx = state.navigationContext;
             if (!ctx) return;
             
@@ -56,7 +55,7 @@ export class NavigationCapabilityProvider extends CapabilityProvider {
         if (this.initializedPages.has(page)) return;
         this.initializedPages.set(page, true);
 
-        const tracker = new NavigationTracker(browserId, page);
+        const tracker = new NavigationTracker(browserId, page, this.registry, this.syncManager);
         await tracker.initialize();
     }
 
@@ -68,7 +67,7 @@ export class NavigationCapabilityProvider extends CapabilityProvider {
 
     async currentStatus(syncContext) {
         const { browserId } = syncContext;
-        const state = BrowserStateRegistry.getState(browserId);
+        const state = this.registry.getState(browserId);
         const ctx = state.navigationContext;
         
         const isSatisfied = ctx.lifecycle === NavigationLifecycle.READY || ctx.lifecycle === NavigationLifecycle.IDLE;

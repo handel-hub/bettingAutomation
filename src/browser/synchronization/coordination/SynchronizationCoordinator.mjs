@@ -1,13 +1,13 @@
 import { CapabilityDependencyGraph } from './CapabilityDependencyGraph.mjs';
 import { SynchronizationSnapshot } from './SynchronizationSnapshot.mjs';
-import { BrowserStateRegistry } from '../BrowserStateRegistry.mjs';
 import { CapabilityRegistry } from '../CapabilityRegistry.mjs';
 import EventEmitter from 'node:events';
 
 export class SynchronizationCoordinator extends EventEmitter {
-    constructor(consistencyEvaluator) {
+    constructor(consistencyEvaluator, registry) {
         super();
         this.evaluator = consistencyEvaluator;
+        this.registry = registry;
         this.capabilityStates = new Map(); // browserId -> { [capability]: boolean }
     }
 
@@ -31,7 +31,7 @@ export class SynchronizationCoordinator extends EventEmitter {
 
         const consistencyScore = this.evaluator.evaluate(states);
         
-        BrowserStateRegistry.update(browserId, {
+        this.registry.update(browserId, {
             consistencyState: {
                 consistencyScore,
                 lastEvaluated: Date.now(),
@@ -70,7 +70,7 @@ export class SynchronizationCoordinator extends EventEmitter {
     getSnapshot(browserId) {
         this.initializeBrowser(browserId);
         const states = this.capabilityStates.get(browserId);
-        const state = BrowserStateRegistry.getState(browserId) || {};
+        const state = this.registry.getState(browserId) || {};
         
         return new SynchronizationSnapshot(
             browserId,

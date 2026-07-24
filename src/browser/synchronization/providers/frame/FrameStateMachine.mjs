@@ -1,5 +1,4 @@
 import EventEmitter from 'node:events';
-import { BrowserStateRegistry } from '../../BrowserStateRegistry.mjs';
 import { ExecutionContextLifecycle } from '../../models/BrowserStateModel.mjs';
 
 export class FrameStateMachine extends EventEmitter {
@@ -78,7 +77,7 @@ export class FrameStateMachine extends EventEmitter {
     }
 
     _commitState() {
-        BrowserStateRegistry.update(this.browserId, {
+        this.registry.update(this.browserId, {
             executionContext: {
                 version: this.contextVersion,
                 lifecycle: this.state,

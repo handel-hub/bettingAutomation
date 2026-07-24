@@ -1,4 +1,5 @@
 import EventEmitter from 'node:events';
+import { logger } from '../../config.mjs';
 import { Command } from '../execution/Command.mjs';
 
 export class HealthMonitor extends EventEmitter {
@@ -25,6 +26,8 @@ export class HealthMonitor extends EventEmitter {
         const browsers = this.registry.getAll();
         for (const browser of browsers) {
             if (browser.state === 'Error') {
+                logger.info(`[HealthMonitor] Detected Error state on [${browser.id}]. Initiating recovery...`);
+                this.registry.updateState(browser.id, 'Recovering');
                 this.emit('Command', new Command({
                     category: 'Recovery',
                     type: 'HEAL_REQUESTED',

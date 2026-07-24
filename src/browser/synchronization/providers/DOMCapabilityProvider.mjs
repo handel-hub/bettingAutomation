@@ -149,9 +149,9 @@ export class DOMCapabilityProvider extends CapabilityProvider {
             const isReady = await page.evaluate(() => document.readyState === 'complete');
             
             // We publish this new state to the registry, which acts as our Soft Reset
-            const currentEpoch = (await import('../BrowserStateRegistry.mjs')).BrowserStateRegistry.getState(browserId).navigationEpoch;
+            const currentEpoch = (await import('../this.registry.mjs')).this.registry.getState(browserId).navigationEpoch;
             
-            (await import('../BrowserStateRegistry.mjs')).BrowserStateRegistry.update(browserId, {
+            (await import('../this.registry.mjs')).this.registry.update(browserId, {
                 capabilities: { 
                     [Capabilities.DOM_READY]: { 
                         value: isReady, 
@@ -161,8 +161,8 @@ export class DOMCapabilityProvider extends CapabilityProvider {
                 }
             });
 
-            if ((await import('../SynchronizationManager.mjs')).SynchronizationManager.coordinator) {
-                (await import('../SynchronizationManager.mjs')).SynchronizationManager.coordinator.handleCapabilityUpdate(browserId, Capabilities.DOM_READY, isReady);
+            if ((await import('../this.syncManager.mjs')).this.syncManager.coordinator) {
+                (await import('../this.syncManager.mjs')).this.syncManager.coordinator.handleCapabilityUpdate(browserId, Capabilities.DOM_READY, isReady);
             }
         } catch (e) {
             logger.warn(`[DOMProvider] Invalidation measurement failed: ${e.message}`);

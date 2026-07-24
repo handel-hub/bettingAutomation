@@ -1,19 +1,22 @@
 import crypto from 'node:crypto';
 
 const ALGORITHM = 'aes-256-gcm';
-const SALT = 'betting-automation-salt-2026';
+const LEGACY_SALT = 'betting-automation-salt-2026';
 
-function getKey() {
+function getKey(saltHex) {
     const keyString = process.env.MASTER_KEY;
     if (!keyString) {
         throw new Error('MASTER_KEY environment variable is missing.');
     }
     
-    return crypto.scryptSync(keyString, SALT, 32);
+    // If salt is provided as hex, convert it to a buffer. Otherwise use the legacy string.
+    const salt = saltHex ? Buffer.from(saltHex, 'hex') : LEGACY_SALT;
+    return crypto.scryptSync(keyString, salt, 32);
 }
 
 export function encrypt(text, aad) {
-    const key = getKey();
+    const salt = crypto.randomBytes(16);
+    const key = getKey(salt.toString('hex'));
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
     
@@ -22,19 +25,21 @@ export function encrypt(text, aad) {
     }
     
     let encrypted = cipher.update(text, 'utf8', 'hex');
-        encrypted += cipher.final('hex');
-        
-        const authTag = cipher.getAuthTag();
-        
+    encrypted += cipher.final('hex');
+    
+    const authTag = cipher.getAuthTag();
+    
     return {
         iv: iv.toString('hex'),
+        salt: salt.toString('hex'),
         encryptedData: encrypted,
         authTag: authTag.toString('hex')
     };
 }
 
 export function decrypt(encryptedObj, aad) {
-    const key = getKey();
+    // Fallback to legacy static salt if the object doesn't have a salt property
+    const key = getKey(encryptedObj.salt);
     const iv = Buffer.from(encryptedObj.iv, 'hex');
     const authTag = Buffer.from(encryptedObj.authTag, 'hex');
     
@@ -50,3 +55,4 @@ export function decrypt(encryptedObj, aad) {
     
     return decrypted;
 }
+

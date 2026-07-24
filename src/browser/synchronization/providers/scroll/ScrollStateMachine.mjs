@@ -1,6 +1,5 @@
 import EventEmitter from 'node:events';
 import { ScrollLifecycle } from '../../models/BrowserStateModel.mjs';
-import { BrowserStateRegistry } from '../../BrowserStateRegistry.mjs';
 import { logger } from '../../../../config.mjs';
 
 /**
@@ -74,7 +73,7 @@ export class ScrollStateMachine extends EventEmitter {
     }
 
     updateRegistry(eventData, lifecycle) {
-        const state = BrowserStateRegistry.getState(this.browserId);
+        const state = this.registry.getState(this.browserId);
         const currentVersion = state.scrollContext?.version || 0;
 
         const updatedScrollContext = {
@@ -92,7 +91,7 @@ export class ScrollStateMachine extends EventEmitter {
             lastScrollTime: eventData.timestamp
         };
 
-        BrowserStateRegistry.update(this.browserId, {
+        this.registry.update(this.browserId, {
             scrollContext: updatedScrollContext
         });
 
