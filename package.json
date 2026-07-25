@@ -31,5 +31,8 @@
   "bugs": {
     "url": "https://github.com/handel-hub/bettingAutomation/issues"
   },
-  "homepage": "https://github.com/handel-hub/bettingAutomation#readme"
+  "homepage": "https://github.com/handel-hub/bettingAutomation#readme",
+  "devDependencies": {
+    "vitest": "^4.1.10"
+  }
 }
