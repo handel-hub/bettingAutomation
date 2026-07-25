@@ -64,7 +64,7 @@ export class StealthEngine {
                 const injectNoise = (canvas) => {
                     const ctx = originalGetContext.call(canvas, '2d');
                     if (ctx) {
-                        ctx.fillStyle = \`rgba(\${Math.floor(Math.random() * 255)}, \${Math.floor(Math.random() * 255)}, \${Math.floor(Math.random() * 255)}, 0.01)\`;
+                        ctx.fillStyle = `rgba(${Math.floor(Math.random() * 255)}, ${Math.floor(Math.random() * 255)}, ${Math.floor(Math.random() * 255)}, 0.01)`;
                         ctx.fillRect(0, 0, 1, 1);
                     }
                 };
