@@ -89,6 +89,20 @@ export class LockLostError extends SystemFailure { constructor(msg) { super('LF-
 export class GlobalTimeoutError extends SystemFailure { constructor(msg) { super('LF-504', msg, 'CRITICAL', 'LocatorResolver'); } }
 export class MaxAttemptsReachedError extends SystemFailure { constructor(msg) { super('LF-505', msg, 'CRITICAL', 'LocatorResolver'); } }
 
+// ----------------------------------------------------
+// 7. Identity & Verification Failure (Slave / Extended)
+// ----------------------------------------------------
+export class VerificationFailure extends AutomationError {
+    constructor(code, message, severity = 'ERROR', owner = 'VerificationEngine') {
+        super(code, message, severity, owner);
+    }
+}
+export class VerificationMismatchError extends VerificationFailure { constructor(msg) { super('LF-601', msg); } }
+export class ConfidenceBelowThresholdError extends VerificationFailure { constructor(msg) { super('LF-602', msg, 'ERROR', 'ConfidenceGate'); } }
+export class AmbiguousResolutionError extends VerificationFailure { constructor(msg) { super('LF-603', msg, 'WARNING', 'DisambiguationEngine'); } }
+export class StaleEpochError extends VerificationFailure { constructor(msg) { super('LF-604', msg, 'WARNING', 'EpochGate'); } }
+export class RecoveryExhaustedError extends VerificationFailure { constructor(msg) { super('LF-605', msg, 'CRITICAL', 'RecoveryOrchestrator'); } }
+
 // Legacy export to maintain backward compatibility during rollout
 export class LocatorResolutionError extends GlobalTimeoutError {
     constructor(failureReason, resolutionResult) {
@@ -96,3 +110,4 @@ export class LocatorResolutionError extends GlobalTimeoutError {
         this.resolutionResult = resolutionResult;
     }
 }
+

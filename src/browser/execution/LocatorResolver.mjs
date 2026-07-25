@@ -11,6 +11,7 @@ import { DefaultPolicy } from './locatorIntelligence/resolution/ResolutionPolicy
 import { ResolutionContext, ResolutionState } from './locatorIntelligence/resolution/ResolutionContext.mjs';
 import { getValidationProfile } from './locatorIntelligence/resolution/ValidationProfile.mjs';
 import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCollector.mjs';
+import featureFlags from './locatorIntelligence/FeatureFlags.mjs';
 
 export class ResolutionResult {
     constructor({ success, playwrightLocator, locator, candidate, strategy, duration, resolutionCycles, failureReason, winningCandidate, winningStrategy, winningScore, totalCandidates, exhaustedCandidates, telemetry }) {
@@ -41,6 +42,10 @@ export class LocatorResolver {
         const startTime = Date.now();
         if (!candidates || candidates.length === 0) {
             return new ResolutionResult({ success: false, failureReason: '[LF-003] Generation Failure: No candidates provided' });
+        }
+
+        if (featureFlags.isEnabled('LI_BATCH_RESOLVER') || featureFlags.isEnabled('LI_RECOVERY_HIERARCHY')) {
+            // Future entry point for new resolver pipeline (Phases 6-12)
         }
         
         const profile = getValidationProfile(interactionType);
