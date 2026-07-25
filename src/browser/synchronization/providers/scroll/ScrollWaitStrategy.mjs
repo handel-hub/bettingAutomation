@@ -8,8 +8,9 @@ import { ScrollLifecycle } from '../../models/BrowserStateModel.mjs';
  * metadata against current runtime ScrollContext and reacting to ScrollReady events.
  */
 export class ScrollWaitStrategy {
-    constructor(browserId, stateMachine, comparator, policy) {
+    constructor(browserId, registry, stateMachine, comparator, policy) {
         this.browserId = browserId;
+        this.registry = registry;
         this.stateMachine = stateMachine;
         this.comparator = comparator;
         this.policy = policy;
@@ -20,10 +21,8 @@ export class ScrollWaitStrategy {
             const expectedScroll = command.metadata?.scroll;
             
             if (!expectedScroll) {
-                return resolve(new CapabilityResult(Capabilities.SCROLL_READY, true, { 
-                    latency: 0, 
-                    reason: 'No scroll metadata provided' 
-                }));
+                return resolve(new CapabilityResult({ status: 'SATISFIED', capability: Capabilities.SCROLL_READY, latency: 0, 
+                    reason: 'No scroll metadata provided' }));
             }
 
             const startTime = Date.now();
@@ -34,11 +33,9 @@ export class ScrollWaitStrategy {
 
                 if (result === ScrollComparisonResult.MATCH || result === ScrollComparisonResult.TOLERANCE_MATCH) {
                     cleanup();
-                    resolve(new CapabilityResult(Capabilities.SCROLL_READY, true, {
-                        latency: Date.now() - startTime,
+                    resolve(new CapabilityResult({ status: 'SATISFIED', capability: Capabilities.SCROLL_READY, latency: Date.now() - startTime,
                         confidence,
-                        matchType: result
-                    }));
+                        matchType: result }));
                     return true;
                 }
 

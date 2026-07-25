@@ -14,8 +14,8 @@ import EventEmitter from 'node:events';
  * Owns the VIEWPORT_READY capability.
  */
 export class ViewportCapabilityProvider extends CapabilityProvider {
-    constructor() {
-        super();
+    constructor(registry, syncManager) {
+        super(registry, syncManager);
         this.capability = Capabilities.VIEWPORT_READY;
         this.policy = new ViewportPolicy();
         this.instances = new Map();
@@ -30,12 +30,12 @@ export class ViewportCapabilityProvider extends CapabilityProvider {
 
     async initialize(browserId, page) {
         if (!this.instances.has(browserId)) {
-            const stateMachine = new ViewportStateMachine(browserId, this.policy);
+            const stateMachine = new ViewportStateMachine(browserId, this.registry, this.policy);
+            const comparator = new ViewportComparator(this.policy);
+            const waitStrategy = new ViewportWaitStrategy(browserId, this.registry, stateMachine, comparator, this.policy);
             const tracker = new ViewportTracker(browserId);
             tracker.setStateMachine(stateMachine);
 
-            const comparator = new ViewportComparator(this.policy);
-            const waitStrategy = new ViewportWaitStrategy(browserId, stateMachine, comparator, this.policy);
             const recoveryStrategy = new ViewportRecoveryStrategy(browserId);
 
             // Forward state machine events to the global provider event emitter
@@ -61,7 +61,7 @@ export class ViewportCapabilityProvider extends CapabilityProvider {
         const { browserId, context } = syncContext;
         const instance = this.instances.get(browserId);
         if (!instance) {
-            return new CapabilityResult(this.capability, false, { reason: `Provider not initialized for ${browserId}` });
+            return new CapabilityResult({ status: 'FAILED', capability: this.capability, reason: `Provider not initialized for ${browserId}` });
         }
 
         // Just run waitFor with a 0ms timeout basically, but since our waitStrategy returns immediately 
@@ -74,7 +74,7 @@ export class ViewportCapabilityProvider extends CapabilityProvider {
         const { browserId, context } = syncContext;
         const instance = this.instances.get(browserId);
         if (!instance) {
-            return new CapabilityResult(this.capability, false, { reason: `Provider not initialized for ${browserId}` });
+            return new CapabilityResult({ status: 'FAILED', capability: this.capability, reason: `Provider not initialized for ${browserId}` });
         }
 
         try {

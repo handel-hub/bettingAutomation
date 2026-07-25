@@ -7,7 +7,7 @@ import { ExecutionContextComparator } from './ExecutionContextComparator.mjs';
 import { FrameWaitStrategy } from './FrameWaitStrategy.mjs';
 
 export class FrameCapabilityRuntime extends BaseCapabilityRuntime {
-    constructor(browserId) {
+    constructor(browserId, registry) {
         super(browserId);
         
         const policy = new ExecutionContextPolicy();
@@ -16,7 +16,7 @@ export class FrameCapabilityRuntime extends BaseCapabilityRuntime {
         const frameTracker = new FrameTracker(browserId);
         const shadowTracker = new ShadowTracker(browserId);
         
-        const stateMachine = new FrameStateMachine(browserId, policy);
+        const stateMachine = new FrameStateMachine(browserId, registry, policy);
         this.setStateMachine(stateMachine);
 
         frameTracker.setStateMachine(stateMachine);
@@ -28,7 +28,7 @@ export class FrameCapabilityRuntime extends BaseCapabilityRuntime {
         const comparator = new ExecutionContextComparator(policy);
         this.setComparator(comparator);
 
-        const waitStrategy = new FrameWaitStrategy(browserId, stateMachine, comparator, policy);
+        const waitStrategy = new FrameWaitStrategy(browserId, registry, stateMachine, comparator, policy);
         this.setWaitStrategy(waitStrategy);
 
         this.forwardEvent('FrameAttached');

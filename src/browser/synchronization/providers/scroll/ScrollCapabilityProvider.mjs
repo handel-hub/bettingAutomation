@@ -12,8 +12,8 @@ import EventEmitter from 'node:events';
  * Ensures scroll coordinates and containers match before interactions execute.
  */
 export class ScrollCapabilityProvider extends CapabilityProvider {
-    constructor() {
-        super();
+    constructor(registry, syncManager) {
+        super(registry, syncManager);
         this.capability = Capabilities.SCROLL_READY;
         this.policy = new ScrollPolicy();
         this.instances = new Map();
@@ -28,9 +28,9 @@ export class ScrollCapabilityProvider extends CapabilityProvider {
 
     async initialize(browserId, page) {
         if (!this.instances.has(browserId)) {
-            const stateMachine = new ScrollStateMachine(browserId, this.policy);
+            const stateMachine = new ScrollStateMachine(browserId, this.registry, this.policy);
             const comparator = new ScrollComparator(this.policy);
-            const waitStrategy = new ScrollWaitStrategy(browserId, stateMachine, comparator, this.policy);
+            const waitStrategy = new ScrollWaitStrategy(browserId, this.registry, stateMachine, comparator, this.policy);
             const tracker = new ScrollTracker(browserId, page);
             
             tracker.on('ScrollEvent', (eventData) => {

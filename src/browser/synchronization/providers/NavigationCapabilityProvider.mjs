@@ -2,15 +2,17 @@ import { Capabilities } from '../capabilities.mjs';
 import { CapabilityProvider } from './CapabilityProvider.mjs';
 import { NavigationTracker } from './navigation/NavigationTracker.mjs';
 import { NavigationWaitStrategy } from './navigation/NavigationWaitStrategy.mjs';
+import { NavigationStateMachine } from './navigation/NavigationStateMachine.mjs';
 import EventEmitter from 'node:events';
 import { NavigationLifecycle, NavigationResult } from '../models/BrowserStateModel.mjs';
+import { CapabilityResult } from '../models/CapabilityResult.mjs';
 
 /**
  * Ensures the browser has completed any navigations or redirects and the URL matches the expected target.
  */
 export class NavigationCapabilityProvider extends CapabilityProvider {
-    constructor() {
-        super();
+    constructor(registry, syncManager) {
+        super(registry, syncManager);
         this.events = new EventEmitter();
         this.initializedPages = new WeakMap(); // page -> true
         
@@ -55,13 +57,14 @@ export class NavigationCapabilityProvider extends CapabilityProvider {
         if (this.initializedPages.has(page)) return;
         this.initializedPages.set(page, true);
 
+        const stateMachine = new NavigationStateMachine(browserId, this.registry, this.syncManager);
         const tracker = new NavigationTracker(browserId, page, this.registry, this.syncManager);
         await tracker.initialize();
     }
 
     async waitFor(syncContext) {
         const { browserId } = syncContext;
-        const waitStrategy = new NavigationWaitStrategy(browserId, this.events);
+        const waitStrategy = new NavigationWaitStrategy(browserId, this.registry, this.events);
         return await waitStrategy.waitFor(syncContext);
     }
 
@@ -70,13 +73,13 @@ export class NavigationCapabilityProvider extends CapabilityProvider {
         const state = this.registry.getState(browserId);
         const ctx = state.navigationContext;
         
-        const isSatisfied = ctx.lifecycle === NavigationLifecycle.READY || ctx.lifecycle === NavigationLifecycle.IDLE;
-        return {
-            satisfied: isSatisfied,
+        const isSatisfied = ctx && (ctx.lifecycle === NavigationLifecycle.READY || ctx.lifecycle === NavigationLifecycle.IDLE);
+        return new CapabilityResult({
+            status: isSatisfied ? 'SATISFIED' : 'WAITING',
             capability: Capabilities.NAVIGATION_READY,
             latency: 0,
-            error: null
-        };
+            reason: isSatisfied ? 'Navigation idle or ready' : 'Navigating or redirecting'
+        });
     }
 
     invalidate(syncContext) {

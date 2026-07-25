@@ -29,11 +29,17 @@ export const SynchronizationProfiles = Object.freeze({
         domQuietPeriod: 100,
         retryPolicy: { retries: 2, backoff: 500 }
     }),
-    navigation: Object.freeze({
+    navigate: Object.freeze({
         level: SynchronizationLevel.LEVEL_1,
         timeoutMs: 30000,
         domQuietPeriod: 0,
         retryPolicy: { retries: 1, backoff: 1000 }
+    }),
+    scroll: Object.freeze({
+        level: SynchronizationLevel.LEVEL_4,
+        timeoutMs: 5000,
+        domQuietPeriod: 100,
+        retryPolicy: { retries: 2, backoff: 500 }
     }),
     drag: Object.freeze({
         level: SynchronizationLevel.LEVEL_4,

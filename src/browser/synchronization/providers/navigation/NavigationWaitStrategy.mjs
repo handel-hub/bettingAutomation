@@ -1,9 +1,12 @@
 import { NavigationComparator, NavigationComparisonResult } from './NavigationComparator.mjs';
-import { NavigationLifecycle, NavigationResult } from '../../models/BrowserStateModel.mjs';
+import { NavigationLifecycle } from '../../models/BrowserStateModel.mjs';
+import { CapabilityResult } from '../../models/CapabilityResult.mjs';
+import { Capabilities } from '../../capabilities.mjs';
 
 export class NavigationWaitStrategy {
-    constructor(browserId, providerEventEmitter) {
+    constructor(browserId, registry, providerEventEmitter) {
         this.browserId = browserId;
+        this.registry = registry;
         this.providerEventEmitter = providerEventEmitter; // To emit and listen to provider-level events like navigationSettled
     }
 
@@ -33,17 +36,17 @@ export class NavigationWaitStrategy {
                 if (timeoutId) clearTimeout(timeoutId);
                 this.registry.removeListener('StateUpdated', onStateUpdate);
                 this.providerEventEmitter.removeListener('navigationFailed', onNavigationFailed);
-                page.removeListener('close', onPageClose);
+                if (page) page.removeListener('close', onPageClose);
             };
 
             const complete = (result) => {
                 if (isResolved) return;
                 cleanup();
                 
-                if (result.satisfied) {
+                if (result.status === 'SATISFIED') {
                     resolve(result);
                 } else {
-                    reject(new Error(result.error));
+                    reject(new Error(result.reason || 'Navigation wait failed'));
                 }
             };
 
@@ -53,12 +56,12 @@ export class NavigationWaitStrategy {
                 
                 if (!targetUrl) {
                     if (navCtx.lifecycle === NavigationLifecycle.READY || navCtx.lifecycle === NavigationLifecycle.IDLE) {
-                        complete({
-                            satisfied: true,
-                            capability: 'NAVIGATION_READY',
+                        complete(new CapabilityResult({
+                            status: 'SATISFIED',
+                            capability: Capabilities.NAVIGATION_READY,
                             latency: Date.now() - startTime,
-                            error: null
-                        });
+                            reason: 'Navigation idle or ready with no target URL'
+                        }));
                         return true;
                     }
                     return false; // Keep waiting
@@ -68,22 +71,23 @@ export class NavigationWaitStrategy {
                 
                 if (comparison === NavigationComparisonResult.MATCH || comparison === NavigationComparisonResult.NORMALIZED_MATCH) {
                     if (navCtx.lifecycle === NavigationLifecycle.READY || navCtx.lifecycle === NavigationLifecycle.IDLE) {
-                        complete({
-                            satisfied: true,
-                            capability: 'NAVIGATION_READY',
+                        complete(new CapabilityResult({
+                            status: 'SATISFIED',
+                            capability: Capabilities.NAVIGATION_READY,
                             latency: Date.now() - startTime,
-                            error: null
-                        });
+                            reason: 'Target URL matched'
+                        }));
                         return true;
                     }
                 } else if (comparison === NavigationComparisonResult.MISMATCH) {
                     // Check if the navigation is complete but we ended up somewhere else
                     if (navCtx.lifecycle === NavigationLifecycle.READY) {
                         // SY-114 Navigation Divergence
-                        complete({
-                            satisfied: false,
-                            error: `[SY-114] Navigation Divergence: Expected ${targetUrl}, but arrived at ${navCtx.currentURL}`
-                        });
+                        complete(new CapabilityResult({
+                            status: 'FAILED',
+                            capability: Capabilities.NAVIGATION_READY,
+                            reason: `[SY-114] Navigation Divergence: Expected ${targetUrl}, but arrived at ${navCtx.currentURL}`
+                        }));
                         return true;
                     }
                 }
@@ -94,16 +98,30 @@ export class NavigationWaitStrategy {
 
             const onStateUpdate = ({ browserId, state }) => {
                 if (browserId === this.browserId) {
-                    try { evaluate(); } catch (e) { complete({ satisfied: false, error: e.message }); }
+                    try { evaluate(); } catch (e) { 
+                        complete(new CapabilityResult({
+                            status: 'FAILED',
+                            capability: Capabilities.NAVIGATION_READY,
+                            reason: e.message
+                        })); 
+                    }
                 }
             };
 
             const onNavigationFailed = (reason) => {
-                complete({ satisfied: false, error: reason });
+                complete(new CapabilityResult({
+                    status: 'FAILED',
+                    capability: Capabilities.NAVIGATION_READY,
+                    reason
+                }));
             };
 
             const onPageClose = () => {
-                complete({ satisfied: false, error: '[SY-113] Navigation cancelled: Page closed' });
+                complete(new CapabilityResult({
+                    status: 'FAILED',
+                    capability: Capabilities.NAVIGATION_READY,
+                    reason: '[SY-113] Navigation cancelled: Page closed'
+                }));
             };
 
             try {
@@ -124,11 +142,23 @@ export class NavigationWaitStrategy {
                     const navCtx = state.navigationContext;
                     
                     if (navCtx.lifecycle === NavigationLifecycle.REDIRECTING) {
-                        complete({ satisfied: false, error: '[SY-110] Redirect timeout' });
-                    } else if (navCtx.navigationType !== 'traditional') {
-                        complete({ satisfied: false, error: '[SY-111] SPA route timeout' });
+                        complete(new CapabilityResult({
+                            status: 'TIMEOUT',
+                            capability: Capabilities.NAVIGATION_READY,
+                            reason: '[SY-111] Stuck in redirect loop'
+                        }));
+                    } else if (navCtx.lifecycle === NavigationLifecycle.NAVIGATING) {
+                        complete(new CapabilityResult({
+                            status: 'TIMEOUT',
+                            capability: Capabilities.NAVIGATION_READY,
+                            reason: '[SY-112] Navigation stalled'
+                        }));
                     } else {
-                        complete({ satisfied: false, error: '[SY-101] Navigation timeout' });
+                        complete(new CapabilityResult({
+                            status: 'TIMEOUT',
+                            capability: Capabilities.NAVIGATION_READY,
+                            reason: 'Navigation timed out'
+                        }));
                     }
                 }, timeoutMs);
             } catch (e) {

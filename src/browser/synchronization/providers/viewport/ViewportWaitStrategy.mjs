@@ -9,8 +9,9 @@ import { logger } from '../../../../config.mjs';
  * metadata against current runtime ViewportContext and reacting to ViewportReady events.
  */
 export class ViewportWaitStrategy {
-    constructor(browserId, stateMachine, comparator, policy) {
+    constructor(browserId, registry, stateMachine, comparator, policy) {
         this.browserId = browserId;
+        this.registry = registry;
         this.stateMachine = stateMachine;
         this.comparator = comparator;
         this.policy = policy;
@@ -22,10 +23,8 @@ export class ViewportWaitStrategy {
             
             // If the command doesn't carry viewport metadata, we trivially satisfy.
             if (!expectedViewport) {
-                return resolve(new CapabilityResult(Capabilities.VIEWPORT_READY, true, { 
-                    latency: 0, 
-                    reason: 'No viewport metadata provided' 
-                }));
+                return resolve(new CapabilityResult({ status: 'SATISFIED', capability: Capabilities.VIEWPORT_READY, latency: 0, 
+                    reason: 'No viewport metadata provided' }));
             }
 
             const startTime = Date.now();
@@ -36,11 +35,9 @@ export class ViewportWaitStrategy {
 
                 if (result === ViewportComparisonResult.MATCH || result === ViewportComparisonResult.TOLERANCE_MATCH) {
                     cleanup();
-                    resolve(new CapabilityResult(Capabilities.VIEWPORT_READY, true, {
-                        latency: Date.now() - startTime,
+                    resolve(new CapabilityResult({ status: 'SATISFIED', capability: Capabilities.VIEWPORT_READY, latency: Date.now() - startTime,
                         confidence,
-                        matchType: result
-                    }));
+                        matchType: result }));
                     return true;
                 }
 

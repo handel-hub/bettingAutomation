@@ -1,4 +1,4 @@
-import { BrowserStateModel } from './models/BrowserStateModel.mjs';
+import { BrowserStateModel, LifecycleState } from './models/BrowserStateModel.mjs';
 import EventEmitter from 'node:events';
 
 /**

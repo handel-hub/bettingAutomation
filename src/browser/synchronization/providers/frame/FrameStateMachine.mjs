@@ -2,9 +2,10 @@ import EventEmitter from 'node:events';
 import { ExecutionContextLifecycle } from '../../models/BrowserStateModel.mjs';
 
 export class FrameStateMachine extends EventEmitter {
-    constructor(browserId, policy) {
+    constructor(browserId, registry, policy) {
         super();
         this.browserId = browserId;
+        this.registry = registry;
         this.policy = policy;
         this.stabilityTimeout = null;
         

@@ -7,9 +7,10 @@ import { logger } from '../../../../config.mjs';
  * mutates the StateRegistry, and emits normalized Provider Events.
  */
 export class ScrollStateMachine extends EventEmitter {
-    constructor(browserId, policy) {
+    constructor(browserId, registry, policy) {
         super();
         this.browserId = browserId;
+        this.registry = registry;
         this.policy = policy;
         
         this.stabilityTimeout = null;

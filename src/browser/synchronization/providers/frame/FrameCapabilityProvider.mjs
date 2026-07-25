@@ -5,8 +5,8 @@ import { FrameCapabilityRuntime } from './FrameCapabilityRuntime.mjs';
 import EventEmitter from 'node:events';
 
 export class FrameCapabilityProvider extends CapabilityProvider {
-    constructor() {
-        super();
+    constructor(registry, syncManager) {
+        super(registry, syncManager);
         this.capability = Capabilities.FRAME_READY;
         this.instances = new Map();
         this.events = new EventEmitter();
@@ -18,7 +18,7 @@ export class FrameCapabilityProvider extends CapabilityProvider {
 
     async initialize(browserId, page) {
         if (!this.instances.has(browserId)) {
-            const runtime = new FrameCapabilityRuntime(browserId);
+            const runtime = new FrameCapabilityRuntime(browserId, this.registry);
             
             runtime.on('FrameAttached', (e) => this.events.emit('FrameAttached', e));
             runtime.on('FrameDetached', (e) => this.events.emit('FrameDetached', e));
@@ -38,7 +38,7 @@ export class FrameCapabilityProvider extends CapabilityProvider {
         const { browserId, context } = syncContext;
         const instance = this.instances.get(browserId);
         if (!instance) {
-            return new CapabilityResult(this.capability, false, { reason: `Provider not initialized for ${browserId}` });
+            return new CapabilityResult({ status: 'FAILED', capability: this.capability, reason: `Provider not initialized for ${browserId}` });
         }
 
         return await instance.waitStrategy.waitForContext(context);
@@ -48,7 +48,7 @@ export class FrameCapabilityProvider extends CapabilityProvider {
         const { browserId, context } = syncContext;
         const instance = this.instances.get(browserId);
         if (!instance) {
-            return new CapabilityResult(this.capability, false, { reason: `Provider not initialized for ${browserId}` });
+            return new CapabilityResult({ status: 'FAILED', capability: this.capability, reason: `Provider not initialized for ${browserId}` });
         }
 
         return await instance.waitStrategy.waitForContext(context);

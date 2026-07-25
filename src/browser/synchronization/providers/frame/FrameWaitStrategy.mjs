@@ -2,8 +2,9 @@ import { CapabilityResult } from '../../models/CapabilityResult.mjs';
 import { Capabilities } from '../../capabilities.mjs';
 
 export class FrameWaitStrategy {
-    constructor(browserId, stateMachine, comparator, policy) {
+    constructor(browserId, registry, stateMachine, comparator, policy) {
         this.browserId = browserId;
+        this.registry = registry;
         this.stateMachine = stateMachine;
         this.comparator = comparator;
         this.policy = policy;
@@ -12,7 +13,7 @@ export class FrameWaitStrategy {
     async waitForContext(context) {
         const metadata = context.metadata || context; // Depending on how syncContext is structured
         if (!metadata || !metadata.executionContext) {
-            return new CapabilityResult(Capabilities.FRAME_READY, true);
+            return new CapabilityResult({ status: 'SATISFIED', capability: Capabilities.FRAME_READY });
         }
 
         return new Promise((resolve) => {
@@ -22,14 +23,12 @@ export class FrameWaitStrategy {
                 
                 if (result.match) {
                     cleanup();
-                    resolve(new CapabilityResult(Capabilities.FRAME_READY, true));
+                    resolve(new CapabilityResult({ status: 'SATISFIED', capability: Capabilities.FRAME_READY }));
                     return true;
                 } else if (result.code !== 'WAITING') {
                     cleanup();
-                    resolve(new CapabilityResult(Capabilities.FRAME_READY, false, {
-                        reason: result.reason,
-                        code: result.code
-                    }));
+                    resolve(new CapabilityResult({ status: 'FAILED', capability: Capabilities.FRAME_READY, reason: result.reason,
+                        code: result.code }));
                     return true;
                 }
                 return false;
@@ -39,10 +38,8 @@ export class FrameWaitStrategy {
 
             const timeout = setTimeout(() => {
                 cleanup();
-                resolve(new CapabilityResult(Capabilities.FRAME_READY, false, {
-                    reason: 'Execution context synchronization timeout',
-                    code: 'SY-142'
-                }));
+                resolve(new CapabilityResult({ status: 'FAILED', capability: Capabilities.FRAME_READY, reason: 'Execution context synchronization timeout',
+                    code: 'SY-142' }));
             }, this.policy.frameTimeout);
 
             const cleanup = () => {

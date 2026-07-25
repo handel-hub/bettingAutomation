@@ -11,7 +11,7 @@ export class NavigationTracker {
         this.syncManager = syncManager;
         this.browserId = browserId;
         this.page = page;
-        this.stateMachine = new NavigationStateMachine(browserId);
+        this.stateMachine = new NavigationStateMachine(browserId, registry, syncManager);
         this._lastUrl = null;
         this._lastNavigationId = null;
     }
