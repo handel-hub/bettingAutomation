@@ -1,12 +1,14 @@
 import { logger } from '../../config.mjs';
 import EventEmitter from 'node:events';
 import { LocatorResolver } from './LocatorResolver.mjs';
+import { pageStateMonitor } from './locatorIntelligence/resolution/PageStateMonitor.mjs';
 import { 
     LocatorResolutionError, 
     OverlayInterceptionError, 
     ElementDetachedError, 
     PlaywrightTimeoutError,
-    GlobalTimeoutError
+    GlobalTimeoutError,
+    StaleEpochError
 } from './errors.mjs';
 
 export class ActionSimulator extends EventEmitter {
@@ -15,17 +17,57 @@ export class ActionSimulator extends EventEmitter {
         this.MAX_EXECUTION_RETRIES = 3;
     }
 
-    async _executeWithRecovery(command, page, interactionType, actionFn) {
+    async _executeWithRecovery(command, page, interactionType, actionFn, browserObj = null) {
         let attempts = 0;
         const locators = command.payload.locators || [];
 
         while (attempts < this.MAX_EXECUTION_RETRIES) {
             attempts++;
             
-            // Phase 2: Resolve (Decoupled)
-            const result = await LocatorResolver.resolve(page, locators, interactionType);
+            // Phase 2 & 15: Resolve (Decoupled & Shadow Mode)
+            let result;
+            if (featureFlags.isEnabled('LI_SHADOW_MODE')) {
+                // In shadow mode, we would run the legacy resolver to drive the physical action,
+                // and the new resolver to gather comparison metrics.
+                // For now, we simulate this by running the current resolver as 'legacy' and logging.
+                result = await LocatorResolver.resolve(page, locators, interactionType, undefined, {
+                    browserId: browserObj?.id || command.metadata?.browserId || command.target,
+                    commandEpoch: command.metadata?.captureEpoch ?? command.metadata?.navigation?.epoch,
+                    epochGate: this.epochGate,
+                    shadowPath: command.payload.shadowPath || []
+                });
+                
+                const shadowResult = await LocatorResolver.resolve(page, locators, interactionType, undefined, {
+                    browserId: browserObj?.id || command.metadata?.browserId || command.target,
+                    commandEpoch: command.metadata?.captureEpoch ?? command.metadata?.navigation?.epoch,
+                    epochGate: this.epochGate,
+                    shadowPath: command.payload.shadowPath || [],
+                    identityDocument: command.metadata?.identityDocument
+                });
+                
+                TelemetryCollector.recordShadowMode({
+                    legacySuccess: result.success,
+                    newSuccess: shadowResult.success,
+                    legacyLocator: result.locator,
+                    newLocator: shadowResult.locator,
+                    newConfidence: shadowResult.similarity?.overallScore || 0
+                });
+            } else {
+                result = await LocatorResolver.resolve(page, locators, interactionType, undefined, {
+                    browserId: browserObj?.id || command.metadata?.browserId || command.target,
+                    commandEpoch: command.metadata?.captureEpoch ?? command.metadata?.navigation?.epoch,
+                    epochGate: this.epochGate,
+                    shadowPath: command.payload.shadowPath || [],
+                    identityDocument: command.metadata?.identityDocument
+                });
+            }
             
             if (!result.success) {
+                if (result.failureReason && result.failureReason.includes('StaleEpochError')) {
+                    const error = new StaleEpochError(result.failureReason);
+                    error.addChain(`[LF-604] Epoch mismatch during execution attempt ${attempts}`);
+                    throw error;
+                }
                 // If it fails to resolve, throw the timeout error up
                 const error = new GlobalTimeoutError(result.failureReason);
                 error.addChain(`[LF-504] Resolution failed during execution attempt ${attempts}`);
@@ -74,6 +116,9 @@ export class ActionSimulator extends EventEmitter {
         const startTime = Date.now();
         const { id, page } = browserObj;
         
+        // Ensure PageStateMonitor is attached to this page to track DOM mutations
+        await pageStateMonitor.attach(page).catch(() => {});
+        
         const lifecycle = 'EXECUTING';
         logger.info(`[Execute Start] Command ${command.id} on [${id}] | Latency (Receive->Start): ${startTime - command.creationTime}ms | Lifecycle: ${lifecycle}`);
         try {
@@ -83,14 +128,14 @@ export class ActionSimulator extends EventEmitter {
 
             // Perform actions using the new decoupled recovery loop
             if (type === 'CLICK' || type === 'click') {
-                usedLocatorInfo = await this._executeWithRecovery(command, page, 'click', async (loc) => await loc.click());
+                usedLocatorInfo = await this._executeWithRecovery(command, page, 'click', async (loc) => await loc.click(), browserObj);
             } else if (type === 'DOUBLE_CLICK' || type === 'dblclick') {
-                usedLocatorInfo = await this._executeWithRecovery(command, page, 'dblclick', async (loc) => await loc.dblclick());
+                usedLocatorInfo = await this._executeWithRecovery(command, page, 'dblclick', async (loc) => await loc.dblclick(), browserObj);
             } else if (type === 'DRAG') {
                 const path = payload.path || [];
                 if (path.length > 0) {
                     if (locators.length > 0) {
-                        usedLocatorInfo = await this._executeWithRecovery(command, page, 'drag start', async (loc) => await loc.hover());
+                        usedLocatorInfo = await this._executeWithRecovery(command, page, 'drag start', async (loc) => await loc.hover(), browserObj);
                     }
                     await page.mouse.move(path[0].x, path[0].y);
                     await page.mouse.down();
@@ -111,13 +156,13 @@ export class ActionSimulator extends EventEmitter {
                     } else {
                         await loc.fill(payload.value);
                     }
-                });
+                }, browserObj);
             } else if (type === 'KEYBOARD' || type === 'keyboard') {
                 if (locators.length > 0) {
                     usedLocatorInfo = await this._executeWithRecovery(command, page, 'keyboard', async (loc) => {
                         await loc.focus();
                         await page.keyboard.press(payload.key);
-                    });
+                    }, browserObj);
                 } else {
                     await page.keyboard.press(payload.key);
                 }
@@ -129,7 +174,7 @@ export class ActionSimulator extends EventEmitter {
                 await page.mouse.move(payload.x, payload.y);
             } else if (type === 'pointerdown') {
                 if (locators.length > 0) {
-                    usedLocatorInfo = await this._executeWithRecovery(command, page, 'pointerdown', async (loc) => await loc.hover());
+                    usedLocatorInfo = await this._executeWithRecovery(command, page, 'pointerdown', async (loc) => await loc.hover(), browserObj);
                 }
                 await page.mouse.move(payload.x, payload.y);
                 await page.mouse.down();
@@ -137,9 +182,9 @@ export class ActionSimulator extends EventEmitter {
                 await page.mouse.move(payload.x, payload.y);
                 await page.mouse.up();
             } else if (type === 'focus') {
-                usedLocatorInfo = await this._executeWithRecovery(command, page, 'focus', async (loc) => await loc.focus());
+                usedLocatorInfo = await this._executeWithRecovery(command, page, 'focus', async (loc) => await loc.focus(), browserObj);
             } else if (type === 'blur') {
-                usedLocatorInfo = await this._executeWithRecovery(command, page, 'blur', async (loc) => await loc.blur());
+                usedLocatorInfo = await this._executeWithRecovery(command, page, 'blur', async (loc) => await loc.blur(), browserObj);
             } else if (type === 'window_scroll') {
                 await page.evaluate(({x, y}) => window.scrollTo(x, y), { x: payload.scrollX, y: payload.scrollY });
             } else if (type === 'element_scroll') {
@@ -148,7 +193,7 @@ export class ActionSimulator extends EventEmitter {
                         node.scrollTop = data.scrollTop;
                         node.scrollLeft = data.scrollLeft;
                     }, { scrollTop: payload.scrollTop, scrollLeft: payload.scrollLeft });
-                });
+                }, browserObj);
             } else if (type === 'navigate') {
                 await page.goto(payload.url, { waitUntil: 'domcontentloaded' });
             } else if (type === 'add_style') {
@@ -164,7 +209,7 @@ export class ActionSimulator extends EventEmitter {
         } catch (err) {
             const lifecycle = 'FAILED';
             
-            if (err instanceof GlobalTimeoutError || err instanceof OverlayInterceptionError || err instanceof ElementDetachedError || err instanceof PlaywrightTimeoutError || err instanceof LocatorResolutionError) {
+            if (err instanceof GlobalTimeoutError || err instanceof OverlayInterceptionError || err instanceof ElementDetachedError || err instanceof PlaywrightTimeoutError || err instanceof LocatorResolutionError || err instanceof StaleEpochError) {
                 logger.warn(`[Interaction Failure] Command ${command.id} on slave [${id}]: ${err.message} | Execution duration: ${Date.now() - startTime}ms | Lifecycle: ${lifecycle}`);
                 return false;
             }

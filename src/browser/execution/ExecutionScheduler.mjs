@@ -3,6 +3,8 @@ import { Command } from './Command.mjs';
 import { ExecutionContext } from './ExecutionContext.mjs';
 import { SynchronizationProfiles } from '../synchronization/profiles/SynchronizationProfiles.mjs';
 import { SynchronizationBarrier } from '../synchronization/SynchronizationBarrier.mjs';
+import { EpochGate } from './locatorIntelligence/resolution/EpochGate.mjs';
+import featureFlags from './locatorIntelligence/FeatureFlags.mjs';
 
 
 export class ClassificationPolicy {
@@ -145,10 +147,26 @@ export class QueueManager {
 }
 
 export class ExecutionScheduler {
-    constructor(actionSimulator, registry, syncManager) {
+    constructor(actionSimulator, registry, syncManager, epochGate = new EpochGate()) {
         this.simulator = actionSimulator;
         this.registry = registry;
         this.syncManager = syncManager;
+        this.epochGate = epochGate;
+        if (this.simulator && !this.simulator.epochGate) {
+            this.simulator.epochGate = this.epochGate;
+        }
+        if (this.registry && typeof this.registry.on === 'function') {
+            this.registry.on('StateUpdated', ({ browserId, state }) => {
+                if (state && state.url && state.url !== 'about:blank') {
+                    const rec = this.epochGate.getEpochRecord(browserId);
+                    if (rec.url !== state.url || (state.navigationEpoch !== undefined && state.navigationEpoch > rec.value)) {
+                        while (this.epochGate.getCurrentEpoch(browserId) < (state.navigationEpoch || (rec.value + 1))) {
+                            this.epochGate.incrementEpoch(browserId, state.url);
+                        }
+                    }
+                }
+            });
+        }
         this.browserQueues = new Map();
         this.drainLocks = new Set();
         this.telemetry = {
@@ -266,6 +284,17 @@ export class ExecutionScheduler {
                             }
                         }
                     });
+
+                    if (featureFlags.isEnabled('LI_EPOCH_GATING')) {
+                        const capEpoch = finalCommand.metadata?.captureEpoch ?? finalCommand.metadata?.navigation?.epoch;
+                        if (capEpoch !== undefined && capEpoch !== null && capEpoch !== 0) {
+                            const decisionObj = await this.epochGate.evaluateAsync(browserId, capEpoch, 2000);
+                            if (decisionObj.decision === 'SKIP') {
+                                logger.info(`[Scheduler] Skipping stale command ${finalCommand.id} on [${browserId}]: ${decisionObj.reason}`);
+                                continue;
+                            }
+                        }
+                    }
 
                     // Wrap in ExecutionContext
                     const context = new ExecutionContext(finalCommand);

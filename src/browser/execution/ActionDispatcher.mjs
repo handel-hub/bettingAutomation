@@ -40,6 +40,7 @@ export class ActionDispatcher extends EventEmitter {
             'models/RankingResult.mjs',
             'models/LocatorCandidate.mjs',
             'models/ElementIdentityDocument.mjs',
+            'models/ScoringVector.mjs',
             'engine/PipelineContext.mjs',
             'engine/PipelineStep.mjs',
             'extraction/FeatureExtractor.mjs',
@@ -63,8 +64,16 @@ export class ActionDispatcher extends EventEmitter {
             'ranking/RankingRules/StructuralRule.mjs',
             'ranking/RankingRules/VisibilityRule.mjs',
             'ranking/RankingRules/CorroborationRule.mjs',
+            'ranking/RankingRules/NormalizedBaseScoreRule.mjs',
+            'ranking/RankingRules/NormalizedStructuralRule.mjs',
+            'ranking/RankingRules/NormalizedDynamicContentRule.mjs',
+            'ranking/RankingRules/NormalizedSpecificityRule.mjs',
+            'ranking/RankingRules/NormalizedCorroborationRule.mjs',
+            'ranking/RankingRules/NormalizedVisibilityRule.mjs',
             'ranking/RankingConfig.mjs',
+            'ranking/ScoringWeights.mjs',
             'ranking/RankingEngine.mjs',
+            'ranking/AdditiveRankingEngine.mjs',
             'serialization/LocatorSerializer.mjs',
             'telemetry/RollingWindow.mjs',
             'telemetry/MetricsRegistry.mjs',
@@ -77,6 +86,7 @@ export class ActionDispatcher extends EventEmitter {
             const filePath = path.join(__dirname, 'locatorIntelligence', file);
             let content = await fsPromises.readFile(filePath, 'utf8');
             content = content.replace(/^\uFEFF/, '')
+                             .replace(/^\s*export\s+default\s+.*$/gm, '')
                              .replace(/^\s*export\s+/gm, '')
                              .replace(/^\s*import\s+.*$/gm, '');
             locatorIntelligenceCode += content + '\n\n';
@@ -452,16 +462,19 @@ export class ActionDispatcher extends EventEmitter {
             const framePath = FramePathBuilder.build(frame);
 
             const metadata = {
+                captureEpoch: masterState ? (masterState.navigationEpoch || 0) : 0,
                 navigation: navCtx ? {
                     url: navCtx.currentURL,
                     navigationId: navCtx.navigationId,
                     timestamp: navCtx.startedAt,
-                    navigationType: navCtx.navigationType
+                    navigationType: navCtx.navigationType,
+                    epoch: masterState ? (masterState.navigationEpoch || 0) : 0
                 } : {
                     url: masterPage.url(),
                     navigationId: 'master-nav-fallback',
                     timestamp: Date.now(),
-                    navigationType: 'fallback'
+                    navigationType: 'fallback',
+                    epoch: masterState ? (masterState.navigationEpoch || 0) : 0
                 },
                 viewport: viewCtx ? {
                     viewportId: viewCtx.viewportId,

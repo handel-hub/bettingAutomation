@@ -151,6 +151,9 @@ export class BrowserStateRegistry extends EventEmitter {
     updateUrl(id, urlValue) {
         if (this.states.has(id)) {
             const state = this.states.get(id);
+            if (state.url !== urlValue && urlValue !== 'about:blank') {
+                state.navigationEpoch++;
+            }
             state.url = urlValue;
             this.emit('StateUpdated', { browserId: id, state });
         }
