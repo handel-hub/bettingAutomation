@@ -1,4 +1,5 @@
 import { logger } from '../../config.mjs';
+import featureFlags from '../execution/locatorIntelligence/FeatureFlags.mjs';
 
 export class EventBusRegistrar {
     constructor(deps) {
@@ -152,7 +153,11 @@ export class EventBusRegistrar {
 
         // Bridge: Simulator Success/Failure -> Registry Metadata
         this.simulator.on('ActionFailure', ({ id, error }) => {
-            this.registry.updateState(id, 'Error');
+            if (!featureFlags.isEnabled('V3_DECOUPLE_HEALTH_MONITOR')) {
+                this.registry.updateState(id, 'Error');
+            } else {
+                logger.debug(`[EventBusRegistrar] V3_DECOUPLE_HEALTH_MONITOR enabled: preserving ONLINE/READY state for [${id}] on ActionFailure.`);
+            }
         });
     }
 }

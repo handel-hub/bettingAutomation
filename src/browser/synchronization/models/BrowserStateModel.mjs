@@ -116,6 +116,9 @@ export class BrowserStateModel {
         this.state = 'Initializing';
         this.url = 'about:blank';
         this.health = 'Good';
+        this.isDisconnected = false;
+        this.physicalCrash = false;
+        this.oomFault = false;
 
         // --- Synchronization State ---
         this.lifecycleState = LifecycleState.DISCONNECTED;

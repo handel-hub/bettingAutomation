@@ -121,16 +121,22 @@ export class BrowserLifecycleManager {
             // Register lifecycle listeners to catch crashes and disconnects immediately
             browser.on('disconnected', () => {
                 logger.warn(`[LifecycleManager] Browser [${id}] disconnected unexpectedly.`);
+                const stateObj = this.registry.get(id);
+                if (stateObj) stateObj.isDisconnected = true;
                 this.registry.updateState(id, 'Error');
             });
             
             page.on('close', () => {
                 logger.warn(`[LifecycleManager] Page for [${id}] closed unexpectedly.`);
+                const stateObj = this.registry.get(id);
+                if (stateObj) stateObj.physicalCrash = true;
                 this.registry.updateState(id, 'Error');
             });
             
             page.on('crash', () => {
                 logger.error(`[LifecycleManager] Page for [${id}] CRASHED.`);
+                const stateObj = this.registry.get(id);
+                if (stateObj) stateObj.physicalCrash = true;
                 this.registry.updateState(id, 'Error');
             });
             
