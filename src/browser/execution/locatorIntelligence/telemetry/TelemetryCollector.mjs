@@ -1,4 +1,5 @@
 import { MetricsRegistry } from './MetricsRegistry.mjs';
+import featureFlags from '../FeatureFlags.mjs';
 
 class TelemetryCollectorImpl {
     constructor() {
@@ -53,6 +54,7 @@ class TelemetryCollectorImpl {
      */
     recordValidation(status) {
         try {
+            if (featureFlags.isEnabled('LI_REMOVE_VALIDATOR')) return;
             if (this.registry.validation[status] !== undefined) {
                 this.registry.validation[status]++;
             }

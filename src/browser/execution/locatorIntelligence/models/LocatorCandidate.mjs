@@ -1,3 +1,6 @@
+import { ValidationResult } from './ValidationResult.mjs';
+import { RankingResult } from './RankingResult.mjs';
+
 export class LocatorCandidate {
     constructor({ strategy, locator, generatedBy = [], reason = '', features = {}, metadata = {}, rank = 0 }) {
         this.id = 'lc-' + Math.random().toString(16).substring(2, 10);
@@ -8,6 +11,8 @@ export class LocatorCandidate {
         this.features = features; // Dropped during serialization
         this.metadata = metadata;
         this.rank = rank;
+        this.scoringVector = null; // Forward compatibility for Phase 4+ ScoringVector
+        this.identityDocument = null; // Forward compatibility for Phase 1+ EID
         
         // Complex state objects
         this.validation = new ValidationResult();

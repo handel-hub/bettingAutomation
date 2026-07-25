@@ -1,3 +1,5 @@
+import { LocatorCandidate } from '../../models/LocatorCandidate.mjs';
+
 export class SemanticClassStrategy {
     static generate(el, features) {
         if (!features.className) return [];
@@ -8,7 +10,8 @@ export class SemanticClassStrategy {
             return true;
         });
         if (classes.length > 0) {
-            const selector = features.tagName + '.' + classes.map(c => CSS.escape(c)).join('.');
+            const escapeFn = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape : (str => str);
+            const selector = features.tagName + '.' + classes.map(c => escapeFn(c)).join('.');
             return [new LocatorCandidate({
                 strategy: 'SemanticClassStrategy',
                 locator: selector,

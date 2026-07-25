@@ -1,3 +1,5 @@
+import { LocatorCandidate } from '../../models/LocatorCandidate.mjs';
+
 export class TextStrategy {
     static generate(el, features) {
         if (features.text && features.text.length > 0 && features.text.length < 50) {

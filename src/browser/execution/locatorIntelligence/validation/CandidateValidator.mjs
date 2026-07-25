@@ -1,4 +1,6 @@
+import { PipelineStep } from '../engine/PipelineStep.mjs';
 import { TelemetryCollector } from '../telemetry/TelemetryCollector.mjs';
+import featureFlags from '../FeatureFlags.mjs';
 
 export class CandidateValidator extends PipelineStep {
     constructor() {
@@ -6,6 +8,14 @@ export class CandidateValidator extends PipelineStep {
     }
 
     execute(context) {
+        if (featureFlags.isEnabled('LI_REMOVE_VALIDATOR')) {
+            if (context.candidates) {
+                for (const candidate of context.candidates) {
+                    candidate.validation = { status: 'SKIPPED', matchCount: -1 };
+                }
+            }
+            return;
+        }
         if (!context.candidates || context.candidates.length === 0) return;
 
         for (const candidate of context.candidates) {
@@ -25,7 +35,7 @@ export class CandidateValidator extends PipelineStep {
                 status = 'NOT_VERIFIABLE';
             } else {
                 try {
-                    const matches = document.querySelectorAll(candidate.locator);
+                    const matches = typeof document !== 'undefined' ? document.querySelectorAll(candidate.locator) : [];
                     matchCount = matches.length;
                     
                     if (matchCount === 1) {

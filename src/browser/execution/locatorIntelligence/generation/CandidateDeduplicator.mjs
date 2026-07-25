@@ -1,3 +1,5 @@
+import { PipelineStep } from '../engine/PipelineStep.mjs';
+
 export class CandidateDeduplicator extends PipelineStep {
     constructor() {
         super('CandidateDeduplicator');

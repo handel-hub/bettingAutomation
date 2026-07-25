@@ -1,4 +1,7 @@
+import { PipelineStep } from '../engine/PipelineStep.mjs';
+import { RankingConfig } from './RankingConfig.mjs';
 import { TelemetryCollector } from '../telemetry/TelemetryCollector.mjs';
+import featureFlags from '../FeatureFlags.mjs';
 
 export class RankingEngine extends PipelineStep {
     constructor() {
@@ -9,8 +12,9 @@ export class RankingEngine extends PipelineStep {
     execute(context) {
         if (!context.candidates || context.candidates.length === 0) return;
 
-        const activeRules = this.configRules
-            .filter(r => r.enabled)
+        const removeValidator = featureFlags.isEnabled('LI_REMOVE_VALIDATOR');
+        const activeRules = RankingConfig.getRules()
+            .filter(r => r.enabled && (!removeValidator || r.rule.name !== 'ValidationConfidenceRule'))
             .sort((a, b) => b.priority - a.priority)
             .map(r => r.rule);
 

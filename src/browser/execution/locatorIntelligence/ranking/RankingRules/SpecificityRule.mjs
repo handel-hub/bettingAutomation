@@ -1,3 +1,5 @@
+import { RankingRule } from '../RankingRule.mjs';
+
 export class SpecificityRule extends RankingRule {
     constructor() {
         super('SpecificityRule');

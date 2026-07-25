@@ -1,3 +1,5 @@
+import { RankingRule } from '../RankingRule.mjs';
+
 export class ValidationConfidenceRule extends RankingRule {
     constructor() {
         super('ValidationConfidenceRule');

@@ -1,3 +1,11 @@
+import { PipelineStep } from '../engine/PipelineStep.mjs';
+import { DataAttributeStrategy } from './strategies/DataAttributeStrategy.mjs';
+import { TextStrategy } from './strategies/TextStrategy.mjs';
+import { AriaStrategy } from './strategies/AriaStrategy.mjs';
+import { RoleStrategy } from './strategies/RoleStrategy.mjs';
+import { SemanticClassStrategy } from './strategies/SemanticClassStrategy.mjs';
+import { StructuralStrategy } from './strategies/StructuralStrategy.mjs';
+
 export class CandidateGenerator extends PipelineStep {
     constructor() {
         super('CandidateGenerator');

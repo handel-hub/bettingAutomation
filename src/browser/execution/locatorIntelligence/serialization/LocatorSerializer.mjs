@@ -1,3 +1,5 @@
+import { PipelineStep } from '../engine/PipelineStep.mjs';
+
 export class LocatorSerializer extends PipelineStep {
     constructor() {
         super('LocatorSerializer');
@@ -14,8 +16,8 @@ export class LocatorSerializer extends PipelineStep {
                     const host = node.host || context.composedPath[i + 1];
                     if (host && host.nodeType === 1) {
                         let selector = host.nodeName.toLowerCase();
-                        if (host.id && !/\\d+/.test(host.id)) {
-                            selector += '#' + CSS.escape(host.id);
+                        if (host.id && !/\d+/.test(host.id)) {
+                            selector += '#' + (typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(host.id) : host.id);
                         }
                         shadowPath.unshift(selector);
                     }
@@ -25,6 +27,7 @@ export class LocatorSerializer extends PipelineStep {
         
         context.output = {
             shadowPath,
+            identityDocument: context.identityDocument ? (typeof context.identityDocument.serialize === 'function' ? context.identityDocument.serialize() : context.identityDocument) : null,
             locators: candidates.map(c => ({
                 id: c.id,
                 strategy: c.strategy,

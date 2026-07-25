@@ -1,3 +1,5 @@
+import { RankingRule } from '../RankingRule.mjs';
+
 class UUIDDetector {
     static detect(str) {
         return /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/.test(str) ? 30 : 0;

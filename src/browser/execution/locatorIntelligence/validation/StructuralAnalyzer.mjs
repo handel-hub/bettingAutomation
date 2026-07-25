@@ -1,3 +1,5 @@
+import { PipelineStep } from '../engine/PipelineStep.mjs';
+
 export class StructuralAnalyzer extends PipelineStep {
     constructor() {
         super('StructuralAnalyzer');

@@ -1,3 +1,5 @@
+import { RankingRule } from '../RankingRule.mjs';
+
 export class VisibilityRule extends RankingRule {
     constructor() {
         super('VisibilityRule');
