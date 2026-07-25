@@ -1,4 +1,8 @@
 import { logger } from '../config.mjs';
+import featureFlags from './execution/locatorIntelligence/FeatureFlags.mjs';
+import { CommandPayloadSchema } from './execution/schema/CommandPayloadSchema.mjs';
+import { TelemetryCollector } from './execution/locatorIntelligence/telemetry/TelemetryCollector.mjs';
+import { ContractViolationError } from './execution/errors.mjs';
 
 export class CommandRouter {
     constructor() {
@@ -21,6 +25,23 @@ export class CommandRouter {
         if (!command || !command.category) {
             logger.warn('Received invalid command object without a category');
             return;
+        }
+
+        // v3 Ingress Contract Gating
+        const enforcementMode = featureFlags.get('V3_SCHEMA_ENFORCEMENT_MODE') || 'DISABLED';
+        if (enforcementMode === 'STRICT' || enforcementMode === 'SHADOW') {
+            const validation = CommandPayloadSchema.validate(command);
+            if (!validation.valid) {
+                const errorMsg = `[LF-701] Ingress Contract Violation (${command.id || 'unknown'}): ${validation.errors.join('; ')}`;
+                if (enforcementMode === 'STRICT') {
+                    logger.error(`[CommandRouter] STRICT mode rejecting command: ${errorMsg}`);
+                    TelemetryCollector.registry.recordFailureCode('LF-701');
+                    throw new ContractViolationError(errorMsg);
+                } else if (enforcementMode === 'SHADOW') {
+                    logger.warn(`[CommandRouter] SHADOW mode violation logged (proceeding with route): ${errorMsg}`);
+                    TelemetryCollector.registry.recordFailureCode('LF-701');
+                }
+            }
         }
 
         const categoryMap = this.handlers.get(command.category);

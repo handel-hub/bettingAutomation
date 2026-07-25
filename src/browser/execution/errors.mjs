@@ -104,6 +104,13 @@ export class AmbiguousResolutionError extends VerificationFailure { constructor(
 export class StaleEpochError extends VerificationFailure { constructor(msg) { super('LF-604', msg, 'WARNING', 'EpochGate'); } }
 export class RecoveryExhaustedError extends VerificationFailure { constructor(msg) { super('LF-605', msg, 'CRITICAL', 'RecoveryOrchestrator'); } }
 
+// ----------------------------------------------------
+// 8. v3 Ingress & Contract Gating Failure (Router / Framework)
+// ----------------------------------------------------
+export class ContractViolationError extends SystemFailure { constructor(msg) { super('LF-701', msg, 'ERROR', 'CommandRouter'); } }
+export class QueueDeadlineExceededError extends SystemFailure { constructor(msg) { super('LF-702', msg, 'WARNING', 'ExecutionScheduler'); } }
+export class StandbyPoolExhaustedError extends SystemFailure { constructor(msg) { super('LF-703', msg, 'CRITICAL', 'StandbyPoolManager'); } }
+
 // Legacy export to maintain backward compatibility during rollout
 export class LocatorResolutionError extends GlobalTimeoutError {
     constructor(failureReason, resolutionResult) {

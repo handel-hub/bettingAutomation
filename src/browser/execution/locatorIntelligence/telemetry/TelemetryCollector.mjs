@@ -237,6 +237,150 @@ class TelemetryCollectorImpl {
             // Passive
         }
     }
+
+    /**
+     * Records telemetry for epoch injection attempts.
+     * @param {boolean} success
+     * @param {number} [latencyMs]
+     */
+    recordEpochInjection(success, latencyMs) {
+        try {
+            if (success) {
+                this.registry.epochSync.injectionSuccess++;
+            } else {
+                this.registry.epochSync.injectionFailure++;
+            }
+            if (typeof latencyMs === 'number' && !isNaN(latencyMs)) {
+                this.registry.epochSync.injectionLatency.push(latencyMs);
+            }
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry for epoch injection retries.
+     */
+    recordEpochInjectionRetry() {
+        try {
+            this.registry.epochSync.injectionRetry++;
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry when a mismatch between client and server epoch is detected.
+     * @param {number} clientEpoch
+     * @param {number} serverEpoch
+     */
+    recordEpochMismatch(clientEpoch, serverEpoch) {
+        try {
+            this.registry.epochSync.mismatchDetected++;
+            if (typeof clientEpoch === 'number' && typeof serverEpoch === 'number') {
+                this.registry.epochSync.epochDrift.push(Math.abs(clientEpoch - serverEpoch));
+            }
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry for epoch validation decisions.
+     * @param {string|object} decision - Decision string ('PROCEED', 'SKIP', 'WAIT') or decision object
+     * @param {number} [waitDurationMs]
+     * @param {string} [reason]
+     */
+    recordEpochDecision(decision, waitDurationMs, reason) {
+        try {
+            const decStr = typeof decision === 'object' ? decision?.decision : decision;
+            const resStr = typeof decision === 'object' ? decision?.reason : reason;
+
+            if (decStr === 'PROCEED') {
+                this.registry.epochSync.proceeded++;
+            } else if (decStr === 'WAIT') {
+                this.registry.epochSync.waited++;
+            } else if (decStr === 'SKIP') {
+                if (resStr && (resStr.includes('within') || resStr.includes('timeout') || resStr.includes('failed to navigate'))) {
+                    this.registry.epochSync.skippedTimeout++;
+                } else {
+                    this.registry.epochSync.skippedStale++;
+                }
+            }
+
+            if (typeof waitDurationMs === 'number' && !isNaN(waitDurationMs) && waitDurationMs > 0) {
+                this.registry.epochSync.epochWaitDuration.push(waitDurationMs);
+            }
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry for IPC message delivery.
+     * @param {number} [latencyMs]
+     */
+    recordIpcDelivery(latencyMs) {
+        try {
+            this.registry.epochSync.ipcReceived++;
+            if (typeof latencyMs === 'number' && !isNaN(latencyMs)) {
+                this.registry.epochSync.ipcDeliveryLatency.push(latencyMs);
+            }
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry for lost IPC messages.
+     */
+    recordIpcLost() {
+        try {
+            this.registry.epochSync.ipcLost++;
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry for dropped duplicate IPC messages.
+     */
+    recordIpcDuplicate() {
+        try {
+            this.registry.epochSync.ipcDuplicatesDropped++;
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry for out-of-order IPC messages.
+     */
+    recordIpcOutOfOrder() {
+        try {
+            this.registry.epochSync.ipcOutOfOrder++;
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry for SPA navigation detection.
+     * @param {string} [type]
+     */
+    recordSpaNavigation(type) {
+        try {
+            this.registry.epochSync.spaNavigationDetected++;
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry for shadow mode execution comparison between legacy and v2 resolution pipelines.
+     * @param {string} commandId
+     * @param {object} legacyResult
+     * @param {object} v2Result
+     */
+    recordShadowMode(commandId, legacyResult, v2Result) {
+        try {
+            if (!this.registry.shadowMode) {
+                this.registry.shadowMode = { total: 0, matches: 0, mismatches: 0 };
+            }
+            this.registry.shadowMode.total++;
+            const legacyLoc = legacyResult?.locator || legacyResult?.playwrightLocator || null;
+            const v2Loc = v2Result?.locator || v2Result?.playwrightLocator || null;
+            if (legacyLoc !== v2Loc) {
+                this.registry.shadowMode.mismatches++;
+            } else {
+                this.registry.shadowMode.matches++;
+            }
+        } catch (e) {
+            // Passive - ignore errors
+        }
+    }
 }
 
 export const TelemetryCollector = new TelemetryCollectorImpl();

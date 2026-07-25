@@ -83,6 +83,13 @@ export class MetricsRegistry {
         // Failure Metrics (Map of LF Code -> Count)
         this.failures = new Map();
 
+        // Shadow Mode Comparison Metrics
+        this.shadowMode = {
+            total: 0,
+            matches: 0,
+            mismatches: 0
+        };
+
         // Execution Metrics (Hooks for ActionSimulator)
         this.execution = {
             total: 0,
@@ -91,6 +98,27 @@ export class MetricsRegistry {
             candidateExhaustion: new RollingWindow(128),
             confidenceDecay: new RollingWindow(128),
             epochSkips: 0
+        };
+
+        // Epoch Synchronization Metrics
+        this.epochSync = {
+            injectionSuccess: 0,
+            injectionFailure: 0,
+            injectionRetry: 0,
+            mismatchDetected: 0,
+            skippedStale: 0,
+            skippedTimeout: 0,
+            proceeded: 0,
+            waited: 0,
+            ipcReceived: 0,
+            ipcLost: 0,
+            ipcDuplicatesDropped: 0,
+            ipcOutOfOrder: 0,
+            spaNavigationDetected: 0,
+            ipcDeliveryLatency: new RollingWindow(128),
+            injectionLatency: new RollingWindow(128),
+            epochWaitDuration: new RollingWindow(128),
+            epochDrift: new RollingWindow(128)
         };
     }
 
@@ -154,6 +182,7 @@ export class MetricsRegistry {
             recovery: { ...this.recovery },
             memory: { ...this.memory },
             failures: Object.fromEntries(this.failures),
+            shadowMode: { ...this.shadowMode },
             execution: {
                 total: this.execution.total,
                 averageRetries: this.execution.retries.average,
@@ -161,6 +190,25 @@ export class MetricsRegistry {
                 averageCandidateExhaustion: this.execution.candidateExhaustion.average,
                 averageConfidenceDecay: this.execution.confidenceDecay.average,
                 epochSkips: this.execution.epochSkips
+            },
+            epochSync: {
+                injectionSuccess: this.epochSync.injectionSuccess,
+                injectionFailure: this.epochSync.injectionFailure,
+                injectionRetry: this.epochSync.injectionRetry,
+                mismatchDetected: this.epochSync.mismatchDetected,
+                skippedStale: this.epochSync.skippedStale,
+                skippedTimeout: this.epochSync.skippedTimeout,
+                proceeded: this.epochSync.proceeded,
+                waited: this.epochSync.waited,
+                ipcReceived: this.epochSync.ipcReceived,
+                ipcLost: this.epochSync.ipcLost,
+                ipcDuplicatesDropped: this.epochSync.ipcDuplicatesDropped,
+                ipcOutOfOrder: this.epochSync.ipcOutOfOrder,
+                spaNavigationDetected: this.epochSync.spaNavigationDetected,
+                averageIpcDeliveryLatency: this.epochSync.ipcDeliveryLatency.average,
+                averageInjectionLatency: this.epochSync.injectionLatency.average,
+                averageEpochWaitDuration: this.epochSync.epochWaitDuration.average,
+                averageEpochDrift: this.epochSync.epochDrift.average
             }
         };
     }

@@ -1,7 +1,7 @@
 export class RollingWindow {
     constructor(size = 128) {
-        this.size = size;
-        this.buffer = new Float64Array(size);
+        this.size = Math.min(Math.max(1, size), 1000);
+        this.buffer = new Float64Array(this.size);
         this.head = 0;
         this.count = 0;
         this.sum = 0;
