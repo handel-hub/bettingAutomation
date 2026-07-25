@@ -1,14 +1,17 @@
 export class ScoringVector {
     constructor(dimensions = {}, weights = null, breakdown = {}) {
-        this.dimensions = {
-            uniqueness: this._clamp(dimensions.uniqueness || 0),
-            stability: this._clamp(dimensions.stability || 0),
-            resilience: this._clamp(dimensions.resilience || 0),
-            performance: this._clamp(dimensions.performance || 0),
-            specificity: this._clamp(dimensions.specificity || 0)
-        };
-
         this.weights = weights ? { ...weights } : ScoringVector.getDefaultWeights();
+        this.dimensions = {};
+        for (const key of Object.keys(this.weights)) {
+            this.dimensions[key] = this._clamp(dimensions[key] || 0);
+        }
+        for (const [key, val] of Object.entries(dimensions || {})) {
+            if (!(key in this.dimensions)) {
+                this.dimensions[key] = this._clamp(val);
+            }
+        }
+        this.activeDimensions = new Set(Object.keys(dimensions || {}));
+
         this.breakdown = { ...breakdown };
         this.aggregateScore = 0.0;
         this.recalculate();
@@ -35,6 +38,7 @@ export class ScoringVector {
             return;
         }
         this.dimensions[name] = this._clamp(score);
+        this.activeDimensions.add(name);
         if (ruleName) {
             this.breakdown[`${name}:${ruleName}`] = {
                 action: 'SET',
@@ -51,6 +55,7 @@ export class ScoringVector {
         }
         const prev = this.dimensions[dimension];
         this.dimensions[dimension] = this._clamp(prev + amount);
+        this.activeDimensions.add(dimension);
         if (ruleName) {
             this.breakdown[`${dimension}:${ruleName}`] = {
                 action: 'BONUS',
@@ -69,6 +74,7 @@ export class ScoringVector {
         }
         const prev = this.dimensions[dimension];
         this.dimensions[dimension] = this._clamp(prev - amount);
+        this.activeDimensions.add(dimension);
         if (ruleName) {
             this.breakdown[`${dimension}:${ruleName}`] = {
                 action: 'PENALTY',
@@ -85,6 +91,9 @@ export class ScoringVector {
         let total = 0.0;
         let weightSum = 0.0;
         for (const [dim, weight] of Object.entries(this.weights)) {
+            if (this.activeDimensions && this.activeDimensions.size > 0 && !this.activeDimensions.has(dim)) {
+                continue;
+            }
             const val = this.dimensions[dim] || 0.0;
             total += val * weight;
             weightSum += weight;
@@ -102,6 +111,10 @@ export class ScoringVector {
             aggregateScore: this.aggregateScore,
             breakdown: { ...this.breakdown }
         };
+    }
+
+    toBreakdown() {
+        return { ...this.dimensions };
     }
 
     static deserialize(data) {

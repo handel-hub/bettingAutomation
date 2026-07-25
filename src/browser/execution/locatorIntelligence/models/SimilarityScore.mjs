@@ -10,6 +10,11 @@ export class SimilarityScore {
             semanticMatch: this._clamp(dimensions.semanticMatch || 0),
             positionMatch: this._clamp(dimensions.positionMatch || 0)
         };
+        for (const [key, val] of Object.entries(dimensions || {})) {
+            if (!(key in this.dimensions)) {
+                this.dimensions[key] = this._clamp(val);
+            }
+        }
 
         this.weights = weights ? { ...weights } : SimilarityScore.getDefaultWeights();
         this.rejectionReasons = Array.isArray(rejectionReasons) ? [...rejectionReasons] : [];

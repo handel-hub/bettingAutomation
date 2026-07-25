@@ -8,7 +8,6 @@ export class StructuralStrategy {
         const docRef = typeof document !== 'undefined' ? document : null;
         
         while (current && current !== docRef) {
-            if (current.tagName === 'IFRAME') { isBad = true; break; }
             const className = (typeof current.className === 'string') ? current.className : '';
             const id = (typeof current.id === 'string') ? current.id : '';
             if (adRegex.test(className) || adRegex.test(id)) { isBad = true; break; }

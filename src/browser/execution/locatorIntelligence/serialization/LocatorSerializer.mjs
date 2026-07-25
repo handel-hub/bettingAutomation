@@ -1,4 +1,5 @@
 import { PipelineStep } from '../engine/PipelineStep.mjs';
+import featureFlags from '../FeatureFlags.mjs';
 
 export class LocatorSerializer extends PipelineStep {
     constructor() {
@@ -7,6 +8,7 @@ export class LocatorSerializer extends PipelineStep {
 
     execute(context) {
         const candidates = context.candidates || [];
+        const serializeFeatures = featureFlags.isEnabled('LI_SERIALIZE_FEATURES');
         
         let shadowPath = [];
         if (context.composedPath && Array.isArray(context.composedPath)) {
@@ -40,12 +42,14 @@ export class LocatorSerializer extends PipelineStep {
                 ranking: {
                     baseScore: context.config?.debug ? c.ranking.baseScore : undefined,
                     finalScore: c.ranking.finalScore,
+                    scoringVector: (serializeFeatures && c.ranking.scoringVector) ? (typeof c.ranking.scoringVector.toBreakdown === 'function' ? c.ranking.scoringVector.toBreakdown() : c.ranking.scoringVector.dimensions) : undefined,
                     scoreBreakdown: context.config?.debug ? c.ranking.scoreBreakdown : undefined
                 },
                 telemetry: context.config?.debug ? c.telemetry : undefined
             })),
             metadata: {
                 ...context.metadata,
+                captureEpoch: context.navigationEpoch ?? context.metadata?.captureEpoch ?? 0,
                 generationMetrics: {
                     durationMs: context.telemetry.pipelineDurationMs,
                     candidateCount: candidates.length,

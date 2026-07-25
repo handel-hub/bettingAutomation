@@ -5,6 +5,7 @@ import { CandidateDeduplicator } from '../generation/CandidateDeduplicator.mjs';
 import { CandidateValidator } from '../validation/CandidateValidator.mjs';
 import { StructuralAnalyzer } from '../validation/StructuralAnalyzer.mjs';
 import { RankingEngine } from '../ranking/RankingEngine.mjs';
+import { AdditiveRankingEngine } from '../ranking/AdditiveRankingEngine.mjs';
 import { LocatorSerializer } from '../serialization/LocatorSerializer.mjs';
 import { PipelineContext } from './PipelineContext.mjs';
 import featureFlags from '../FeatureFlags.mjs';
@@ -12,6 +13,8 @@ import featureFlags from '../FeatureFlags.mjs';
 export class LocatorIntelligenceEngine {
     constructor(config = {}) {
         this.config = config;
+        this.rankingEngine = new RankingEngine();
+        this.additiveRankingEngine = new AdditiveRankingEngine();
         this.pipeline = [
             new FeatureExtractor(),
             new IdentityDocumentBuilder(),
@@ -19,7 +22,7 @@ export class LocatorIntelligenceEngine {
             new CandidateDeduplicator(),
             new CandidateValidator(),
             new StructuralAnalyzer(),
-            new RankingEngine(),
+            this.rankingEngine,
             new LocatorSerializer()
         ];
     }
@@ -41,14 +44,19 @@ export class LocatorIntelligenceEngine {
                 }
                 continue;
             }
-            
-            try {
-                step.execute(context);
-            } catch (e) {
-                console.warn(`[LocatorIntelligence] Pipeline step ${step.name} failed:`, e);
+
+            let currentStep = step;
+            if (step.name === 'RankingEngine' && featureFlags.isEnabled('LI_ADDITIVE_SCORING')) {
+                currentStep = this.additiveRankingEngine;
             }
             
-            context.telemetry.stages[step.name] = Date.now() - stepStart;
+            try {
+                currentStep.execute(context);
+            } catch (e) {
+                console.warn(`[LocatorIntelligence] Pipeline step ${currentStep.name} failed:`, e);
+            }
+            
+            context.telemetry.stages[currentStep.name] = Date.now() - stepStart;
         }
         
         context.telemetry.pipelineDurationMs = Date.now() - context.metadata.startTime;
