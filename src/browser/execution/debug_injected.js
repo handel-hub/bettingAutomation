@@ -1,5 +1,8 @@
 
             (() => {
+            if (window.__locatorIntelligenceInjected) return;
+            window.__locatorIntelligenceInjected = true;
+
             const locatorIntelligencePipelineStart = Date.now();
             function generateUUID() {
                 return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -63,8 +66,9 @@ class LocatorCandidate {
 
 
 class PipelineContext {
-    constructor(element) {
+    constructor(element, composedPath = []) {
         this.element = element;
+        this.composedPath = composedPath;
         this.features = null;
         this.candidates = []; // Array of LocatorCandidate
         this.metadata = {
@@ -343,7 +347,6 @@ class CandidateDeduplicator extends PipelineStep {
 
 
 
-
 class CandidateValidator extends PipelineStep {
     constructor() {
         super('CandidateValidator');
@@ -528,7 +531,6 @@ class CurrencyDetector {
         return (/^\$?\d+\.\d{2}$/.test(str.trim())) ? 5 : 0;
     }
 }
-
 class DynamicContentRule extends RankingRule {
     constructor() {
         super('DynamicContentRule');
@@ -751,7 +753,6 @@ class RankingConfig {
 
 
 
-
 class RankingEngine extends PipelineStep {
     constructor() {
         super('RankingEngine');
@@ -845,7 +846,25 @@ class LocatorSerializer extends PipelineStep {
     execute(context) {
         const candidates = context.candidates || [];
         
+        let shadowPath = [];
+        if (context.composedPath && Array.isArray(context.composedPath)) {
+            for (let i = 0; i < context.composedPath.length; i++) {
+                const node = context.composedPath[i];
+                if (node && node.nodeType === 11) { // ShadowRoot
+                    const host = node.host || context.composedPath[i + 1];
+                    if (host && host.nodeType === 1) {
+                        let selector = host.nodeName.toLowerCase();
+                        if (host.id && !/\\d+/.test(host.id)) {
+                            selector += '#' + CSS.escape(host.id);
+                        }
+                        shadowPath.unshift(selector);
+                    }
+                }
+            }
+        }
+        
         context.output = {
+            shadowPath,
             locators: candidates.map(c => ({
                 id: c.id,
                 strategy: c.strategy,
@@ -922,7 +941,6 @@ class RollingWindow {
         this.sum = 0;
     }
 }
-
 
 
 
@@ -1166,7 +1184,6 @@ class TelemetryCollectorImpl {
         } catch (e) {}
     }
 }
-
 const TelemetryCollector = new TelemetryCollectorImpl();
 
 
@@ -1183,8 +1200,8 @@ class LocatorIntelligenceEngine {
         ];
     }
 
-    process(el) {
-        const context = new PipelineContext(el);
+    process(el, composedPath) {
+        const context = new PipelineContext(el, composedPath);
         
         for (const step of this.pipeline) {
             const stepStart = Date.now();
@@ -1229,7 +1246,7 @@ class LocatorIntelligenceEngine {
             class InteractionRecognizer {
                 constructor() {
                     this.pointerState = 'IDLE';
-                    this.pointerData = { path: [], startTarget: null, clickTimeout: null, consumed: [], startTime: 0 };
+                    this.pointerData = { path: [], startTarget: null, composedPath: [], clickTimeout: null, consumed: [], startTime: 0 };
                     
                     this.scrollState = 'IDLE';
                     this.scrollData = { deltaX: 0, deltaY: 0, timeout: null, consumed: [], target: null };
@@ -1253,10 +1270,11 @@ class LocatorIntelligenceEngine {
 
                     if (data.target && ['CLICK', 'DOUBLE_CLICK', 'DRAG', 'INPUT'].includes(type)) {
                         const engine = new LocatorIntelligenceEngine();
-                        const resolution = engine.process(data.target);
+                        const resolution = engine.process(data.target, data.composedPath || []);
                         if (resolution) {
                             payload.locators = resolution.locators;
                             payload.locatorMetadata = resolution.metadata;
+                            payload.shadowPath = resolution.shadowPath;
                         }
                     }
 
@@ -1276,7 +1294,7 @@ class LocatorIntelligenceEngine {
                         this.pointerData.clickTimeout = null;
                     }
                     this.pointerState = 'IDLE';
-                    this.pointerData = { path: [], startTarget: null, clickTimeout: null, consumed: [], startTime: 0 };
+                    this.pointerData = { path: [], startTarget: null, composedPath: [], clickTimeout: null, consumed: [], startTime: 0 };
                 }
 
                 processPointerEvent(e) {
@@ -1290,7 +1308,8 @@ class LocatorIntelligenceEngine {
                         }
                         this.flushPointer();
                         this.pointerState = 'POINTER_DOWN';
-                        this.pointerData.startTarget = e.target;
+                        this.pointerData.startTarget = (e.composedPath && e.composedPath().length > 0) ? e.composedPath()[0] : e.target;
+                        this.pointerData.composedPath = e.composedPath ? e.composedPath() : [];
                         this.pointerData.path = [{x: e.clientX, y: e.clientY}];
                         this.pointerData.consumed.push(type);
                         this.pointerData.startTime = now;
@@ -1340,6 +1359,7 @@ class LocatorIntelligenceEngine {
                                 consumed: this.pointerData.consumed,
                                 context: 'Pointer Context',
                                 target: this.pointerData.startTarget,
+                                composedPath: this.pointerData.composedPath,
                                 path: this.pointerData.path,
                                 startTime: this.pointerData.startTime
                             });
@@ -1352,6 +1372,7 @@ class LocatorIntelligenceEngine {
                                     consumed: this.pointerData.consumed,
                                     context: 'Pointer Context',
                                     target: this.pointerData.startTarget,
+                                    composedPath: this.pointerData.composedPath,
                                     coordinates: { x: e.clientX, y: e.clientY },
                                     startTime: this.pointerData.startTime
                                 });
@@ -1367,21 +1388,24 @@ class LocatorIntelligenceEngine {
                         } else {
                             this.pointerState = 'CLICK_PENDING';
                             this.pointerData.consumed.push(type);
-                            if (!this.pointerData.startTarget) this.pointerData.startTarget = e.target;
+                            if (!this.pointerData.startTarget) {
+                                this.pointerData.startTarget = (e.composedPath && e.composedPath().length > 0) ? e.composedPath()[0] : e.target;
+                                this.pointerData.composedPath = e.composedPath ? e.composedPath() : [];
+                            }
                             if (this.pointerData.path.length === 0) this.pointerData.path.push({x: e.clientX, y: e.clientY});
                             if (!this.pointerData.startTime) this.pointerData.startTime = now;
 
-                            this.pointerData.clickTimeout = setTimeout(() => {
-                                this.emit('CLICK', {
-                                    originEvent: 'click',
-                                    consumed: this.pointerData.consumed,
-                                    context: 'Pointer Context',
-                                    target: this.pointerData.startTarget,
-                                    coordinates: this.pointerData.path[0],
-                                    startTime: this.pointerData.startTime
-                                });
-                                this.flushPointer();
-                            }, AggregationConfig.clickWindow);
+                            // IMMEDIATE EMIT - Zero Latency Click
+                            this.emit('CLICK', {
+                                originEvent: 'click',
+                                consumed: this.pointerData.consumed,
+                                context: 'Pointer Context',
+                                target: this.pointerData.startTarget,
+                                composedPath: this.pointerData.composedPath,
+                                coordinates: this.pointerData.path[0],
+                                startTime: this.pointerData.startTime
+                            });
+                            this.flushPointer();
                         }
                     }
                     else if (type === 'dblclick') {
@@ -1392,7 +1416,8 @@ class LocatorIntelligenceEngine {
                             originEvent: 'dblclick',
                             consumed: this.pointerData.consumed,
                             context: 'Pointer Context',
-                            target: this.pointerData.startTarget || e.target,
+                            target: this.pointerData.startTarget || ((e.composedPath && e.composedPath().length > 0) ? e.composedPath()[0] : e.target),
+                            composedPath: this.pointerData.composedPath || (e.composedPath ? e.composedPath() : []),
                             coordinates: { x: e.clientX, y: e.clientY },
                             startTime: this.pointerData.startTime || now
                         });
@@ -1437,7 +1462,8 @@ class LocatorIntelligenceEngine {
                     if (this.inputState === 'IDLE') {
                         this.inputState = 'TYPING';
                         this.inputData.startTime = now;
-                        this.inputData.target = e.target;
+                        this.inputData.target = (e.composedPath && e.composedPath().length > 0) ? e.composedPath()[0] : e.target;
+                        this.inputData.composedPath = e.composedPath ? e.composedPath() : [];
                     }
                     
                     this.inputData.value = e.target.value;
@@ -1451,6 +1477,7 @@ class LocatorIntelligenceEngine {
                             consumed: this.inputData.consumed,
                             context: 'Input Context',
                             target: this.inputData.target,
+                            composedPath: this.inputData.composedPath,
                             value: this.inputData.value,
                             startTime: this.inputData.startTime
                         });

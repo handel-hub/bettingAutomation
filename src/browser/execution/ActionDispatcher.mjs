@@ -73,10 +73,10 @@ export class ActionDispatcher extends EventEmitter {
         for (const file of pipelineFiles) {
             const filePath = path.join(__dirname, 'locatorIntelligence', file);
             let content = await fsPromises.readFile(filePath, 'utf8');
-            content = content.replace(/^\\uFEFF/, '')
-                             .replace(/^export\\s+/gm, '')
-                             .replace(/^import\\s+.*$/gm, '');
-            locatorIntelligenceCode += content + '\\n\\n';
+            content = content.replace(/^\uFEFF/, '')
+                             .replace(/^\s*export\s+/gm, '')
+                             .replace(/^\s*import\s+.*$/gm, '');
+            locatorIntelligenceCode += content + '\n\n';
         }
 
         const scriptContent = `
