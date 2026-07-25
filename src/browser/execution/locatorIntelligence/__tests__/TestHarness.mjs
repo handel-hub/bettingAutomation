@@ -99,6 +99,9 @@ export class MockElement {
 
     // Simple recursive DOM search for common CSS selectors
     querySelectorAll(selector) {
+        if (!selector || selector.includes('[[[') || selector.includes('(((') || selector.startsWith(':syntax-error') || selector.includes(':malformed')) {
+            throw new Error(`SyntaxError: Failed to execute 'querySelectorAll' on 'Element': '${selector}' is not a valid selector.`);
+        }
         const results = [];
         const allNodes = [];
         const traverse = (node) => {
