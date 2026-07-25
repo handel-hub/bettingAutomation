@@ -35,12 +35,15 @@ export class ActionDispatcher extends EventEmitter {
 
     async buildInjectedScript() {
         const pipelineFiles = [
+            'FeatureFlags.mjs',
             'models/ValidationResult.mjs',
             'models/RankingResult.mjs',
             'models/LocatorCandidate.mjs',
+            'models/ElementIdentityDocument.mjs',
             'engine/PipelineContext.mjs',
             'engine/PipelineStep.mjs',
             'extraction/FeatureExtractor.mjs',
+            'extraction/IdentityDocumentBuilder.mjs',
             'generation/strategies/DataAttributeStrategy.mjs',
             'generation/strategies/TextStrategy.mjs',
             'generation/strategies/AriaStrategy.mjs',
@@ -147,6 +150,7 @@ export class ActionDispatcher extends EventEmitter {
                             payload.locators = resolution.locators;
                             payload.locatorMetadata = resolution.metadata;
                             payload.shadowPath = resolution.shadowPath;
+                            payload.identityDocument = resolution.identityDocument || null;
                         }
                     }
 
