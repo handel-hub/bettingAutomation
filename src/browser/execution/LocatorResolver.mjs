@@ -7,12 +7,15 @@ import {
     DisabledError,
     SyntaxError,
     StaleEpochError,
-    ConfidenceGateRejectionError
+    ConfidenceGateRejectionError,
+    GlobalTimeoutError,
+    QueueDeadlineExceededError
 } from './errors.mjs';
 import { DefaultPolicy } from './locatorIntelligence/resolution/ResolutionPolicy.mjs';
 import { ResolutionContext, ResolutionState } from './locatorIntelligence/resolution/ResolutionContext.mjs';
 import { getValidationProfile } from './locatorIntelligence/resolution/ValidationProfile.mjs';
 import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCollector.mjs';
+import { DeadlineBudget } from './time/DeadlineBudget.mjs';
 import featureFlags from './locatorIntelligence/FeatureFlags.mjs';
 import { BatchResolver } from './locatorIntelligence/resolution/BatchResolver.mjs';
 import { DisambiguationEngine } from './locatorIntelligence/resolution/DisambiguationEngine.mjs';
@@ -51,6 +54,11 @@ export class LocatorResolver {
         const startTime = Date.now();
         if (!candidates || candidates.length === 0) {
             return new ResolutionResult({ success: false, failureReason: '[LF-003] Generation Failure: No candidates provided' });
+        }
+
+        const deadlineBudget = options.deadlineBudget || null;
+        if (deadlineBudget) {
+            deadlineBudget.checkOrThrow('LocatorResolver');
         }
 
         // Phase 14: URL Mismatch Abort
@@ -98,6 +106,9 @@ export class LocatorResolver {
         let resolutionCycles = 0;
 
         const resolveAttempt = async () => {
+            if (deadlineBudget) {
+                deadlineBudget.checkOrThrow('LocatorResolver');
+            }
             resolutionCycles++;
             
             let urlPathname = '';
@@ -383,7 +394,7 @@ export class LocatorResolver {
                     return result;
                     
                 } catch (err) {
-                    if (err instanceof ConfidenceGateRejectionError || err.name === 'ConfidenceBelowThresholdError' || err.code === 'LF-602') {
+                    if (err instanceof ConfidenceGateRejectionError || err.name === 'ConfidenceBelowThresholdError' || err.code === 'LF-602' || err instanceof GlobalTimeoutError || err instanceof QueueDeadlineExceededError || err.code === 'LF-504' || err.code === 'LF-702') {
                         throw err;
                     }
                     const isTerminal = !policy.retry.retryableFailures.includes(err.name);
@@ -424,12 +435,15 @@ export class LocatorResolver {
         } else {
             // Legacy Flat Retry Loop
             while ((Date.now() - startTime) < policy.limits.globalTimeoutMs) {
+                if (deadlineBudget) {
+                    deadlineBudget.checkOrThrow('LocatorResolver');
+                }
                 try {
                     const result = await resolveAttempt();
                     if (result && result.success) return result;
                 } catch (err) {
-                    if (err instanceof ConfidenceGateRejectionError || err.name === 'ConfidenceBelowThresholdError' || err.code === 'LF-602') {
-                        throw err; // propagate
+                    if (err instanceof ConfidenceGateRejectionError || err.name === 'ConfidenceBelowThresholdError' || err.code === 'LF-602' || err instanceof GlobalTimeoutError || err instanceof QueueDeadlineExceededError || err.code === 'LF-504' || err.code === 'LF-702') {
+                        throw err; // propagate terminal budget errors immediately without retrying!
                     }
                 }
                 await new Promise(r => setTimeout(r, policy.limits.retryIntervalMs));

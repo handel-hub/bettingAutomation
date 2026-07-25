@@ -5,6 +5,9 @@ import { SynchronizationProfiles } from '../synchronization/profiles/Synchroniza
 import { SynchronizationBarrier } from '../synchronization/SynchronizationBarrier.mjs';
 import { EpochGate } from './locatorIntelligence/resolution/EpochGate.mjs';
 import featureFlags from './locatorIntelligence/FeatureFlags.mjs';
+import { DeadlineBudget } from './time/DeadlineBudget.mjs';
+import { QueueDeadlineExceededError } from './errors.mjs';
+import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCollector.mjs';
 
 
 export class ClassificationPolicy {
@@ -252,6 +255,18 @@ export class ExecutionScheduler {
                         this.telemetry.maxQueueWait = nextEntry.queueDelay;
                     }
 
+                    // Task 2.3: Enforce Queue TTL using DeadlineBudget before processing
+                    const deadlineBudget = DeadlineBudget.fromCommand(nextEntry.command, 1500);
+                    if (deadlineBudget.isExpired()) {
+                        const errorMsg = `[LF-702] Queue deadline exceeded for Command ${nextEntry.command.id || 'unknown'} on [${browserId}] (QueueDelay: ${nextEntry.queueDelay}ms)`;
+                        logger.warn(`[ExecutionScheduler] ${errorMsg}`);
+                        if (TelemetryCollector && TelemetryCollector.registry && typeof TelemetryCollector.registry.recordFailureCode === 'function') {
+                            TelemetryCollector.registry.recordFailureCode('LF-702');
+                        }
+                        this.simulator.emit('ActionFailure', { id: browserId, command: nextEntry.command, error: new QueueDeadlineExceededError(errorMsg) });
+                        continue;
+                    }
+
                     const currentState = this.registry.get(browserId);
                     if (!currentState || !currentState.page) {
                         logger.error(`[Scheduler] Dropping command ${nextEntry.command.id} on [${browserId}]: Browser/Page no longer exists in registry.`);
@@ -324,7 +339,7 @@ export class ExecutionScheduler {
                         continue;
                     }
 
-                    await this.simulator.execute(currentState, finalCommand);
+                    await this.simulator.execute(currentState, finalCommand, { deadlineBudget });
                 } catch(e) {
                     logger.error(`[Scheduler] Failed to process entry for ${nextEntry?.command?.id ?? 'unknown'}: ${e.message}`);
                 }
