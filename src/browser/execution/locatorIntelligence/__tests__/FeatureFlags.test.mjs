@@ -84,3 +84,4 @@ describe('FeatureFlagsRegistry', () => {
         expect(all.size).toBe(Object.keys(registry.definitions).length);
     });
 });
+

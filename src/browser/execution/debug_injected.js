@@ -2,6 +2,47 @@
             (() => {
             if (window.__locatorIntelligenceInjected) return;
             window.__locatorIntelligenceInjected = true;
+            window.__ANTIGRAVITY_SEQ__ = 0;
+            window.__ANTIGRAVITY_EPOCH__ = window.__ANTIGRAVITY_EPOCH__ || 0;
+            window.__ANTIGRAVITY_EPOCH_URL__ = window.__ANTIGRAVITY_EPOCH_URL__ || location.href;
+            window.__ANTIGRAVITY_EPOCH_TS__ = window.__ANTIGRAVITY_EPOCH_TS__ || Date.now();
+
+            (function() {
+                const _origPush = history.pushState;
+                const _origReplace = history.replaceState;
+                
+                history.pushState = function(...args) {
+                    _origPush.apply(this, args);
+                    if (window.__notifyNavigation) {
+                        window.__notifyNavigation({ 
+                            type: 'pushState', 
+                            url: location.href, 
+                            epoch: window.__ANTIGRAVITY_EPOCH__ 
+                        });
+                    }
+                };
+                
+                history.replaceState = function(...args) {
+                    _origReplace.apply(this, args);
+                    if (window.__notifyNavigation) {
+                        window.__notifyNavigation({ 
+                            type: 'replaceState', 
+                            url: location.href, 
+                            epoch: window.__ANTIGRAVITY_EPOCH__ 
+                        });
+                    }
+                };
+                
+                window.addEventListener('popstate', function() {
+                    if (window.__notifyNavigation) {
+                        window.__notifyNavigation({ 
+                            type: 'popstate', 
+                            url: location.href, 
+                            epoch: window.__ANTIGRAVITY_EPOCH__ 
+                        });
+                    }
+                });
+            })();
 
             const locatorIntelligencePipelineStart = Date.now();
             function generateUUID() {
@@ -31,7 +72,11 @@
             LI_CONFIDENCE_GATE: { default: false, dependsOn: ['LI_VERIFICATION', 'LI_DISAMBIGUATION'], description: 'Enable threshold-based execution gating' },
             LI_RECOVERY_HIERARCHY: { default: false, dependsOn: ['LI_CONFIDENCE_GATE'], description: 'Use tiered recovery instead of flat retry' },
             LI_RESOLUTION_MEMORY: { default: false, dependsOn: ['LI_VERIFICATION'], description: 'Enable resolution caching' },
-            LI_SHADOW_MODE: { default: false, dependsOn: [], description: 'Run new pipeline in parallel with legacy for comparison' }
+            LI_SHADOW_MODE: { default: false, dependsOn: [], description: 'Run new pipeline in parallel with legacy for comparison' },
+            V3_SCHEMA_ENFORCEMENT_MODE: { default: 'SHADOW', dependsOn: [], description: 'Schema enforcement mode: DISABLED, SHADOW, or STRICT' },
+            V3_DECOUPLE_HEALTH_MONITOR: { default: false, dependsOn: [], description: 'Decouple HealthMonitor from command execution failure state' },
+            V3_ENABLE_STANDBY_POOL: { default: false, dependsOn: [], description: 'Enable WARM_STANDBY browser failover pool' },
+            V3_ENABLE_GLOBAL_TTL: { default: false, dependsOn: [], description: 'Enable 1,500ms global distributed deadline budgeting' }
         };
         this.init();
     }
@@ -43,9 +88,9 @@
         for (const [name, def] of Object.entries(this.definitions)) {
             let val = def.default;
             if (name in overrides) {
-                val = Boolean(overrides[name]);
+                val = typeof def.default === 'boolean' ? Boolean(overrides[name]) : overrides[name];
             } else if (typeof process !== 'undefined' && process.env && process.env[name] !== undefined) {
-                val = process.env[name] === 'true' || process.env[name] === '1';
+                val = typeof def.default === 'boolean' ? (process.env[name] === 'true' || process.env[name] === '1') : process.env[name];
             }
             newFlags.set(name, val);
         }
@@ -55,13 +100,13 @@
         while (changed) {
             changed = false;
             for (const [name, def] of Object.entries(this.definitions)) {
-                if (newFlags.get(name)) {
+                if (Boolean(newFlags.get(name)) && def.dependsOn && def.dependsOn.length > 0) {
                     for (const dep of def.dependsOn) {
                         if (!newFlags.get(dep)) {
                             if (typeof console !== 'undefined' && console.warn) {
                                 console.warn(`[FeatureFlags] Disabling ${name} because dependency ${dep} is disabled.`);
                             }
-                            newFlags.set(name, false);
+                            newFlags.set(name, typeof def.default === 'boolean' ? false : 'DISABLED');
                             changed = true;
                             break;
                         }
@@ -77,6 +122,13 @@
     isEnabled(flagName) {
         if (!this._flags.has(flagName)) {
             return false;
+        }
+        return Boolean(this._flags.get(flagName));
+    }
+
+    get(flagName) {
+        if (!this._flags.has(flagName)) {
+            return undefined;
         }
         return this._flags.get(flagName);
     }
@@ -2026,8 +2078,8 @@ class LocatorSerializer extends PipelineStep {
 
 class RollingWindow {
     constructor(size = 128) {
-        this.size = size;
-        this.buffer = new Float64Array(size);
+        this.size = Math.min(Math.max(1, size), 1000);
+        this.buffer = new Float64Array(this.size);
         this.head = 0;
         this.count = 0;
         this.sum = 0;
@@ -2157,6 +2209,13 @@ class MetricsRegistry {
         // Failure Metrics (Map of LF Code -> Count)
         this.failures = new Map();
 
+        // Shadow Mode Comparison Metrics
+        this.shadowMode = {
+            total: 0,
+            matches: 0,
+            mismatches: 0
+        };
+
         // Execution Metrics (Hooks for ActionSimulator)
         this.execution = {
             total: 0,
@@ -2165,6 +2224,27 @@ class MetricsRegistry {
             candidateExhaustion: new RollingWindow(128),
             confidenceDecay: new RollingWindow(128),
             epochSkips: 0
+        };
+
+        // Epoch Synchronization Metrics
+        this.epochSync = {
+            injectionSuccess: 0,
+            injectionFailure: 0,
+            injectionRetry: 0,
+            mismatchDetected: 0,
+            skippedStale: 0,
+            skippedTimeout: 0,
+            proceeded: 0,
+            waited: 0,
+            ipcReceived: 0,
+            ipcLost: 0,
+            ipcDuplicatesDropped: 0,
+            ipcOutOfOrder: 0,
+            spaNavigationDetected: 0,
+            ipcDeliveryLatency: new RollingWindow(128),
+            injectionLatency: new RollingWindow(128),
+            epochWaitDuration: new RollingWindow(128),
+            epochDrift: new RollingWindow(128)
         };
     }
 
@@ -2228,6 +2308,7 @@ class MetricsRegistry {
             recovery: { ...this.recovery },
             memory: { ...this.memory },
             failures: Object.fromEntries(this.failures),
+            shadowMode: { ...this.shadowMode },
             execution: {
                 total: this.execution.total,
                 averageRetries: this.execution.retries.average,
@@ -2235,6 +2316,25 @@ class MetricsRegistry {
                 averageCandidateExhaustion: this.execution.candidateExhaustion.average,
                 averageConfidenceDecay: this.execution.confidenceDecay.average,
                 epochSkips: this.execution.epochSkips
+            },
+            epochSync: {
+                injectionSuccess: this.epochSync.injectionSuccess,
+                injectionFailure: this.epochSync.injectionFailure,
+                injectionRetry: this.epochSync.injectionRetry,
+                mismatchDetected: this.epochSync.mismatchDetected,
+                skippedStale: this.epochSync.skippedStale,
+                skippedTimeout: this.epochSync.skippedTimeout,
+                proceeded: this.epochSync.proceeded,
+                waited: this.epochSync.waited,
+                ipcReceived: this.epochSync.ipcReceived,
+                ipcLost: this.epochSync.ipcLost,
+                ipcDuplicatesDropped: this.epochSync.ipcDuplicatesDropped,
+                ipcOutOfOrder: this.epochSync.ipcOutOfOrder,
+                spaNavigationDetected: this.epochSync.spaNavigationDetected,
+                averageIpcDeliveryLatency: this.epochSync.ipcDeliveryLatency.average,
+                averageInjectionLatency: this.epochSync.injectionLatency.average,
+                averageEpochWaitDuration: this.epochSync.epochWaitDuration.average,
+                averageEpochDrift: this.epochSync.epochDrift.average
             }
         };
     }
@@ -2480,6 +2580,150 @@ class TelemetryCollectorImpl {
             // Passive
         }
     }
+
+    /**
+     * Records telemetry for epoch injection attempts.
+     * @param {boolean} success
+     * @param {number} [latencyMs]
+     */
+    recordEpochInjection(success, latencyMs) {
+        try {
+            if (success) {
+                this.registry.epochSync.injectionSuccess++;
+            } else {
+                this.registry.epochSync.injectionFailure++;
+            }
+            if (typeof latencyMs === 'number' && !isNaN(latencyMs)) {
+                this.registry.epochSync.injectionLatency.push(latencyMs);
+            }
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry for epoch injection retries.
+     */
+    recordEpochInjectionRetry() {
+        try {
+            this.registry.epochSync.injectionRetry++;
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry when a mismatch between client and server epoch is detected.
+     * @param {number} clientEpoch
+     * @param {number} serverEpoch
+     */
+    recordEpochMismatch(clientEpoch, serverEpoch) {
+        try {
+            this.registry.epochSync.mismatchDetected++;
+            if (typeof clientEpoch === 'number' && typeof serverEpoch === 'number') {
+                this.registry.epochSync.epochDrift.push(Math.abs(clientEpoch - serverEpoch));
+            }
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry for epoch validation decisions.
+     * @param {string|object} decision - Decision string ('PROCEED', 'SKIP', 'WAIT') or decision object
+     * @param {number} [waitDurationMs]
+     * @param {string} [reason]
+     */
+    recordEpochDecision(decision, waitDurationMs, reason) {
+        try {
+            const decStr = typeof decision === 'object' ? decision?.decision : decision;
+            const resStr = typeof decision === 'object' ? decision?.reason : reason;
+
+            if (decStr === 'PROCEED') {
+                this.registry.epochSync.proceeded++;
+            } else if (decStr === 'WAIT') {
+                this.registry.epochSync.waited++;
+            } else if (decStr === 'SKIP') {
+                if (resStr && (resStr.includes('within') || resStr.includes('timeout') || resStr.includes('failed to navigate'))) {
+                    this.registry.epochSync.skippedTimeout++;
+                } else {
+                    this.registry.epochSync.skippedStale++;
+                }
+            }
+
+            if (typeof waitDurationMs === 'number' && !isNaN(waitDurationMs) && waitDurationMs > 0) {
+                this.registry.epochSync.epochWaitDuration.push(waitDurationMs);
+            }
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry for IPC message delivery.
+     * @param {number} [latencyMs]
+     */
+    recordIpcDelivery(latencyMs) {
+        try {
+            this.registry.epochSync.ipcReceived++;
+            if (typeof latencyMs === 'number' && !isNaN(latencyMs)) {
+                this.registry.epochSync.ipcDeliveryLatency.push(latencyMs);
+            }
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry for lost IPC messages.
+     */
+    recordIpcLost() {
+        try {
+            this.registry.epochSync.ipcLost++;
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry for dropped duplicate IPC messages.
+     */
+    recordIpcDuplicate() {
+        try {
+            this.registry.epochSync.ipcDuplicatesDropped++;
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry for out-of-order IPC messages.
+     */
+    recordIpcOutOfOrder() {
+        try {
+            this.registry.epochSync.ipcOutOfOrder++;
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry for SPA navigation detection.
+     * @param {string} [type]
+     */
+    recordSpaNavigation(type) {
+        try {
+            this.registry.epochSync.spaNavigationDetected++;
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry for shadow mode execution comparison between legacy and v2 resolution pipelines.
+     * @param {string} commandId
+     * @param {object} legacyResult
+     * @param {object} v2Result
+     */
+    recordShadowMode(commandId, legacyResult, v2Result) {
+        try {
+            if (!this.registry.shadowMode) {
+                this.registry.shadowMode = { total: 0, matches: 0, mismatches: 0 };
+            }
+            this.registry.shadowMode.total++;
+            const legacyLoc = legacyResult?.locator || legacyResult?.playwrightLocator || null;
+            const v2Loc = v2Result?.locator || v2Result?.playwrightLocator || null;
+            if (legacyLoc !== v2Loc) {
+                this.registry.shadowMode.mismatches++;
+            } else {
+                this.registry.shadowMode.matches++;
+            }
+        } catch (e) {
+            // Passive - ignore errors
+        }
+    }
 }
 const TelemetryCollector = new TelemetryCollectorImpl();
 
@@ -2558,6 +2802,10 @@ class LocatorIntelligenceEngine {
             function sendExecution(type, payload) {
                 if (window.dispatchExecutionEvent) {
                     payload.captureTime = Date.now();
+                    payload.captureEpoch = window.__ANTIGRAVITY_EPOCH__ || 0;
+                    payload.captureEpochUrl = window.__ANTIGRAVITY_EPOCH_URL__ || '';
+                    payload.capturePerformanceTime = performance.now();
+                    payload.payloadVersion = 3;
                     window.dispatchExecutionEvent({ type, payload });
                 }
             }
@@ -2590,6 +2838,7 @@ class LocatorIntelligenceEngine {
                     const start = Date.now();
                     const payload = {
                         interactionId: 'ia-' + generateUUID().split('-')[0],
+                        sequenceNumber: ++window.__ANTIGRAVITY_SEQ__,
                         interactionType: type,
                         originEvent: data.originEvent,
                         consumedEvents: data.consumed,

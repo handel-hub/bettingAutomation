@@ -15,7 +15,11 @@ export class FeatureFlagsRegistry {
             LI_CONFIDENCE_GATE: { default: false, dependsOn: ['LI_VERIFICATION', 'LI_DISAMBIGUATION'], description: 'Enable threshold-based execution gating' },
             LI_RECOVERY_HIERARCHY: { default: false, dependsOn: ['LI_CONFIDENCE_GATE'], description: 'Use tiered recovery instead of flat retry' },
             LI_RESOLUTION_MEMORY: { default: false, dependsOn: ['LI_VERIFICATION'], description: 'Enable resolution caching' },
-            LI_SHADOW_MODE: { default: false, dependsOn: [], description: 'Run new pipeline in parallel with legacy for comparison' }
+            LI_SHADOW_MODE: { default: false, dependsOn: [], description: 'Run new pipeline in parallel with legacy for comparison' },
+            V3_SCHEMA_ENFORCEMENT_MODE: { default: 'SHADOW', dependsOn: [], description: 'Schema enforcement mode: DISABLED, SHADOW, or STRICT' },
+            V3_DECOUPLE_HEALTH_MONITOR: { default: false, dependsOn: [], description: 'Decouple HealthMonitor from command execution failure state' },
+            V3_ENABLE_STANDBY_POOL: { default: false, dependsOn: [], description: 'Enable WARM_STANDBY browser failover pool' },
+            V3_ENABLE_GLOBAL_TTL: { default: false, dependsOn: [], description: 'Enable 1,500ms global distributed deadline budgeting' }
         };
         this.init();
     }
@@ -27,9 +31,9 @@ export class FeatureFlagsRegistry {
         for (const [name, def] of Object.entries(this.definitions)) {
             let val = def.default;
             if (name in overrides) {
-                val = Boolean(overrides[name]);
+                val = typeof def.default === 'boolean' ? Boolean(overrides[name]) : overrides[name];
             } else if (typeof process !== 'undefined' && process.env && process.env[name] !== undefined) {
-                val = process.env[name] === 'true' || process.env[name] === '1';
+                val = typeof def.default === 'boolean' ? (process.env[name] === 'true' || process.env[name] === '1') : process.env[name];
             }
             newFlags.set(name, val);
         }
@@ -39,13 +43,13 @@ export class FeatureFlagsRegistry {
         while (changed) {
             changed = false;
             for (const [name, def] of Object.entries(this.definitions)) {
-                if (newFlags.get(name)) {
+                if (Boolean(newFlags.get(name)) && def.dependsOn && def.dependsOn.length > 0) {
                     for (const dep of def.dependsOn) {
                         if (!newFlags.get(dep)) {
                             if (typeof console !== 'undefined' && console.warn) {
                                 console.warn(`[FeatureFlags] Disabling ${name} because dependency ${dep} is disabled.`);
                             }
-                            newFlags.set(name, false);
+                            newFlags.set(name, typeof def.default === 'boolean' ? false : 'DISABLED');
                             changed = true;
                             break;
                         }
@@ -61,6 +65,13 @@ export class FeatureFlagsRegistry {
     isEnabled(flagName) {
         if (!this._flags.has(flagName)) {
             return false;
+        }
+        return Boolean(this._flags.get(flagName));
+    }
+
+    get(flagName) {
+        if (!this._flags.has(flagName)) {
+            return undefined;
         }
         return this._flags.get(flagName);
     }

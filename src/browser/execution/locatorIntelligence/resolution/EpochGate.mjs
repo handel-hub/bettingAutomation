@@ -1,4 +1,5 @@
 import featureFlags from '../FeatureFlags.mjs';
+import { TelemetryCollector } from '../telemetry/TelemetryCollector.mjs';
 
 export class EpochGate {
     constructor() {
@@ -37,14 +38,26 @@ export class EpochGate {
         const slaveEpoch = this.getCurrentEpoch(browserId);
 
         if (commandEpoch === slaveEpoch) {
-            return { decision: 'PROCEED', reason: `Epochs match (${commandEpoch})` };
+            const decision = { decision: 'PROCEED', reason: `Epochs match (${commandEpoch})` };
+            try { TelemetryCollector.recordEpochDecision(decision, 0, decision.reason); } catch (e) {}
+            return decision;
         }
 
         if (commandEpoch < slaveEpoch) {
-            return { decision: 'SKIP', reason: `Command epoch ${commandEpoch} is behind slave epoch ${slaveEpoch}` };
+            const decision = { decision: 'SKIP', reason: `Command epoch ${commandEpoch} is behind slave epoch ${slaveEpoch}` };
+            try {
+                TelemetryCollector.recordEpochMismatch(commandEpoch, slaveEpoch);
+                TelemetryCollector.recordEpochDecision(decision, 0, decision.reason);
+            } catch (e) {}
+            return decision;
         }
 
-        return { decision: 'WAIT', reason: `Command epoch ${commandEpoch} is ahead of slave epoch ${slaveEpoch}` };
+        const decision = { decision: 'WAIT', reason: `Command epoch ${commandEpoch} is ahead of slave epoch ${slaveEpoch}` };
+        try {
+            TelemetryCollector.recordEpochMismatch(commandEpoch, slaveEpoch);
+            TelemetryCollector.recordEpochDecision(decision, 0, decision.reason);
+        } catch (e) {}
+        return decision;
     }
 
     async waitForEpochAlignment(browserId, commandEpoch, timeoutMs = 2000, pollIntervalMs = 100) {
@@ -55,14 +68,23 @@ export class EpochGate {
             
             const current = this.getCurrentEpoch(browserId);
             if (current === commandEpoch) {
-                return { decision: 'PROCEED', reason: `Epoch aligned (${commandEpoch}) after waiting` };
+                const elapsed = Date.now() - startTime;
+                const decision = { decision: 'PROCEED', reason: `Epoch aligned (${commandEpoch}) after waiting` };
+                try { TelemetryCollector.recordEpochDecision(decision, elapsed, decision.reason); } catch (e) {}
+                return decision;
             }
             if (current > commandEpoch) {
-                return { decision: 'SKIP', reason: `Slave navigated past command epoch (${current} > ${commandEpoch})` };
+                const elapsed = Date.now() - startTime;
+                const decision = { decision: 'SKIP', reason: `Slave navigated past command epoch (${current} > ${commandEpoch})` };
+                try { TelemetryCollector.recordEpochDecision(decision, elapsed, decision.reason); } catch (e) {}
+                return decision;
             }
         }
 
-        return { decision: 'SKIP', reason: `Slave failed to navigate within ${timeoutMs}ms` };
+        const elapsed = Date.now() - startTime;
+        const decision = { decision: 'SKIP', reason: `Slave failed to navigate within ${timeoutMs}ms` };
+        try { TelemetryCollector.recordEpochDecision(decision, elapsed, decision.reason); } catch (e) {}
+        return decision;
     }
 
     async evaluateAsync(browserId, commandEpoch, timeoutMs = 2000) {

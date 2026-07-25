@@ -41,7 +41,7 @@ export class PageStateMonitor {
     }
 
     async getStabilityState(page) {
-        if (!page || page.isClosed()) {
+        if (!page || (typeof page.isClosed === 'function' && page.isClosed())) {
             return 'UNKNOWN';
         }
 

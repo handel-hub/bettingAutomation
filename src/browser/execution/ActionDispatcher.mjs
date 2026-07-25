@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import EventEmitter from 'node:events';
 import { Command } from './Command.mjs';
 import { FramePathBuilder } from '../synchronization/providers/frame/FramePathBuilder.mjs';
+import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCollector.mjs';
+import featureFlags from './locatorIntelligence/FeatureFlags.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -96,6 +98,47 @@ export class ActionDispatcher extends EventEmitter {
             (() => {
             if (window.__locatorIntelligenceInjected) return;
             window.__locatorIntelligenceInjected = true;
+            window.__ANTIGRAVITY_SEQ__ = 0;
+            window.__ANTIGRAVITY_EPOCH__ = window.__ANTIGRAVITY_EPOCH__ || 0;
+            window.__ANTIGRAVITY_EPOCH_URL__ = window.__ANTIGRAVITY_EPOCH_URL__ || location.href;
+            window.__ANTIGRAVITY_EPOCH_TS__ = window.__ANTIGRAVITY_EPOCH_TS__ || Date.now();
+
+            (function() {
+                const _origPush = history.pushState;
+                const _origReplace = history.replaceState;
+                
+                history.pushState = function(...args) {
+                    _origPush.apply(this, args);
+                    if (window.__notifyNavigation) {
+                        window.__notifyNavigation({ 
+                            type: 'pushState', 
+                            url: location.href, 
+                            epoch: window.__ANTIGRAVITY_EPOCH__ 
+                        });
+                    }
+                };
+                
+                history.replaceState = function(...args) {
+                    _origReplace.apply(this, args);
+                    if (window.__notifyNavigation) {
+                        window.__notifyNavigation({ 
+                            type: 'replaceState', 
+                            url: location.href, 
+                            epoch: window.__ANTIGRAVITY_EPOCH__ 
+                        });
+                    }
+                };
+                
+                window.addEventListener('popstate', function() {
+                    if (window.__notifyNavigation) {
+                        window.__notifyNavigation({ 
+                            type: 'popstate', 
+                            url: location.href, 
+                            epoch: window.__ANTIGRAVITY_EPOCH__ 
+                        });
+                    }
+                });
+            })();
 
             const locatorIntelligencePipelineStart = Date.now();
             function generateUUID() {
@@ -114,6 +157,10 @@ export class ActionDispatcher extends EventEmitter {
             function sendExecution(type, payload) {
                 if (window.dispatchExecutionEvent) {
                     payload.captureTime = Date.now();
+                    payload.captureEpoch = window.__ANTIGRAVITY_EPOCH__ || 0;
+                    payload.captureEpochUrl = window.__ANTIGRAVITY_EPOCH_URL__ || '';
+                    payload.capturePerformanceTime = performance.now();
+                    payload.payloadVersion = 3;
                     window.dispatchExecutionEvent({ type, payload });
                 }
             }
@@ -146,6 +193,7 @@ export class ActionDispatcher extends EventEmitter {
                     const start = Date.now();
                     const payload = {
                         interactionId: 'ia-' + generateUUID().split('-')[0],
+                        sequenceNumber: ++window.__ANTIGRAVITY_SEQ__,
                         interactionType: type,
                         originEvent: data.originEvent,
                         consumedEvents: data.consumed,
@@ -436,6 +484,7 @@ export class ActionDispatcher extends EventEmitter {
     }
 
     async injectMasterListeners(masterPage) {
+        this.masterPage = masterPage;
         if (!this.cachedScriptContent) {
             await this.buildInjectedScript();
         }
@@ -461,20 +510,22 @@ export class ActionDispatcher extends EventEmitter {
             
             const framePath = FramePathBuilder.build(frame);
 
+            const resolvedEpoch = eventData.payload?.captureEpoch ?? 0;
+
             const metadata = {
-                captureEpoch: masterState ? (masterState.navigationEpoch || 0) : 0,
+                captureEpoch: resolvedEpoch,
                 navigation: navCtx ? {
                     url: navCtx.currentURL,
                     navigationId: navCtx.navigationId,
                     timestamp: navCtx.startedAt,
                     navigationType: navCtx.navigationType,
-                    epoch: masterState ? (masterState.navigationEpoch || 0) : 0
+                    epoch: resolvedEpoch
                 } : {
                     url: masterPage.url(),
                     navigationId: 'master-nav-fallback',
                     timestamp: Date.now(),
                     navigationType: 'fallback',
-                    epoch: masterState ? (masterState.navigationEpoch || 0) : 0
+                    epoch: resolvedEpoch
                 },
                 viewport: viewCtx ? {
                     viewportId: viewCtx.viewportId,
@@ -519,7 +570,55 @@ export class ActionDispatcher extends EventEmitter {
             this.emit('Command', command);
         });
 
+        await masterPage.exposeBinding('__notifyNavigation', async ({ frame }, navEvent) => {
+            await this.handleSpaNavigation(frame, navEvent);
+        });
 
+        masterPage.on('framenavigated', async (frame) => {
+            if (typeof frame.parentFrame === 'function' ? !frame.parentFrame() : true) {
+                await this._advanceEpoch(typeof frame.url === 'function' ? frame.url() : frame.url, 'framenavigated');
+            }
+        });
+    }
+
+    async handleSpaNavigation(frame, navEvent) {
+        if (!navEvent || !navEvent.type || !frame) return;
+        if (typeof frame.parentFrame === 'function' && frame.parentFrame()) return; // ignore subframes
+        await this._advanceEpoch(navEvent.url, navEvent.type);
+    }
+
+    async _advanceEpoch(url, trigger) {
+        if (!this.masterPage || (typeof this.masterPage.isClosed === 'function' && this.masterPage.isClosed())) return;
+
+        let currentEpoch = 0;
+        if (this.registry && typeof this.registry.getState === 'function') {
+            const state = this.registry.getState('master');
+            if (state.url !== url && url !== 'about:blank') {
+                this.registry.updateUrl('master', url);
+            } else {
+                state.navigationEpoch++;
+                state.url = url;
+                if (typeof this.registry.emit === 'function') {
+                    this.registry.emit('StateUpdated', { browserId: 'master', state });
+                }
+            }
+            currentEpoch = state.navigationEpoch;
+        } else {
+            this.masterEpoch = (this.masterEpoch || 0) + 1;
+            currentEpoch = this.masterEpoch;
+        }
+
+        await this.masterPage.evaluate(({ epoch, url, ts }) => {
+            window.__ANTIGRAVITY_EPOCH__ = epoch;
+            window.__ANTIGRAVITY_EPOCH_URL__ = url;
+            window.__ANTIGRAVITY_EPOCH_TS__ = ts;
+        }, { epoch: currentEpoch, url, ts: Date.now() }).catch(err => {
+            logger.warn(`[ActionDispatcher] Failed to inject epoch ${currentEpoch} into master page: ${err.message}`);
+        });
+
+        try {
+            TelemetryCollector.recordSpaNavigation(trigger);
+        } catch (e) {}
     }
 
     recordAction(action) {
