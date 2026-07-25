@@ -8,3 +8,4 @@ error_*.png
 .env
 *.enc
 /sessions
+scratch/
