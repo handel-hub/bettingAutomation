@@ -3,8 +3,9 @@ import { CapabilityRegistry } from '../CapabilityRegistry.mjs';
 import { Command } from '../../execution/Command.mjs';
 
 export class RecoveryActionExecutor extends EventEmitter {
-    constructor() {
+    constructor(capabilityRegistry) {
         super();
+        this.capabilityRegistry = capabilityRegistry;
     }
 
     async execute(plan, syncContext) {
@@ -15,7 +16,7 @@ export class RecoveryActionExecutor extends EventEmitter {
             case 'HARD_RESET':
             case 'DEPENDENCY_CASCADE':
                 for (const target of targets) {
-                    const provider = CapabilityRegistry.getProvider(target);
+                    const provider = this.capabilityRegistry.getProvider(target);
                     if (provider) {
                         await provider.invalidate(syncContext);
                     }

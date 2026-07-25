@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 import { logger } from '../../config.mjs';
 import { encrypt, decrypt } from '../../utils/crypto.mjs';
 import { redactUsername } from '../../utils/redact.mjs';
-import { redactUsername } from '../../utils/redact.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -95,19 +94,19 @@ export class SessionManager {
 
         const { loaded, wasLegacy } = await this.loadSession(id, username);
         if (loaded) {
-            await browserObj.page.goto('https://www.sportybet.com/', { waitUntil: 'domcontentloaded' });
-            if (await this.verifyLoggedIn(id)) {
-                this.registry.updateState(id, 'Ready');
-                if (wasLegacy) {
-                    // The whole point of the migration path is to stop
-                    // leaving plaintext cookies on disk - a session that
-                    // still works needs to be re-saved now, not "on next
-                    // save" (there may never be another save for this id).
-                    await this.saveSession(id, username);
+            try {
+                await browserObj.page.goto('https://www.sportybet.com/', { waitUntil: 'domcontentloaded' });
+                if (await this.verifyLoggedIn(id)) {
+                    this.registry.updateState(id, 'Ready');
+                    if (wasLegacy) {
+                        await this.saveSession(id, username);
+                    }
+                    return true;
                 }
-                return true;
+                logger.warn(`Restored session for ${redactUsername(username)} on [${id}] did not verify as logged in; falling back to fresh login.`);
+            } catch (err) {
+                logger.warn(`Failed to verify restored session for ${redactUsername(username)} on [${id}] due to navigation error: ${err.message}. Falling back to fresh login.`);
             }
-            logger.warn(`Restored session for ${redactUsername(username)} on [${id}] did not verify as logged in; falling back to fresh login.`);
         }
 
         const loggedIn = await this.login(id, username, password);

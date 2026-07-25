@@ -32,7 +32,6 @@ import { SynchronizationTelemetry } from './synchronization/telemetry/Synchroniz
 import { SynchronizationTimeline } from './synchronization/telemetry/SynchronizationTimeline.mjs';
 import { BrowserStateRegistry } from './synchronization/BrowserStateRegistry.mjs';
 import { CapabilityRegistry } from './synchronization/CapabilityRegistry.mjs';
-import { SynchronizationManager } from './synchronization/SynchronizationManager.mjs';
 
 export class AutomationController {
     constructor(settings, accounts, proxyManager, stealthEngine) {
@@ -74,10 +73,10 @@ export class AutomationController {
         this.consistencyEvaluator = new ConsistencyEvaluator(ConsistencyPolicy.DEFAULT);
         this.syncCoordinator = new SynchronizationCoordinator(this.consistencyEvaluator, this.registry);
         this.syncRecoveryCoordinator = new RecoveryCoordinator(this.registry);
-        this.syncRecoveryActionExecutor = new RecoveryActionExecutor();
         this.syncTelemetry = new SynchronizationTelemetry();
         this.syncTimeline = new SynchronizationTimeline();
-
+        this.syncRecoveryActionExecutor = new RecoveryActionExecutor(this.capabilityRegistry);
+        
         this.syncManager.setCoordinator(this.syncCoordinator);
         this.syncManager.setRecoveryCoordinator(this.syncRecoveryCoordinator);
         this.syncManager.setRecoveryActionExecutor(this.syncRecoveryActionExecutor);
