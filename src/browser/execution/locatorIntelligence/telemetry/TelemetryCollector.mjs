@@ -135,6 +135,108 @@ class TelemetryCollectorImpl {
             this.registry.execution.total++;
         } catch (e) {}
     }
+
+    /**
+     * Records telemetry from EID Extraction.
+     */
+    recordEIDExtraction(durationMs) {
+        try {
+            if (typeof durationMs === 'number') {
+                this.registry.extraction.eidTime.push(durationMs);
+            }
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry from BatchResolver.
+     */
+    recordBatchResolution(durationMs, candidateCount, roundTrips = 1) {
+        try {
+            if (typeof durationMs === 'number') this.registry.batch.evaluationTime.push(durationMs);
+            if (typeof candidateCount === 'number') this.registry.batch.candidateCount.push(candidateCount);
+            if (typeof roundTrips === 'number') this.registry.batch.roundTrips.push(roundTrips);
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry from DisambiguationEngine.
+     */
+    recordDisambiguation(success) {
+        try {
+            if (success) {
+                this.registry.disambiguation.triggered++;
+            } else {
+                this.registry.disambiguation.failed++;
+            }
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry from VerificationEngine.
+     */
+    recordVerification(success, similarityScore = 0) {
+        try {
+            if (success) {
+                this.registry.verification.passed++;
+            } else {
+                this.registry.verification.failed++;
+            }
+            if (typeof similarityScore === 'number') {
+                this.registry.verification.similarityScore.push(similarityScore);
+            }
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry from RecoveryOrchestrator.
+     */
+    recordRecovery(level) {
+        try {
+            const levelKey = `L${level}`;
+            const keyMap = { 'L1': 'L1_RETRY', 'L2': 'L2_WAIT', 'L3': 'L3_SKIP', 'L4': 'L4_RELOAD' };
+            const mapped = keyMap[levelKey];
+            if (mapped && this.registry.recovery[mapped] !== undefined) {
+                this.registry.recovery[mapped]++;
+            }
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry from ResolutionMemory.
+     */
+    recordMemory(hit) {
+        try {
+            if (hit) {
+                this.registry.memory.hits++;
+            } else {
+                this.registry.memory.misses++;
+            }
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry from StaleEpoch aborts.
+     */
+    recordEpochSkip() {
+        try {
+            this.registry.execution.epochSkips++;
+        } catch (e) {}
+    }
+
+    /**
+     * Records telemetry from the ConfidenceGate.
+     * @param {object} decision - ConfidenceDecision object
+     */
+    recordConfidenceGateDecision(decision) {
+        try {
+            if (!decision || !decision.decision) return;
+            if (this.registry.confidence && this.registry.confidence[decision.decision] !== undefined) {
+                this.registry.confidence[decision.decision]++;
+            }
+        } catch (e) {
+            // Passive
+        }
+    }
 }
 
 export const TelemetryCollector = new TelemetryCollectorImpl();

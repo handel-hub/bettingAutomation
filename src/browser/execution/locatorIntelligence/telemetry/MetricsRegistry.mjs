@@ -36,6 +36,50 @@ export class MetricsRegistry {
             INVALID: 0
         };
 
+        // Phase 2: EID Metrics
+        this.extraction = {
+            eidTime: new RollingWindow(128)
+        };
+
+        // Phase 6: Batch Resolution Metrics
+        this.batch = {
+            evaluationTime: new RollingWindow(128),
+            candidateCount: new RollingWindow(128),
+            roundTrips: new RollingWindow(128)
+        };
+
+        // Phase 7: Disambiguation & Verification
+        this.disambiguation = {
+            triggered: 0,
+            failed: 0
+        };
+        this.verification = {
+            passed: 0,
+            failed: 0,
+            similarityScore: new RollingWindow(128)
+        };
+
+        // Phase 8: Confidence Gate Metrics
+        this.confidence = {
+            ACCEPT: 0,
+            REJECT: 0,
+            TENTATIVE: 0
+        };
+
+        // Phase 9: Recovery Hierarchy
+        this.recovery = {
+            L1_RETRY: 0,
+            L2_WAIT: 0,
+            L3_SKIP: 0,
+            L4_RELOAD: 0
+        };
+
+        // Phase 11: Resolution Memory
+        this.memory = {
+            hits: 0,
+            misses: 0
+        };
+
         // Failure Metrics (Map of LF Code -> Count)
         this.failures = new Map();
 
@@ -45,7 +89,8 @@ export class MetricsRegistry {
             retries: new RollingWindow(128),
             resolverCycles: new RollingWindow(128),
             candidateExhaustion: new RollingWindow(128),
-            confidenceDecay: new RollingWindow(128)
+            confidenceDecay: new RollingWindow(128),
+            epochSkips: 0
         };
     }
 
@@ -75,6 +120,20 @@ export class MetricsRegistry {
     snapshot() {
         return {
             timestamp: Date.now(),
+            extraction: {
+                averageEidTime: this.extraction.eidTime.average
+            },
+            batch: {
+                averageEvaluationTime: this.batch.evaluationTime.average,
+                averageCandidateCount: this.batch.candidateCount.average,
+                averageRoundTrips: this.batch.roundTrips.average
+            },
+            disambiguation: { ...this.disambiguation },
+            verification: {
+                passed: this.verification.passed,
+                failed: this.verification.failed,
+                averageSimilarityScore: this.verification.similarityScore.average
+            },
             resolution: {
                 total: this.resolution.total,
                 success: this.resolution.success,
@@ -91,13 +150,17 @@ export class MetricsRegistry {
             },
             strategies: Object.fromEntries(this.strategies),
             validation: { ...this.validation },
+            confidence: { ...this.confidence },
+            recovery: { ...this.recovery },
+            memory: { ...this.memory },
             failures: Object.fromEntries(this.failures),
             execution: {
                 total: this.execution.total,
                 averageRetries: this.execution.retries.average,
                 averageResolverCycles: this.execution.resolverCycles.average,
                 averageCandidateExhaustion: this.execution.candidateExhaustion.average,
-                averageConfidenceDecay: this.execution.confidenceDecay.average
+                averageConfidenceDecay: this.execution.confidenceDecay.average,
+                epochSkips: this.execution.epochSkips
             }
         };
     }
