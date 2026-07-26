@@ -34,26 +34,25 @@ export class ActionSimulator extends EventEmitter {
             
             // Phase 2 & 15: Resolve (Decoupled & Shadow Mode)
             let result;
+            const resolveOpts = {
+                browserId: browserObj?.id || command.metadata?.browserId || command.target,
+                commandEpoch: command.metadata?.captureEpoch ?? command.metadata?.navigation?.epoch,
+                epochGate: this.epochGate,
+                shadowPath: command.payload.shadowPath || [],
+                identityDocument: command.payload?.identityDocument || command.metadata?.identityDocument,
+                deadlineBudget,
+                traceId: command.traceId || command.payload?.traceId,
+                eidHash: command.eidHash || command.payload?.eidHash,
+                commandId: command.id,
+                interactionId: command.payload?.interactionId
+            };
             if (featureFlags.isEnabled('LI_SHADOW_MODE')) {
                 // In shadow mode, we would run the legacy resolver to drive the physical action,
                 // and the new resolver to gather comparison metrics.
                 // For now, we simulate this by running the current resolver as 'legacy' and logging.
-                result = await LocatorResolver.resolve(page, locators, interactionType, undefined, {
-                    browserId: browserObj?.id || command.metadata?.browserId || command.target,
-                    commandEpoch: command.metadata?.captureEpoch ?? command.metadata?.navigation?.epoch,
-                    epochGate: this.epochGate,
-                    shadowPath: command.payload.shadowPath || [],
-                    deadlineBudget
-                });
+                result = await LocatorResolver.resolve(page, locators, interactionType, undefined, resolveOpts);
                 
-                const shadowResult = await LocatorResolver.resolve(page, locators, interactionType, undefined, {
-                    browserId: browserObj?.id || command.metadata?.browserId || command.target,
-                    commandEpoch: command.metadata?.captureEpoch ?? command.metadata?.navigation?.epoch,
-                    epochGate: this.epochGate,
-                    shadowPath: command.payload.shadowPath || [],
-                    identityDocument: command.metadata?.identityDocument,
-                    deadlineBudget
-                });
+                const shadowResult = await LocatorResolver.resolve(page, locators, interactionType, undefined, resolveOpts);
                 
                 TelemetryCollector.recordShadowMode(command.id, {
                     legacySuccess: result.success,
@@ -63,14 +62,7 @@ export class ActionSimulator extends EventEmitter {
                     newConfidence: shadowResult.similarity?.overallScore || 0
                 });
             } else {
-                result = await LocatorResolver.resolve(page, locators, interactionType, undefined, {
-                    browserId: browserObj?.id || command.metadata?.browserId || command.target,
-                    commandEpoch: command.metadata?.captureEpoch ?? command.metadata?.navigation?.epoch,
-                    epochGate: this.epochGate,
-                    shadowPath: command.payload.shadowPath || [],
-                    identityDocument: command.metadata?.identityDocument,
-                    deadlineBudget
-                });
+                result = await LocatorResolver.resolve(page, locators, interactionType, undefined, resolveOpts);
             }
             
             if (!result.success) {
@@ -94,11 +86,61 @@ export class ActionSimulator extends EventEmitter {
             try {
                 await actionFn(result.playwrightLocator);
                 
+                const execDur = Date.now() - execStart;
+                const eid = command.payload?.identityDocument || command.metadata?.identityDocument;
+                TelemetryCollector.recordLifecycleEvent({
+                    traceId: command.traceId || command.payload?.traceId || 'tr-unknown',
+                    spanId: 'sp-14-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
+                    parentSpanId: 'sp-13-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
+                    stageSequence: 14,
+                    stageName: 'PHYSICAL_PLAYWRIGHT_EXECUTION',
+                    component: 'ActionSimulator.mjs',
+                    method: '_executeWithRecovery',
+                    timestamp: Date.now(),
+                    browserId: browserObj?.id || command.target || 'slave',
+                    interactionId: command.payload?.interactionId || 'ia-unknown',
+                    commandId: command.id,
+                    interactionType,
+                    stageDurationMs: execDur,
+                    eidPresent: !!eid,
+                    eidHash: command.eidHash || TelemetryCollector.computeEIDHash(eid),
+                    validationResult: 'PASS'
+                });
+
                 // Success - Log Execution metrics separate from Resolution metrics
-                logger.info(`[ActionSimulator] Execution Success | Action: ${interactionType} | Exec Duration: ${Date.now() - execStart}ms | Retries: ${attempts - 1}`);
+                logger.info(`[ActionSimulator] Execution Success | Action: ${interactionType} | Exec Duration: ${execDur}ms | Retries: ${attempts - 1}`);
                 return result; // return the resolution info so caller can log the used locator
                 
             } catch (err) {
+                const execDur = Date.now() - execStart;
+                const eid = command.payload?.identityDocument || command.metadata?.identityDocument;
+                let valRes14 = 'FAIL_AUTOMATION';
+                if (err && err.code && String(err.code).startsWith('LF-')) {
+                    valRes14 = `FAIL_${String(err.code).replace('-', '')}`;
+                } else if (err && err.message && err.message.includes('LF-')) {
+                    const match = err.message.match(/\[(LF-\d+)\]/);
+                    if (match) valRes14 = `FAIL_${match[1].replace('-', '')}`;
+                }
+                TelemetryCollector.recordLifecycleEvent({
+                    traceId: command.traceId || command.payload?.traceId || 'tr-unknown',
+                    spanId: 'sp-14-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
+                    parentSpanId: 'sp-13-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
+                    stageSequence: 14,
+                    stageName: 'PHYSICAL_PLAYWRIGHT_EXECUTION',
+                    component: 'ActionSimulator.mjs',
+                    method: '_executeWithRecovery',
+                    timestamp: Date.now(),
+                    browserId: browserObj?.id || command.target || 'slave',
+                    interactionId: command.payload?.interactionId || 'ia-unknown',
+                    commandId: command.id,
+                    interactionType,
+                    stageDurationMs: execDur,
+                    eidPresent: !!eid,
+                    eidHash: command.eidHash || TelemetryCollector.computeEIDHash(eid),
+                    validationResult: valRes14,
+                    errorDetails: { errorCode: valRes14.replace('FAIL_', ''), errorMessage: err.message || String(err) }
+                });
+
                 if (err instanceof QueueDeadlineExceededError || err instanceof GlobalTimeoutError || err instanceof StaleEpochError || err instanceof LocatorResolutionError) {
                     throw err; // Terminal synchronization errors must not be caught and retried locally
                 }

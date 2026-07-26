@@ -46,7 +46,8 @@ describe('Phase 8 Integration: ConfidenceGate in LocatorResolver', () => {
         const customPolicy = {
             ...DefaultPolicy,
             getRetryBudget: () => 1,
-            verification: { minThreshold: 0.0 }
+            verification: { minThreshold: 0.0 },
+            confidenceGate: { thresholds: { CLICK: 0.99 } }
         };
 
         await expect(LocatorResolver.resolve(page, candidates, 'click', customPolicy, {
@@ -85,6 +86,7 @@ describe('Phase 8 Integration: ConfidenceGate in LocatorResolver', () => {
     });
 
     it('should skip ConfidenceGate when no EID is provided (legacy command)', async () => {
+        featureFlags.resetForTesting({ V3_SCHEMA_ENFORCEMENT_MODE: 'DISABLED' });
         const page = TestHarness.createMockPage({
             template: [
                 { tagName: 'BUTTON', id: 'any-btn', text: 'Click me', visible: true }

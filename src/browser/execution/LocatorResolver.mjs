@@ -16,7 +16,7 @@ import {
     AmbiguousResolutionError,
     VerificationMismatchError
 } from './errors.mjs';
-import { DefaultPolicy } from './locatorIntelligence/resolution/ResolutionPolicy.mjs';
+import { ResolutionPolicy, DefaultPolicy } from './locatorIntelligence/resolution/ResolutionPolicy.mjs';
 import { ResolutionContext, ResolutionState } from './locatorIntelligence/resolution/ResolutionContext.mjs';
 import { getValidationProfile } from './locatorIntelligence/resolution/ValidationProfile.mjs';
 import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCollector.mjs';
@@ -57,6 +57,77 @@ export class LocatorResolver {
      * Resolves the safest actionable locator from a list of candidates using an Adaptive Decision Engine.
      */
     static async resolve(page, candidates, interactionType, policy = DefaultPolicy, options = {}) {
+        const resStart = Date.now();
+        const originalEID = options.identityDocument || null;
+        try {
+            const result = await this._resolveInternal(page, candidates, interactionType, policy, options);
+            const durationMs = Date.now() - resStart;
+            let valRes13 = 'PASS';
+            let err13 = null;
+            if (!result || !result.success) {
+                valRes13 = 'FAIL_LF504';
+                if (result?.failureReason && result.failureReason.includes('LF-')) {
+                    const match = result.failureReason.match(/\[(LF-\d+)\]/);
+                    if (match) valRes13 = `FAIL_${match[1].replace('-', '')}`;
+                }
+                err13 = { errorCode: valRes13.replace('FAIL_', ''), errorMessage: result?.failureReason || 'Resolution failed' };
+            }
+            TelemetryCollector.recordLifecycleEvent({
+                traceId: options.traceId || 'tr-unknown',
+                spanId: 'sp-13-' + (options.browserId || 'unknown').slice(0, 4),
+                parentSpanId: 'sp-11-' + (options.browserId || 'unknown').slice(0, 4),
+                stageSequence: 13,
+                stageName: 'LOCATOR_RESOLUTION',
+                component: 'LocatorResolver.mjs',
+                method: 'resolve',
+                timestamp: Date.now(),
+                browserId: options.browserId || 'slave',
+                interactionId: options.interactionId || 'ia-unknown',
+                commandId: options.commandId || null,
+                interactionType,
+                stageDurationMs: durationMs,
+                eidPresent: !!originalEID,
+                eidHash: options.eidHash || TelemetryCollector.computeEIDHash(originalEID),
+                validationResult: valRes13,
+                errorDetails: err13
+            });
+            return result;
+        } catch (err) {
+            const durationMs = Date.now() - resStart;
+            let valRes13 = 'FAIL_LF504';
+            if (err && err.code && String(err.code).startsWith('LF-')) {
+                valRes13 = `FAIL_${String(err.code).replace('-', '')}`;
+            } else if (err && err.message && err.message.includes('LF-')) {
+                const match = err.message.match(/\[(LF-\d+)\]/);
+                if (match) valRes13 = `FAIL_${match[1].replace('-', '')}`;
+            }
+            TelemetryCollector.recordLifecycleEvent({
+                traceId: options.traceId || 'tr-unknown',
+                spanId: 'sp-13-' + (options.browserId || 'unknown').slice(0, 4),
+                parentSpanId: 'sp-11-' + (options.browserId || 'unknown').slice(0, 4),
+                stageSequence: 13,
+                stageName: 'LOCATOR_RESOLUTION',
+                component: 'LocatorResolver.mjs',
+                method: 'resolve',
+                timestamp: Date.now(),
+                browserId: options.browserId || 'slave',
+                interactionId: options.interactionId || 'ia-unknown',
+                commandId: options.commandId || null,
+                interactionType,
+                stageDurationMs: durationMs,
+                eidPresent: !!originalEID,
+                eidHash: options.eidHash || TelemetryCollector.computeEIDHash(originalEID),
+                validationResult: valRes13,
+                errorDetails: { errorCode: valRes13.replace('FAIL_', ''), errorMessage: err.message }
+            });
+            throw err;
+        }
+    }
+
+    static async _resolveInternal(page, candidates, interactionType, policy = DefaultPolicy, options = {}) {
+        if (!policy || typeof policy.getRetryBudget !== 'function') {
+            policy = new ResolutionPolicy(policy || {});
+        }
         const startTime = Date.now();
         if (!candidates || candidates.length === 0) {
             return new ResolutionResult({ success: false, failureReason: '[LF-003] Generation Failure: No candidates provided' });
@@ -94,6 +165,23 @@ export class LocatorResolver {
         if (featureFlags.isEnabled('LI_EPOCH_GATING') && options.epochGate && options.browserId && options.commandEpoch !== undefined && options.commandEpoch !== null && options.commandEpoch !== 0) {
             const timeoutMs = policy.limits?.epochWaitTimeoutMs || 2000;
             const decisionObj = await options.epochGate.evaluateAsync(options.browserId, options.commandEpoch, timeoutMs);
+            TelemetryCollector.recordLifecycleEvent({
+                traceId: options.traceId || 'tr-unknown',
+                spanId: 'sp-11-' + (options.browserId || 'unknown').slice(0, 4),
+                parentSpanId: 'sp-10-' + (options.browserId || 'unknown').slice(0, 4),
+                stageSequence: 11,
+                stageName: 'NAVIGATION_EPOCH_GATING',
+                component: 'LocatorResolver.mjs',
+                method: 'resolve',
+                timestamp: Date.now(),
+                browserId: options.browserId,
+                interactionId: options.interactionId || 'ia-unknown',
+                commandId: options.commandId || null,
+                interactionType,
+                epoch: options.commandEpoch,
+                validationResult: decisionObj.decision === 'SKIP' ? 'FAIL_LF604' : 'PASS',
+                errorDetails: decisionObj.decision === 'SKIP' ? { errorCode: 'LF-604', errorMessage: decisionObj.reason } : null
+            });
             if (decisionObj.decision === 'SKIP') {
                 TelemetryCollector.recordEpochSkip();
                 const duration = Date.now() - startTime;
@@ -107,6 +195,23 @@ export class LocatorResolver {
                 TelemetryCollector.recordResolution(result);
                 return result;
             }
+        } else {
+            TelemetryCollector.recordLifecycleEvent({
+                traceId: options.traceId || 'tr-unknown',
+                spanId: 'sp-11-' + (options.browserId || 'unknown').slice(0, 4),
+                parentSpanId: 'sp-10-' + (options.browserId || 'unknown').slice(0, 4),
+                stageSequence: 11,
+                stageName: 'NAVIGATION_EPOCH_GATING',
+                component: 'LocatorResolver.mjs',
+                method: 'resolve',
+                timestamp: Date.now(),
+                browserId: options.browserId || 'slave',
+                interactionId: options.interactionId || 'ia-unknown',
+                commandId: options.commandId || null,
+                interactionType,
+                epoch: options.commandEpoch || 0,
+                validationResult: 'PASS'
+            });
         }
 
         const profile = getValidationProfile(interactionType);
@@ -200,6 +305,10 @@ export class LocatorResolver {
                             logger.warn(`[LocatorResolver] ConfidenceGate rejected [${item.locator}]: ${gateDecision.reason}`);
                             throw new ConfidenceGateRejectionError(gateDecision.reason);
                         }
+                        if (gateDecision.decision === 'RECOVER') {
+                            logger.warn(`[LocatorResolver] ConfidenceGate RECOVER for [${item.locator}]: ${gateDecision.reason}`);
+                            throw new Error(`[LF-302] Recoverable Confidence Miss: ${gateDecision.reason}`);
+                        }
                         if (gateDecision.decision === 'TENTATIVE') {
                             logger.warn(`[LocatorResolver] ConfidenceGate TENTATIVE for [${item.locator}]: ${gateDecision.reason}`);
                         }
@@ -258,6 +367,10 @@ export class LocatorResolver {
                                     logger.warn(`[LocatorResolver] ConfidenceGate rejected [${item.locator}]: ${gateDecision.reason}`);
                                     throw new ConfidenceGateRejectionError(gateDecision.reason);
                                 }
+                                if (gateDecision.decision === 'RECOVER') {
+                                    logger.warn(`[LocatorResolver] ConfidenceGate RECOVER for [${item.locator}]: ${gateDecision.reason}`);
+                                    throw new Error(`[LF-302] Recoverable Confidence Miss: ${gateDecision.reason}`);
+                                }
                                 if (gateDecision.decision === 'TENTATIVE') {
                                     logger.warn(`[LocatorResolver] ConfidenceGate TENTATIVE for [${item.locator}]: ${gateDecision.reason}`);
                                 }
@@ -299,7 +412,6 @@ export class LocatorResolver {
         }
 
             // Sequential Pass
-            resolutionCycles++;
             
             // Sort active candidates by current confidence (descending)
             const activeContexts = contexts
@@ -377,6 +489,10 @@ export class LocatorResolver {
                             logger.warn(`[LocatorResolver] ConfidenceGate rejected [${ctx.candidate.locator}]: ${gateDecision.reason}`);
                             throw new ConfidenceGateRejectionError(gateDecision.reason);
                         }
+                        if (gateDecision.decision === 'RECOVER') {
+                            logger.warn(`[LocatorResolver] ConfidenceGate RECOVER for [${ctx.candidate.locator}]: ${gateDecision.reason}`);
+                            throw new Error(`[LF-302] Recoverable Confidence Miss: ${gateDecision.reason}`);
+                        }
                         if (gateDecision.decision === 'TENTATIVE') {
                             logger.warn(`[LocatorResolver] ConfidenceGate TENTATIVE for [${ctx.candidate.locator}]: ${gateDecision.reason}`);
                         }
@@ -426,16 +542,23 @@ export class LocatorResolver {
         if (featureFlags.isEnabled('LI_RECOVERY_HIERARCHY')) {
             const { RecoveryOrchestrator } = await import('./locatorIntelligence/resolution/RecoveryOrchestrator.mjs');
             const orchestrator = new RecoveryOrchestrator();
-            const outcome = await orchestrator.orchestrate(resolveAttempt, interactionType, page, options);
+            const outcome = await orchestrator.orchestrate(resolveAttempt, interactionType, page, { ...options, interactionType });
             
             if (outcome.status === 'RESOLVED') {
                 return outcome.result;
+            }
+            if (outcome.terminalError) {
+                const err = outcome.terminalError;
+                const isExhaustion = (err.code === 'LF-505' || err.name === 'MaxAttemptsReachedError' || err.name === 'RecoveryExhaustedError' || (err.message && err.message.includes('[LF-505]')));
+                if (!isExhaustion) {
+                    throw err;
+                }
             }
             
             const duration = outcome.duration;
             const failureReason = outcome.status === 'SKIPPED' 
                 ? `[LF-605] Resolution Skipped for ${interactionType}`
-                : `[LF-505] Resolution Aborted at ${outcome.level} after ${outcome.attempts} attempts (${duration}ms)\n${this._formatTelemetry(contexts, policy)}`;
+                : (outcome.terminalError ? outcome.terminalError.message : `[LF-505] Resolution Aborted at ${outcome.level} after ${outcome.attempts} attempts (${duration}ms)\n${this._formatTelemetry(contexts, policy)}`);
                 
             logger.warn(`[LocatorResolver] ${failureReason}`);
             const result = new ResolutionResult({

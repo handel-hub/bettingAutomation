@@ -3,13 +3,14 @@ import { TelemetryCollector } from '../telemetry/TelemetryCollector.mjs';
 import { TimeConstants } from '../../time/TimeConstants.mjs';
 
 export class RecoveryOutcome {
-    constructor({ status, result, level, attempts, duration, history }) {
+    constructor({ status, result, level, attempts, duration, history, terminalError = null }) {
         this.status = status;     // 'RESOLVED' | 'SKIPPED' | 'ABORTED'
         this.result = result;     // ResolutionResult | null
         this.level = level;       // 'L1' | 'L2' | 'L3' | 'L4'
         this.attempts = attempts; // Total attempts
         this.duration = duration; // Total time
         this.history = history;   // Array<{level, error, duration}>
+        this.terminalError = terminalError;
     }
 }
 
@@ -18,14 +19,15 @@ export class RecoveryOrchestrator {
         this.pageStateMonitor = pageStateMonitor;
     }
 
-    _abortOutcome(state, startTime, level) {
+    _abortOutcome(state, startTime, level, terminalError = null) {
         return new RecoveryOutcome({
             status: 'ABORTED',
             result: null,
             level,
             attempts: state.attempts,
             duration: Date.now() - startTime,
-            history: state.history
+            history: state.history,
+            terminalError
         });
     }
 
@@ -52,11 +54,12 @@ export class RecoveryOrchestrator {
                 history: state.history
             });
         }
+        if (l1Result.terminalError) return this._abortOutcome(state, startTime, 'L1', l1Result.terminalError);
         if (Date.now() >= hardDeadline) return this._abortOutcome(state, startTime, 'L1');
 
         // L2: DOM Settlement (budget: 2000ms from start, capped by hardDeadline)
         const l2Deadline = Math.min(startTime + 2500, hardDeadline);
-        const l2Result = await this._executeL2(resolveFn, page, l2Deadline, state);
+        const l2Result = await this._executeL2(resolveFn, page, l2Deadline, state, options);
         if (l2Result.success) {
             TelemetryCollector.recordRecovery(2);
             return new RecoveryOutcome({
@@ -68,6 +71,7 @@ export class RecoveryOrchestrator {
                 history: state.history
             });
         }
+        if (l2Result.terminalError) return this._abortOutcome(state, startTime, 'L2', l2Result.terminalError);
         if (Date.now() >= hardDeadline) return this._abortOutcome(state, startTime, 'L2');
 
         // L3: Skip
@@ -98,8 +102,26 @@ export class RecoveryOrchestrator {
                 history: state.history
             });
         }
+        if (l4Result.terminalError) return this._abortOutcome(state, startTime, 'L4', l4Result.terminalError);
 
         return this._abortOutcome(state, startTime, 'L4');
+    }
+
+    _isTerminalError(err) {
+        if (!err) return false;
+        const code = String(err.code || '');
+        const name = String(err.name || '');
+        const msg = String(err.message || '');
+        if (code.startsWith('LF-') && !['LF-501', 'LF-502', 'LF-503', 'LF-603'].includes(code)) {
+            return true;
+        }
+        if (name === 'ConfidenceGateRejectionError' || name === 'ConfidenceBelowThresholdError' || name === 'GlobalTimeoutError' || name === 'QueueDeadlineExceededError' || name === 'ContractViolationError' || name === 'AmbiguousResolutionError' || name === 'VerificationMismatchError') {
+            return true;
+        }
+        if (msg.includes('[LF-505]') || msg.includes('[LF-601]') || msg.includes('[LF-602]') || msg.includes('[LF-604]') || msg.includes('[LF-605]') || msg.includes('[LF-701]') || msg.includes('[LF-702]')) {
+            return true;
+        }
+        return false;
     }
 
     async _executeL1(resolveFn, deadline, state) {
@@ -112,6 +134,8 @@ export class RecoveryOrchestrator {
                     return { success: true, result };
                 }
             } catch (err) {
+                if (typeof console !== 'undefined' && process.env.DEBUG_RECOVERY) console.warn('[Recovery L1 Error]', err.stack || err.message);
+                if (this._isTerminalError(err)) return { success: false, terminalError: err };
                 state.history.push({ level: 'L1', error: err.message, duration: Date.now() - levelStart });
             }
             if (Date.now() < deadline) {
@@ -121,10 +145,25 @@ export class RecoveryOrchestrator {
         return { success: false };
     }
 
-    async _executeL2(resolveFn, page, deadline, state) {
+    async _executeL2(resolveFn, page, deadline, state, options = {}) {
         const levelStart = Date.now();
         while (Date.now() < deadline) {
             const stability = await this.pageStateMonitor.getStabilityState(page);
+            TelemetryCollector.recordLifecycleEvent({
+                traceId: options.traceId || 'tr-unknown',
+                spanId: 'sp-12-' + (options.browserId || 'unknown').slice(0, 4),
+                parentSpanId: 'sp-11-' + (options.browserId || 'unknown').slice(0, 4),
+                stageSequence: 12,
+                stageName: 'SLAVE_DOM_MUTATION_WAIT',
+                component: 'RecoveryOrchestrator.mjs',
+                method: '_executeL2',
+                timestamp: Date.now(),
+                browserId: options.browserId || 'slave',
+                interactionId: options.interactionId || 'ia-unknown',
+                interactionType: options.interactionType || 'CLICK',
+                validationResult: stability === 'STABLE' ? 'PASS' : 'WARN_DOM_MUTATING',
+                errorDetails: stability === 'STABLE' ? null : { errorCode: 'WARN_DOM_MUTATING', errorMessage: `DOM state is ${stability}` }
+            });
             
             if (stability === 'RENDERING') {
                 await new Promise(r => setTimeout(r, 200));
@@ -141,6 +180,8 @@ export class RecoveryOrchestrator {
                     return { success: true, result };
                 }
             } catch (err) {
+                if (typeof console !== 'undefined' && process.env.DEBUG_RECOVERY) console.warn('[Recovery L2 Error]', err.stack || err.message);
+                if (this._isTerminalError(err)) return { success: false, terminalError: err };
                 state.history.push({ level: 'L2', error: err.message, duration: Date.now() - levelStart });
                 if (stability === 'STABLE') {
                     // If stable and failed, don't loop endlessly in L2, just break
@@ -176,6 +217,8 @@ export class RecoveryOrchestrator {
                 }
             }
         } catch (err) {
+            if (typeof console !== 'undefined' && process.env.DEBUG_RECOVERY) console.warn('[Recovery L4 Error]', err.stack || err.message);
+            if (this._isTerminalError(err)) return { success: false, terminalError: err };
             state.history.push({ level: 'L4', error: err.message, duration: Date.now() - levelStart });
         }
         return { success: false };

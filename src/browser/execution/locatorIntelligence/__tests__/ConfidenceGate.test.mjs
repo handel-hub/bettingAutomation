@@ -9,10 +9,15 @@ describe('ConfidenceGate (Phase 8)', () => {
     });
 
     it('should evaluate CLICK threshold (0.45) correctly', () => {
-        const rej = gate.evaluate(0.30, 'click');
+        const rej = gate.evaluate(0.10, 'click');
         expect(rej.decision).toBe('REJECT');
         expect(rej.isAcceptable()).toBe(false);
-        expect(rej.reason).toContain('below threshold');
+        expect(rej.reason).toContain('far below threshold');
+        
+        const rec = gate.evaluate(0.35, 'click');
+        expect(rec.decision).toBe('RECOVER');
+        expect(rec.isAcceptable()).toBe(false);
+        expect(rec.reason).toContain('slightly below threshold');
 
         const tent = gate.evaluate(0.47, 'click');
         expect(tent.decision).toBe('TENTATIVE');
@@ -33,7 +38,7 @@ describe('ConfidenceGate (Phase 8)', () => {
 
     it('should evaluate INPUT threshold (0.50) correctly', () => {
         const rej = gate.evaluate(0.48, 'input');
-        expect(rej.decision).toBe('REJECT');
+        expect(rej.decision).toBe('RECOVER');
         expect(rej.thresholdApplied).toBe(0.50);
 
         const acc = gate.evaluate(0.58, 'fill');
@@ -43,7 +48,7 @@ describe('ConfidenceGate (Phase 8)', () => {
 
     it('should evaluate unknown interaction type against default threshold (0.50)', () => {
         const rej = gate.evaluate(0.40, 'unknown_action');
-        expect(rej.decision).toBe('REJECT');
+        expect(rej.decision).toBe('RECOVER');
         expect(rej.thresholdApplied).toBe(0.50);
 
         const acc = gate.evaluate(0.56, null);
@@ -75,7 +80,7 @@ describe('ConfidenceGate (Phase 8)', () => {
         const rankObj = { finalScore: 47.0 };
         expect(gate.evaluate(rankObj, 'click').decision).toBe('TENTATIVE');
 
-        const confObj = { confidence: 0.30 };
+        const confObj = { confidence: 0.10 };
         expect(gate.evaluate(confObj, 'click').decision).toBe('REJECT');
     });
 
@@ -87,10 +92,11 @@ describe('ConfidenceGate (Phase 8)', () => {
             }
         });
 
-        expect(customGate.evaluate(0.65, 'click').decision).toBe('REJECT');
+        expect(customGate.evaluate(0.65, 'click').decision).toBe('RECOVER');
+        expect(customGate.evaluate(0.45, 'click').decision).toBe('REJECT');
         expect(customGate.evaluate(0.72, 'click').decision).toBe('TENTATIVE');
         expect(customGate.evaluate(0.78, 'click').decision).toBe('ACCEPT');
-        expect(customGate.evaluate(0.75, 'unknown').decision).toBe('REJECT');
+        expect(customGate.evaluate(0.65, 'unknown').decision).toBe('RECOVER');
     });
 
     it('should serialize cleanly to JSON', () => {

@@ -225,6 +225,23 @@ export class ExecutionScheduler {
         try {
             qManager.insert(queueClass, entry);
             this.telemetry.totalEnqueued++;
+            const eid = command.payload && command.payload.identityDocument ? command.payload.identityDocument : null;
+            TelemetryCollector.recordLifecycleEvent({
+                traceId: command.traceId || command.payload?.traceId || 'tr-unknown',
+                spanId: 'sp-09-' + browserId.slice(0, 4),
+                parentSpanId: 'sp-03',
+                stageSequence: 9,
+                stageName: 'QUEUE_ENQUEUE',
+                component: 'ExecutionScheduler.mjs',
+                method: 'enqueue',
+                timestamp: Date.now(),
+                browserId,
+                interactionId: command.payload?.interactionId || 'ia-unknown',
+                commandId: command.id,
+                interactionType: command.type,
+                eidPresent: !!eid,
+                eidHash: command.eidHash || TelemetryCollector.computeEIDHash(eid)
+            });
         } catch (err) {
             logger.fatal(`[ExecutionScheduler] ${err.message} on slave [${browserId}]`);
             this.simulator.emit('ActionFailure', { id: browserId, command, error: err });
@@ -261,6 +278,26 @@ export class ExecutionScheduler {
                     if (nextEntry.queueDelay > this.telemetry.maxQueueWait) {
                         this.telemetry.maxQueueWait = nextEntry.queueDelay;
                     }
+
+                    const eid = nextEntry.command.payload && nextEntry.command.payload.identityDocument ? nextEntry.command.payload.identityDocument : null;
+                    const eidHash = nextEntry.command.eidHash || TelemetryCollector.computeEIDHash(eid);
+                    TelemetryCollector.recordLifecycleEvent({
+                        traceId: nextEntry.command.traceId || nextEntry.command.payload?.traceId || 'tr-unknown',
+                        spanId: 'sp-10-' + browserId.slice(0, 4),
+                        parentSpanId: 'sp-09-' + browserId.slice(0, 4),
+                        stageSequence: 10,
+                        stageName: 'QUEUE_DEQUEUE',
+                        component: 'ExecutionScheduler.mjs',
+                        method: '_drain',
+                        timestamp: Date.now(),
+                        browserId,
+                        interactionId: nextEntry.command.payload?.interactionId || 'ia-unknown',
+                        commandId: nextEntry.command.id,
+                        interactionType: nextEntry.command.type,
+                        stageDurationMs: nextEntry.queueDelay,
+                        eidPresent: !!eid,
+                        eidHash
+                    });
 
                     // Task 2.3: Enforce Queue TTL using DeadlineBudget before processing
                     const deadlineBudget = DeadlineBudget.fromCommand(nextEntry.command, 1500);
@@ -304,7 +341,9 @@ export class ExecutionScheduler {
                                 priority: nextEntry.priority,
                                 decision: nextEntry.schedulerDecision
                             }
-                        }
+                        },
+                        traceId: nextEntry.command.traceId || nextEntry.command.payload?.traceId,
+                        eidHash: nextEntry.command.eidHash || TelemetryCollector.computeEIDHash(eid)
                     });
 
                     if (featureFlags.isEnabled('LI_EPOCH_GATING')) {

@@ -143,7 +143,7 @@ export class ConfidenceGate {
     }
 
     _classifyMargin(confidence, threshold, margin, typeStr) {
-        if (margin < 0) {
+        if (margin < -0.20) {
             return new ConfidenceDecision({
                 decision: 'REJECT',
                 confidence,
@@ -151,7 +151,18 @@ export class ConfidenceGate {
                 thresholdApplied: threshold,
                 margin,
                 interactionType: typeStr,
-                reason: `Confidence ${confidence.toFixed(2)} below threshold ${threshold.toFixed(2)} for ${typeStr}`
+                reason: `Confidence ${confidence.toFixed(2)} far below threshold ${threshold.toFixed(2)} for ${typeStr}`
+            });
+        }
+        if (margin < 0) {
+            return new ConfidenceDecision({
+                decision: 'RECOVER',
+                confidence,
+                threshold,
+                thresholdApplied: threshold,
+                margin,
+                interactionType: typeStr,
+                reason: `Confidence ${confidence.toFixed(2)} slightly below threshold ${threshold.toFixed(2)} for ${typeStr} (Eligible for Recovery)`
             });
         }
         if (margin < 0.05) {
