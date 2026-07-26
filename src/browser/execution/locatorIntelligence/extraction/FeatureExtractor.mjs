@@ -1,4 +1,5 @@
 import { PipelineStep } from '../engine/PipelineStep.mjs';
+import { ElementIdentityDocument, ValidationAnomalies } from '../models/ElementIdentityDocument.mjs';
 
 export class FeatureExtractor extends PipelineStep {
     constructor() {
@@ -6,14 +7,14 @@ export class FeatureExtractor extends PipelineStep {
     }
 
     execute(context) {
-        const el = context.element;
+        const el = context?.element;
         const isElement = el && typeof el === 'object' && (
             (typeof Element !== 'undefined' && el instanceof Element) || 
             el.nodeType === 1 || 
             typeof el.getAttribute === 'function'
         );
         if (!isElement) {
-            context.features = null;
+            context.features = FeatureExtractor.getEmptyProbabilisticIdentity();
             return;
         }
         
@@ -112,6 +113,15 @@ export class FeatureExtractor extends PipelineStep {
         features.sectionHeading = this._extractSectionHeading(el, features.ancestry);
         features.componentRoot = this._extractComponentRoot(el, features.ancestry);
         features.position = this._extractPosition(el, features.rect);
+
+        const probId = FeatureExtractor.extractProbabilisticIdentity(el, context.composedPath, context);
+        features.semantic = probId.semantic;
+        features.structural = probId.structural;
+        features.lexical = probId.lexical;
+        features.spatial = probId.spatial;
+        features.confidenceScore = probId.confidenceScore;
+        features.anomalyFlags = probId.anomalyFlags;
+        features.identityHash = probId.identityHash;
 
         context.features = features;
     }
@@ -295,6 +305,308 @@ export class FeatureExtractor extends PipelineStep {
         } catch (e) {}
 
         return pos;
+    }
+
+    static getEmptyProbabilisticIdentity() {
+        return {
+            id: '',
+            className: '',
+            tagName: '',
+            text: '',
+            dataOps: {},
+            ariaLabel: '',
+            role: '',
+            href: '',
+            src: '',
+            alt: '',
+            placeholder: '',
+            name: '',
+            type: '',
+            value: '',
+            rect: { left: 0, top: 0, width: 0, height: 0 },
+            isIntersecting: false,
+            isIframe: false,
+            dataAttributes: {},
+            ariaAttributes: {},
+            ancestry: [],
+            siblings: { siblingIndex: 0, siblingCount: 0, list: [] },
+            landmark: null,
+            sectionHeading: null,
+            componentRoot: null,
+            position: { viewportQuadrant: 'CENTER', isSticky: false, isFixed: false, zIndex: 0 },
+            semantic: { dataTestId: null, accessibleName: null, ariaRole: '', nameAttribute: null, htmlId: null },
+            structural: { componentAncestry: [], parentContainerTag: null, localNeighborhood: 'root>unknown', siblingIndex: 0, domDepth: 0, structuralHash: '00000000' },
+            lexical: { normalizedText: null, placeholder: null, associatedLabelText: null },
+            spatial: { viewportQuadrant: 'CENTER', aspectRatio: 1.0, visibility: 'HIDDEN' },
+            confidenceScore: 0.0,
+            anomalyFlags: (ValidationAnomalies.SPARSE_SEMANTICS | ValidationAnomalies.BOUNDING_BOX_ZERO),
+            identityHash: '00000000'
+        };
+    }
+
+    static _getImplicitRole(node) {
+        if (!node || !node.tagName) return '';
+        const tag = (node.tagName || node.nodeName || '').toLowerCase();
+        const type = (node.getAttribute && node.getAttribute('type')) ? String(node.getAttribute('type')).toLowerCase() : '';
+        if (tag === 'a' || tag === 'area') return 'link';
+        if (tag === 'button') return 'button';
+        if (tag === 'input') {
+            if (['button', 'submit', 'reset'].includes(type)) return 'button';
+            if (type === 'checkbox') return 'checkbox';
+            if (type === 'radio') return 'radio';
+            if (type === 'range') return 'slider';
+            if (type === 'search') return 'searchbox';
+            return 'textbox';
+        }
+        if (tag === 'select') return 'combobox';
+        if (tag === 'textarea') return 'textbox';
+        if (tag === 'form') return 'form';
+        if (tag === 'nav') return 'navigation';
+        if (tag === 'header') return 'banner';
+        if (tag === 'footer') return 'contentinfo';
+        if (tag === 'main') return 'main';
+        if (tag === 'aside') return 'complementary';
+        if (tag === 'section') return 'region';
+        if (tag === 'img') return 'img';
+        if (/^h[1-6]$/.test(tag)) return 'heading';
+        return '';
+    }
+
+    static _extractCleanText(el) {
+        if (!el) return '';
+        let textContent = '';
+        try {
+            if (el.childNodes && el.childNodes.length > 0) {
+                for (const node of el.childNodes) {
+                    if (node.nodeType === 3 || node.nodeName === '#text') {
+                        textContent += node.textContent || '';
+                    } else if (node.nodeType === 1 || (node.nodeName && !node.nodeName.startsWith('#'))) {
+                        const tag = (node.nodeName || '').toLowerCase();
+                        if (tag !== 'script' && tag !== 'style') {
+                            textContent += node.innerText || node.textContent || '';
+                        }
+                    }
+                }
+            } else if (el.textContent || el.innerText) {
+                textContent = el.innerText || el.textContent || '';
+            }
+        } catch (e) {}
+        return textContent.trim().replace(/\s+/g, ' ');
+    }
+
+    static extractProbabilisticIdentity(node, composedPath = [], context = null) {
+        if (!node || typeof node !== 'object' || ((typeof Element === 'undefined' || !(node instanceof Element)) && node.nodeType !== 1 && typeof node.getAttribute !== 'function')) {
+            return FeatureExtractor.getEmptyProbabilisticIdentity();
+        }
+
+        let flags = 0;
+        const getAttr = (n, attr) => {
+            try {
+                if (!n) return null;
+                if (typeof n.getAttribute === 'function') {
+                    const res = n.getAttribute(attr);
+                    if (res !== null && res !== undefined) return String(res);
+                }
+                if (n.attributes && n.attributes[attr]) return String(n.attributes[attr].value || n.attributes[attr]);
+            } catch (e) {}
+            return null;
+        };
+
+        // Vector 1: Semantic Synthesis
+        const dataTestId = getAttr(node, 'data-testid') || getAttr(node, 'data-qa') || getAttr(node, 'data-cy') || getAttr(node, 'data-id') || null;
+        let accessibleName = getAttr(node, 'aria-label') || getAttr(node, 'aria-labelledby') || node.title || getAttr(node, 'alt') || null;
+        if (!accessibleName && (node.value !== undefined || getAttr(node, 'value'))) {
+            accessibleName = String(node.value !== undefined ? node.value : getAttr(node, 'value'));
+        }
+        if (!accessibleName) {
+            const txt = FeatureExtractor._extractCleanText(node);
+            if (txt) accessibleName = txt;
+        }
+        if (accessibleName && accessibleName.length > 64) {
+            accessibleName = accessibleName.substring(0, 64);
+            flags |= ValidationAnomalies.DYNAMIC_TEXT_TRUNCATED;
+        }
+        const ariaRole = getAttr(node, 'role') || FeatureExtractor._getImplicitRole(node) || '';
+        const nameAttribute = getAttr(node, 'name') || null;
+        const rawId = node.id || getAttr(node, 'id') || null;
+        let validId = null;
+        if (rawId) {
+            if (/^(:?r[0-9a-z]+|uuid-|headlessui|el-[0-9]+|ember[0-9]+|ng-[0-9]+|vue-[0-9]+)/i.test(rawId)) {
+                flags |= ValidationAnomalies.VOLATILE_ID_DETECTED;
+            } else {
+                validId = rawId;
+            }
+        }
+
+        let s1 = 0.0;
+        if (dataTestId !== null) s1 = 1.0;
+        else if (accessibleName !== null && ariaRole !== '') s1 = 0.85;
+        else if (validId !== null) s1 = 0.50;
+        else if (nameAttribute !== null) s1 = 0.40;
+        if (s1 === 0.0) {
+            flags |= ValidationAnomalies.SPARSE_SEMANTICS;
+        }
+
+        const semantic = { dataTestId, accessibleName, ariaRole, nameAttribute, htmlId: rawId };
+
+        // Vector 2: Structural Synthesis
+        const ancestryList = [];
+        let curr = node.parentElement || node.parentNode;
+        let depth = 0;
+        let parentTag = null;
+        while (curr && depth < 10) {
+            const tag = (curr.nodeName || curr.tagName || '').toLowerCase();
+            if (!tag || tag.startsWith('#') || tag === 'document' || tag === 'window') break;
+            if (tag.includes('-')) {
+                ancestryList.push(tag);
+            }
+            if (parentTag === null && ['form', 'nav', 'header', 'footer', 'main', 'article', 'section', 'aside', 'dialog'].includes(tag)) {
+                parentTag = tag;
+            }
+            try {
+                if ((typeof ShadowRoot !== 'undefined' && curr instanceof ShadowRoot) || curr.toString() === '[object ShadowRoot]' || curr.nodeType === 11 || curr.host) {
+                    flags |= ValidationAnomalies.SHADOW_DOM_ENCAPSULATED;
+                }
+            } catch (e) {}
+            curr = curr.parentElement || curr.parentNode;
+            depth++;
+        }
+
+        if ((node.nodeName || '').toLowerCase() === 'iframe' || (typeof window !== 'undefined' && node.ownerDocument && node.ownerDocument !== window.document)) {
+            flags |= ValidationAnomalies.IFRAME_CROSS_ORIGIN;
+        }
+
+        const parentTagStr = node.parentElement || node.parentNode ? ((node.parentElement || node.parentNode).nodeName || (node.parentElement || node.parentNode).tagName) : 'root';
+        const neighborhood = `${(parentTagStr || 'root').toLowerCase()}>${(node.nodeName || node.tagName || '').toLowerCase()}`;
+
+        let siblingIndex = 0;
+        const parent = node.parentElement || node.parentNode;
+        if (parent) {
+            try {
+                const list = parent.children ? Array.from(parent.children) : (parent.childNodes ? Array.from(parent.childNodes) : []);
+                const myTag = (node.nodeName || node.tagName || '').toLowerCase();
+                const myRole = getAttr(node, 'role') || '';
+                for (const child of list) {
+                    if (child === node) break;
+                    if (child.nodeType !== 1 && child !== node) continue;
+                    const cTag = (child.nodeName || child.tagName || '').toLowerCase();
+                    const cRole = getAttr(child, 'role') || '';
+                    if (cTag === myTag && cRole === myRole) {
+                        siblingIndex++;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        const hashStr = ancestryList.join('/') + '|' + neighborhood + '|' + depth;
+        const structuralHash = ElementIdentityDocument.computeFNV1a(hashStr);
+        const s2 = (ancestryList.length > 0 ? 0.40 : 0.0) + (parentTag !== null ? 0.35 : 0.0) + 0.25;
+
+        const structural = {
+            componentAncestry: ancestryList,
+            parentContainerTag: parentTag,
+            localNeighborhood: neighborhood,
+            siblingIndex,
+            domDepth: depth,
+            structuralHash
+        };
+
+        // Vector 3: Lexical Synthesis
+        let rawText = FeatureExtractor._extractCleanText(node);
+        if (rawText.length > 64) {
+            rawText = rawText.substring(0, 64);
+            flags |= ValidationAnomalies.DYNAMIC_TEXT_TRUNCATED;
+        }
+        const normText = rawText.length > 0 ? rawText.toLowerCase() : null;
+        const placeholder = getAttr(node, 'placeholder') || null;
+        let labelText = null;
+        try {
+            const targetId = validId || rawId;
+            if (targetId && node.ownerDocument && typeof node.ownerDocument.querySelector === 'function') {
+                const labelEl = node.ownerDocument.querySelector(`label[for="${targetId}"]`);
+                if (labelEl) {
+                    const lTxt = FeatureExtractor._extractCleanText(labelEl);
+                    if (lTxt) labelText = lTxt;
+                }
+            }
+            if (!labelText) {
+                let closestLabel = null;
+                if (typeof node.closest === 'function') closestLabel = node.closest('label');
+                else if (node.parentElement && (node.parentElement.nodeName || '').toLowerCase() === 'label') closestLabel = node.parentElement;
+                if (closestLabel && closestLabel !== node) {
+                    const lTxt = FeatureExtractor._extractCleanText(closestLabel);
+                    if (lTxt) labelText = lTxt;
+                }
+            }
+            if (labelText && labelText.length > 64) {
+                labelText = labelText.substring(0, 64);
+                flags |= ValidationAnomalies.DYNAMIC_TEXT_TRUNCATED;
+            }
+        } catch (e) {}
+        const s3 = (normText !== null ? 0.65 : 0.0) + (labelText !== null ? 0.35 : 0.0);
+        const lexical = { normalizedText: normText, placeholder, associatedLabelText: labelText };
+
+        // Vector 4: Spatial Synthesis
+        let rect = { left: 0, top: 0, width: 0, height: 0 };
+        try {
+            if (typeof node.getBoundingClientRect === 'function') {
+                const r = node.getBoundingClientRect();
+                rect = { left: r.left || 0, top: r.top || 0, width: r.width || 0, height: r.height || 0 };
+            }
+        } catch (e) {}
+        if (rect.width === 0 || rect.height === 0) {
+            flags |= ValidationAnomalies.BOUNDING_BOX_ZERO;
+        }
+        const aspectRatio = Math.round((rect.width / (rect.height || 1)) * 100) / 100;
+        let viewportQuadrant = 'CENTER';
+        try {
+            const winW = (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 1920;
+            const winH = (typeof window !== 'undefined' && window.innerHeight) ? window.innerHeight : 1080;
+            const midX = rect.left + rect.width / 2;
+            const midY = rect.top + rect.height / 2;
+            const isTop = midY < winH / 2;
+            const isLeft = midX < winW / 2;
+            if (rect.width > 0 && rect.height > 0) {
+                viewportQuadrant = `${isTop ? 'TOP' : 'BOTTOM'}_${isLeft ? 'LEFT' : 'RIGHT'}`;
+            }
+        } catch (e) {}
+        let visibility = 'VISIBLE';
+        if (rect.width === 0 || rect.height === 0) {
+            visibility = 'HIDDEN';
+        } else {
+            try {
+                const style = (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') ? window.getComputedStyle(node) : (node.style || {});
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || style.opacity === 0) {
+                    visibility = 'HIDDEN';
+                } else if (typeof document !== 'undefined' && typeof document.elementFromPoint === 'function' && typeof window !== 'undefined') {
+                    const midX = rect.left + rect.width / 2;
+                    const midY = rect.top + rect.height / 2;
+                    if (midX >= 0 && midY >= 0 && midX <= window.innerWidth && midY <= window.innerHeight) {
+                        const topEl = document.elementFromPoint(midX, midY);
+                        if (topEl && topEl !== node && !node.contains(topEl) && !topEl.contains(node)) {
+                            visibility = 'OCCLUDED';
+                        }
+                    }
+                }
+            } catch (e) {}
+        }
+        const s4 = (visibility === 'VISIBLE' ? 1.0 : visibility === 'OCCLUDED' ? 0.5 : 0.0);
+        const spatial = { viewportQuadrant, aspectRatio, visibility };
+
+        // Score & Hash Convergence
+        const confidenceScore = Math.round(((0.45 * s1) + (0.25 * s2) + (0.20 * s3) + (0.10 * s4)) * 1000) / 1000;
+        const idStr = [dataTestId || '', accessibleName || '', ariaRole || '', structuralHash || '', normText || ''].join('###');
+        const identityHash = ElementIdentityDocument.computeFNV1a(idStr);
+
+        return {
+            semantic,
+            structural,
+            lexical,
+            spatial,
+            confidenceScore,
+            anomalyFlags: flags,
+            identityHash
+        };
     }
 }
 

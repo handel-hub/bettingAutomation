@@ -2,7 +2,7 @@ import { ValidationResult } from './ValidationResult.mjs';
 import { RankingResult } from './RankingResult.mjs';
 
 export class LocatorCandidate {
-    constructor({ strategy, locator, generatedBy = [], reason = '', features = {}, metadata = {}, rank = 0 }) {
+    constructor({ strategy, locator, generatedBy = [], reason = '', features = {}, metadata = {}, rank = 0, identityDocument = null, probabilisticEID = null }) {
         this.id = 'lc-' + Math.random().toString(16).substring(2, 10);
         this.strategy = strategy;
         this.locator = locator;
@@ -12,7 +12,7 @@ export class LocatorCandidate {
         this.metadata = metadata;
         this.rank = rank;
         this.scoringVector = null; // Forward compatibility for Phase 4+ ScoringVector
-        this.identityDocument = null; // Forward compatibility for Phase 1+ EID
+        this.identityDocument = identityDocument || probabilisticEID || null; // Forward compatibility for Phase 1+ EID / P-EID
         
         // Complex state objects
         this.validation = new ValidationResult();
@@ -31,4 +31,13 @@ export class LocatorCandidate {
             rankedAt: null
         };
     }
+
+    get probabilisticEID() {
+        return this.identityDocument;
+    }
+
+    set probabilisticEID(val) {
+        this.identityDocument = val;
+    }
 }
+

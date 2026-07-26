@@ -10,6 +10,16 @@ function deepFreeze(obj) {
     return obj;
 }
 
+export const ValidationAnomalies = {
+    NONE: 0,
+    SPARSE_SEMANTICS: 1 << 0,       // (1) Vector 1 score == 0 (no testid, accname, or role)
+    VOLATILE_ID_DETECTED: 1 << 1,   // (2) HTML id matched ephemeral framework regex (React/Vue/Tailwind)
+    SHADOW_DOM_ENCAPSULATED: 1 << 2,// (4) Element resides within one or more ShadowRoot boundaries
+    IFRAME_CROSS_ORIGIN: 1 << 3,    // (8) Element is encapsulated in a cross-origin or sandboxed frame
+    DYNAMIC_TEXT_TRUNCATED: 1 << 4, // (16) Text content exceeded 64 chars and was truncated
+    BOUNDING_BOX_ZERO: 1 << 5       // (32) Element has 0 width or height (hidden or display:none)
+};
+
 export class ElementIdentityDocument {
     constructor(data = {}) {
         this.version = data.version || '1.0.0';
@@ -69,7 +79,7 @@ export class ElementIdentityDocument {
         };
 
         // Compute fingerprint hashes if not already provided
-        const structuralHash = data.fingerprint?.structuralHash || ElementIdentityDocument.computeStructuralHash(this.hierarchy);
+        const structuralHash = data.fingerprint?.structuralHash || data.structural?.structuralHash || ElementIdentityDocument.computeStructuralHash(this.hierarchy);
         const semanticHash = data.fingerprint?.semanticHash || ElementIdentityDocument.computeSemanticHash(this.element, this.semantics);
         const contentHash = data.fingerprint?.contentHash || ElementIdentityDocument.computeContentHash(this.text);
 
@@ -81,7 +91,82 @@ export class ElementIdentityDocument {
 
         this.identityHash = data.identityHash || ElementIdentityDocument.computeIdentityHash(structuralHash, semanticHash, contentHash);
 
+        this.anomalyFlags = data.anomalyFlags !== undefined ? data.anomalyFlags : 0;
+
+        // Vector 1: Semantic Synthesis
+        this.semantic = {
+            dataTestId: data.semantic?.dataTestId || data.element?.dataAttributes?.['data-testid'] || data.element?.dataAttributes?.['data-qa'] || data.element?.dataAttributes?.['data-cy'] || null,
+            accessibleName: data.semantic?.accessibleName !== undefined ? data.semantic.accessibleName : (data.element?.ariaAttributes?.['aria-label'] || data.element?.value || (data.text?.exact ? data.text.exact.substring(0, 64) : null)),
+            ariaRole: data.semantic?.ariaRole !== undefined ? data.semantic.ariaRole : (data.element?.role || data.element?.tagName?.toLowerCase() || ''),
+            nameAttribute: data.semantic?.nameAttribute !== undefined ? data.semantic.nameAttribute : (data.element?.name || null),
+            htmlId: data.semantic?.htmlId !== undefined ? data.semantic.htmlId : (data.element?.id || null)
+        };
+
+        // Vector 2: Structural Synthesis
+        const ancestryList = data.structural?.componentAncestry || (data.hierarchy?.ancestors ? data.hierarchy.ancestors.map(a => a.tagName?.toLowerCase()).filter(t => t && t.includes('-')) : []);
+        const parentTag = data.structural?.parentContainerTag !== undefined ? data.structural.parentContainerTag : (data.hierarchy?.ancestors ? (data.hierarchy.ancestors.find(a => ['form', 'nav', 'header', 'footer', 'main', 'article'].includes(a.tagName?.toLowerCase()))?.tagName?.toLowerCase() || null) : null);
+        const neighborhood = data.structural?.localNeighborhood || `${data.hierarchy?.ancestors?.[0]?.tagName?.toLowerCase() || 'root'}>${data.element?.tagName?.toLowerCase() || 'element'}`;
+        const siblingIndex = data.structural?.siblingIndex !== undefined ? data.structural.siblingIndex : (data.hierarchy?.siblingIndex || 0);
+        const domDepth = data.structural?.domDepth !== undefined ? data.structural.domDepth : (data.hierarchy?.depth || 0);
+
+        this.structural = {
+            componentAncestry: Array.isArray(ancestryList) ? [...ancestryList] : [],
+            parentContainerTag: parentTag,
+            localNeighborhood: neighborhood,
+            siblingIndex,
+            domDepth,
+            structuralHash
+        };
+
+        // Vector 3: Lexical Synthesis
+        const normText = data.lexical?.normalizedText !== undefined ? data.lexical.normalizedText : (data.text?.normalized ? data.text.normalized.substring(0, 64) : null);
+        const placeholder = data.lexical?.placeholder !== undefined ? data.lexical.placeholder : (data.element?.dataAttributes?.['placeholder'] || null);
+        const labelText = data.lexical?.associatedLabelText !== undefined ? data.lexical.associatedLabelText : null;
+
+        this.lexical = {
+            normalizedText: normText || null,
+            placeholder: placeholder || null,
+            associatedLabelText: labelText || null
+        };
+
+        // Vector 4: Spatial Synthesis
+        const viewportQuadrant = data.spatial?.viewportQuadrant || data.position?.viewportQuadrant || 'CENTER';
+        const aspectRatio = data.spatial?.aspectRatio !== undefined ? data.spatial.aspectRatio : 1.0;
+        const visibility = data.spatial?.visibility || (data.state?.visible ? 'VISIBLE' : 'HIDDEN');
+
+        this.spatial = {
+            viewportQuadrant,
+            aspectRatio,
+            visibility
+        };
+
+        if (typeof data.confidenceScore === 'number' && !isNaN(data.confidenceScore)) {
+            this.confidenceScore = data.confidenceScore;
+        } else if (typeof data.confidence === 'number' && !isNaN(data.confidence)) {
+            this.confidenceScore = data.confidence;
+        } else {
+            let s1 = 0.0;
+            if (this.semantic.dataTestId) s1 = 1.0;
+            else if (this.semantic.accessibleName && this.semantic.ariaRole) s1 = 0.85;
+            else if (this.semantic.htmlId) s1 = 0.50;
+            else if (this.semantic.nameAttribute) s1 = 0.40;
+
+            let s2 = (this.structural.componentAncestry.length > 0 ? 0.40 : 0.0) + (this.structural.parentContainerTag ? 0.35 : 0.0) + 0.25;
+            let s3 = (this.lexical.normalizedText ? 0.65 : 0.0) + (this.lexical.associatedLabelText ? 0.35 : 0.0);
+            let s4 = (this.spatial.visibility === 'VISIBLE' ? 1.0 : this.spatial.visibility === 'OCCLUDED' ? 0.5 : 0.0);
+
+            this.confidenceScore = Math.round(((0.45 * s1) + (0.25 * s2) + (0.20 * s3) + (0.10 * s4)) * 1000) / 1000;
+        }
+
         deepFreeze(this);
+    }
+
+    get elementId() {
+        return this.semantic?.htmlId || this.element?.id || null;
+    }
+
+    get tagPath() {
+        return this.structural?.localNeighborhood || (this.hierarchy?.ancestors ? this.hierarchy.ancestors.map(a => a.tagName).reverse().join('>') : '') || '';
     }
 
     static computeFNV1a(str) {
@@ -136,7 +221,13 @@ export class ElementIdentityDocument {
             semantics: { ...this.semantics },
             position: { ...this.position },
             state: { ...this.state },
-            fingerprint: { ...this.fingerprint }
+            fingerprint: { ...this.fingerprint },
+            confidenceScore: this.confidenceScore,
+            anomalyFlags: this.anomalyFlags,
+            semantic: { ...this.semantic },
+            structural: { ...this.structural, componentAncestry: [...this.structural.componentAncestry] },
+            lexical: { ...this.lexical },
+            spatial: { ...this.spatial }
         };
     }
 

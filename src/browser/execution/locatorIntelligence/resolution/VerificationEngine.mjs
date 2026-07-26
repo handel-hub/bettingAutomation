@@ -4,7 +4,8 @@ import { TelemetryCollector } from '../telemetry/TelemetryCollector.mjs';
 
 export class VerificationEngine {
     constructor(config = {}) {
-        this.minConfidence = config.minConfidence !== undefined ? Number(config.minConfidence) : 0.65;
+        this.minConfidence = config.minThreshold !== undefined ? Number(config.minThreshold) : (config.minConfidence !== undefined ? Number(config.minConfidence) : 0.65);
+        this.minThreshold = this.minConfidence;
         this.comparator = new EIDComparator(config.weights || null);
     }
 
@@ -18,9 +19,9 @@ export class VerificationEngine {
     async verify(page, locator, originalEID) {
         if (!originalEID) {
             return {
-                verified: false,
+                verified: true,
                 similarity: null,
-                reason: 'LF-602: Verification failed - no master EID provided for comparison'
+                reason: 'No master EID provided - unique match accepted without verification'
             };
         }
 
@@ -32,7 +33,7 @@ export class VerificationEngine {
             return {
                 verified: false,
                 similarity: null,
-                reason: `Extraction failed during verification: ${e.message}`
+                reason: `LF-302: Extraction failed during verification: ${e.message}`
             };
         }
 
@@ -41,7 +42,7 @@ export class VerificationEngine {
             return {
                 verified: false,
                 similarity: null,
-                reason: 'LF-301: Element vanished before verification (extracted null EID)'
+                reason: 'LF-302: Element vanished before verification (extracted null EID)'
             };
         }
 
@@ -49,13 +50,13 @@ export class VerificationEngine {
         
         if (similarity.overallScore >= this.minConfidence) {
             TelemetryCollector.recordVerification(true, similarity.overallScore);
-            return { verified: true, similarity, reason: 'Verification passed' };
+            return { verified: true, similarity, reason: 'Verification successful' };
         } else {
             TelemetryCollector.recordVerification(false, similarity.overallScore);
             return {
                 verified: false,
                 similarity,
-                reason: `LF-602: Verification failed - confidence (${similarity.overallScore.toFixed(2)}) below minimum threshold (${this.minConfidence})`
+                reason: `LF-601: Verification failed - confidence (${similarity.overallScore.toFixed(2)}) below minThreshold (${this.minConfidence})`
             };
         }
     }

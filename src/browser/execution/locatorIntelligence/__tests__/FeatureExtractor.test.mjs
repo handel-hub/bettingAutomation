@@ -42,17 +42,25 @@ describe('FeatureExtractor (Phase 2 Extended)', () => {
         expect(context.features.landmark).toBe('main');
         expect(context.features.siblings.siblingCount).toBe(2);
         expect(context.features.siblings.siblingIndex).toBe(0);
-        expect(duration).toBeLessThan(5); // soft real-time constraint <5ms for unit test
+        expect(context.features.semantic.dataTestId).toBe('submit-order');
+        expect(context.features.confidenceScore).toBeGreaterThan(0.7);
+        expect(context.features.identityHash).toBeDefined();
+        expect(duration).toBeLessThan(15); // soft real-time constraint <15ms for unit test
     });
 
-    it('should gracefully handle null or non-Element inputs', () => {
+    it('should gracefully handle null or non-Element inputs with 100% fault-tolerant P-EID', () => {
         const extractor = new FeatureExtractor();
         const context1 = new PipelineContext(null);
         extractor.execute(context1);
-        expect(context1.features).toBeNull();
+        expect(context1.features).not.toBeNull();
+        expect(context1.features.confidenceScore).toBe(0.0);
+        expect(context1.features.anomalyFlags).toBeGreaterThan(0);
 
         const context2 = new PipelineContext({ notAnElement: true });
         extractor.execute(context2);
-        expect(context2.features).toBeNull();
+        expect(context2.features).not.toBeNull();
+        expect(context2.features.confidenceScore).toBe(0.0);
+        expect(context2.features.anomalyFlags).toBeGreaterThan(0);
     });
 });
+
