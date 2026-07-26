@@ -17,7 +17,9 @@
                         window.__notifyNavigation({ 
                             type: 'pushState', 
                             url: location.href, 
-                            epoch: window.__ANTIGRAVITY_EPOCH__ 
+                            epoch: window.__ANTIGRAVITY_EPOCH__,
+                            timestamp: Date.now(),
+                            monotonicUs: Math.round(performance.now() * 1000)
                         });
                     }
                 };
@@ -28,7 +30,9 @@
                         window.__notifyNavigation({ 
                             type: 'replaceState', 
                             url: location.href, 
-                            epoch: window.__ANTIGRAVITY_EPOCH__ 
+                            epoch: window.__ANTIGRAVITY_EPOCH__,
+                            timestamp: Date.now(),
+                            monotonicUs: Math.round(performance.now() * 1000)
                         });
                     }
                 };
@@ -38,7 +42,9 @@
                         window.__notifyNavigation({ 
                             type: 'popstate', 
                             url: location.href, 
-                            epoch: window.__ANTIGRAVITY_EPOCH__ 
+                            epoch: window.__ANTIGRAVITY_EPOCH__,
+                            timestamp: Date.now(),
+                            monotonicUs: Math.round(performance.now() * 1000)
                         });
                     }
                 });
@@ -73,7 +79,7 @@
             LI_RECOVERY_HIERARCHY: { default: false, dependsOn: ['LI_CONFIDENCE_GATE'], description: 'Use tiered recovery instead of flat retry' },
             LI_RESOLUTION_MEMORY: { default: false, dependsOn: ['LI_VERIFICATION'], description: 'Enable resolution caching' },
             LI_SHADOW_MODE: { default: false, dependsOn: [], description: 'Run new pipeline in parallel with legacy for comparison' },
-            V3_SCHEMA_ENFORCEMENT_MODE: { default: 'SHADOW', dependsOn: [], description: 'Schema enforcement mode: DISABLED, SHADOW, or STRICT' },
+            V3_SCHEMA_ENFORCEMENT_MODE: { default: 'STRICT', dependsOn: [], description: 'Schema enforcement mode: DISABLED, SHADOW, or STRICT' },
             V3_DECOUPLE_HEALTH_MONITOR: { default: false, dependsOn: [], description: 'Decouple HealthMonitor from command execution failure state' },
             V3_ENABLE_STANDBY_POOL: { default: false, dependsOn: [], description: 'Enable WARM_STANDBY browser failover pool' },
             V3_ENABLE_GLOBAL_TTL: { default: false, dependsOn: [], description: 'Enable 1,500ms global distributed deadline budgeting' }
@@ -117,6 +123,9 @@
 
         this._flags = newFlags;
         this._initialized = true;
+        if (this._onUpdate) {
+            try { this._onUpdate(); } catch (e) {}
+        }
     }
 
     isEnabled(flagName) {
@@ -168,7 +177,7 @@ class RankingResult {
 
 
 class LocatorCandidate {
-    constructor({ strategy, locator, generatedBy = [], reason = '', features = {}, metadata = {}, rank = 0 }) {
+    constructor({ strategy, locator, generatedBy = [], reason = '', features = {}, metadata = {}, rank = 0, identityDocument = null, probabilisticEID = null }) {
         this.id = 'lc-' + Math.random().toString(16).substring(2, 10);
         this.strategy = strategy;
         this.locator = locator;
@@ -178,7 +187,7 @@ class LocatorCandidate {
         this.metadata = metadata;
         this.rank = rank;
         this.scoringVector = null; // Forward compatibility for Phase 4+ ScoringVector
-        this.identityDocument = null; // Forward compatibility for Phase 1+ EID
+        this.identityDocument = identityDocument || probabilisticEID || null; // Forward compatibility for Phase 1+ EID / P-EID
         
         // Complex state objects
         this.validation = new ValidationResult();
@@ -197,7 +206,16 @@ class LocatorCandidate {
             rankedAt: null
         };
     }
+
+    get probabilisticEID() {
+        return this.identityDocument;
+    }
+
+    set probabilisticEID(val) {
+        this.identityDocument = val;
+    }
 }
+
 
 
 function deepFreeze(obj) {
@@ -211,6 +229,15 @@ function deepFreeze(obj) {
     }
     return obj;
 }
+const ValidationAnomalies = {
+    NONE: 0,
+    SPARSE_SEMANTICS: 1 << 0,       // (1) Vector 1 score == 0 (no testid, accname, or role)
+    VOLATILE_ID_DETECTED: 1 << 1,   // (2) HTML id matched ephemeral framework regex (React/Vue/Tailwind)
+    SHADOW_DOM_ENCAPSULATED: 1 << 2,// (4) Element resides within one or more ShadowRoot boundaries
+    IFRAME_CROSS_ORIGIN: 1 << 3,    // (8) Element is encapsulated in a cross-origin or sandboxed frame
+    DYNAMIC_TEXT_TRUNCATED: 1 << 4, // (16) Text content exceeded 64 chars and was truncated
+    BOUNDING_BOX_ZERO: 1 << 5       // (32) Element has 0 width or height (hidden or display:none)
+};
 class ElementIdentityDocument {
     constructor(data = {}) {
         this.version = data.version || '1.0.0';
@@ -270,7 +297,7 @@ class ElementIdentityDocument {
         };
 
         // Compute fingerprint hashes if not already provided
-        const structuralHash = data.fingerprint?.structuralHash || ElementIdentityDocument.computeStructuralHash(this.hierarchy);
+        const structuralHash = data.fingerprint?.structuralHash || data.structural?.structuralHash || ElementIdentityDocument.computeStructuralHash(this.hierarchy);
         const semanticHash = data.fingerprint?.semanticHash || ElementIdentityDocument.computeSemanticHash(this.element, this.semantics);
         const contentHash = data.fingerprint?.contentHash || ElementIdentityDocument.computeContentHash(this.text);
 
@@ -282,7 +309,82 @@ class ElementIdentityDocument {
 
         this.identityHash = data.identityHash || ElementIdentityDocument.computeIdentityHash(structuralHash, semanticHash, contentHash);
 
+        this.anomalyFlags = data.anomalyFlags !== undefined ? data.anomalyFlags : 0;
+
+        // Vector 1: Semantic Synthesis
+        this.semantic = {
+            dataTestId: data.semantic?.dataTestId || data.element?.dataAttributes?.['data-testid'] || data.element?.dataAttributes?.['data-qa'] || data.element?.dataAttributes?.['data-cy'] || null,
+            accessibleName: data.semantic?.accessibleName !== undefined ? data.semantic.accessibleName : (data.element?.ariaAttributes?.['aria-label'] || data.element?.value || (data.text?.exact ? data.text.exact.substring(0, 64) : null)),
+            ariaRole: data.semantic?.ariaRole !== undefined ? data.semantic.ariaRole : (data.element?.role || data.element?.tagName?.toLowerCase() || ''),
+            nameAttribute: data.semantic?.nameAttribute !== undefined ? data.semantic.nameAttribute : (data.element?.name || null),
+            htmlId: data.semantic?.htmlId !== undefined ? data.semantic.htmlId : (data.element?.id || null)
+        };
+
+        // Vector 2: Structural Synthesis
+        const ancestryList = data.structural?.componentAncestry || (data.hierarchy?.ancestors ? data.hierarchy.ancestors.map(a => a.tagName?.toLowerCase()).filter(t => t && t.includes('-')) : []);
+        const parentTag = data.structural?.parentContainerTag !== undefined ? data.structural.parentContainerTag : (data.hierarchy?.ancestors ? (data.hierarchy.ancestors.find(a => ['form', 'nav', 'header', 'footer', 'main', 'article'].includes(a.tagName?.toLowerCase()))?.tagName?.toLowerCase() || null) : null);
+        const neighborhood = data.structural?.localNeighborhood || `${data.hierarchy?.ancestors?.[0]?.tagName?.toLowerCase() || 'root'}>${data.element?.tagName?.toLowerCase() || 'element'}`;
+        const siblingIndex = data.structural?.siblingIndex !== undefined ? data.structural.siblingIndex : (data.hierarchy?.siblingIndex || 0);
+        const domDepth = data.structural?.domDepth !== undefined ? data.structural.domDepth : (data.hierarchy?.depth || 0);
+
+        this.structural = {
+            componentAncestry: Array.isArray(ancestryList) ? [...ancestryList] : [],
+            parentContainerTag: parentTag,
+            localNeighborhood: neighborhood,
+            siblingIndex,
+            domDepth,
+            structuralHash
+        };
+
+        // Vector 3: Lexical Synthesis
+        const normText = data.lexical?.normalizedText !== undefined ? data.lexical.normalizedText : (data.text?.normalized ? data.text.normalized.substring(0, 64) : null);
+        const placeholder = data.lexical?.placeholder !== undefined ? data.lexical.placeholder : (data.element?.dataAttributes?.['placeholder'] || null);
+        const labelText = data.lexical?.associatedLabelText !== undefined ? data.lexical.associatedLabelText : null;
+
+        this.lexical = {
+            normalizedText: normText || null,
+            placeholder: placeholder || null,
+            associatedLabelText: labelText || null
+        };
+
+        // Vector 4: Spatial Synthesis
+        const viewportQuadrant = data.spatial?.viewportQuadrant || data.position?.viewportQuadrant || 'CENTER';
+        const aspectRatio = data.spatial?.aspectRatio !== undefined ? data.spatial.aspectRatio : 1.0;
+        const visibility = data.spatial?.visibility || (data.state?.visible ? 'VISIBLE' : 'HIDDEN');
+
+        this.spatial = {
+            viewportQuadrant,
+            aspectRatio,
+            visibility
+        };
+
+        if (typeof data.confidenceScore === 'number' && !isNaN(data.confidenceScore)) {
+            this.confidenceScore = data.confidenceScore;
+        } else if (typeof data.confidence === 'number' && !isNaN(data.confidence)) {
+            this.confidenceScore = data.confidence;
+        } else {
+            let s1 = 0.0;
+            if (this.semantic.dataTestId) s1 = 1.0;
+            else if (this.semantic.accessibleName && this.semantic.ariaRole) s1 = 0.85;
+            else if (this.semantic.htmlId) s1 = 0.50;
+            else if (this.semantic.nameAttribute) s1 = 0.40;
+
+            let s2 = (this.structural.componentAncestry.length > 0 ? 0.40 : 0.0) + (this.structural.parentContainerTag ? 0.35 : 0.0) + 0.25;
+            let s3 = (this.lexical.normalizedText ? 0.65 : 0.0) + (this.lexical.associatedLabelText ? 0.35 : 0.0);
+            let s4 = (this.spatial.visibility === 'VISIBLE' ? 1.0 : this.spatial.visibility === 'OCCLUDED' ? 0.5 : 0.0);
+
+            this.confidenceScore = Math.round(((0.45 * s1) + (0.25 * s2) + (0.20 * s3) + (0.10 * s4)) * 1000) / 1000;
+        }
+
         deepFreeze(this);
+    }
+
+    get elementId() {
+        return this.semantic?.htmlId || this.element?.id || null;
+    }
+
+    get tagPath() {
+        return this.structural?.localNeighborhood || (this.hierarchy?.ancestors ? this.hierarchy.ancestors.map(a => a.tagName).reverse().join('>') : '') || '';
     }
 
     static computeFNV1a(str) {
@@ -337,7 +439,13 @@ class ElementIdentityDocument {
             semantics: { ...this.semantics },
             position: { ...this.position },
             state: { ...this.state },
-            fingerprint: { ...this.fingerprint }
+            fingerprint: { ...this.fingerprint },
+            confidenceScore: this.confidenceScore,
+            anomalyFlags: this.anomalyFlags,
+            semantic: { ...this.semantic },
+            structural: { ...this.structural, componentAncestry: [...this.structural.componentAncestry] },
+            lexical: { ...this.lexical },
+            spatial: { ...this.spatial }
         };
     }
 
@@ -519,20 +627,21 @@ class PipelineStep {
 
 
 
+
 class FeatureExtractor extends PipelineStep {
     constructor() {
         super('FeatureExtractor');
     }
 
     execute(context) {
-        const el = context.element;
+        const el = context?.element;
         const isElement = el && typeof el === 'object' && (
             (typeof Element !== 'undefined' && el instanceof Element) || 
             el.nodeType === 1 || 
             typeof el.getAttribute === 'function'
         );
         if (!isElement) {
-            context.features = null;
+            context.features = FeatureExtractor.getEmptyProbabilisticIdentity();
             return;
         }
         
@@ -631,6 +740,15 @@ class FeatureExtractor extends PipelineStep {
         features.sectionHeading = this._extractSectionHeading(el, features.ancestry);
         features.componentRoot = this._extractComponentRoot(el, features.ancestry);
         features.position = this._extractPosition(el, features.rect);
+
+        const probId = FeatureExtractor.extractProbabilisticIdentity(el, context.composedPath, context);
+        features.semantic = probId.semantic;
+        features.structural = probId.structural;
+        features.lexical = probId.lexical;
+        features.spatial = probId.spatial;
+        features.confidenceScore = probId.confidenceScore;
+        features.anomalyFlags = probId.anomalyFlags;
+        features.identityHash = probId.identityHash;
 
         context.features = features;
     }
@@ -814,6 +932,308 @@ class FeatureExtractor extends PipelineStep {
         } catch (e) {}
 
         return pos;
+    }
+
+    static getEmptyProbabilisticIdentity() {
+        return {
+            id: '',
+            className: '',
+            tagName: '',
+            text: '',
+            dataOps: {},
+            ariaLabel: '',
+            role: '',
+            href: '',
+            src: '',
+            alt: '',
+            placeholder: '',
+            name: '',
+            type: '',
+            value: '',
+            rect: { left: 0, top: 0, width: 0, height: 0 },
+            isIntersecting: false,
+            isIframe: false,
+            dataAttributes: {},
+            ariaAttributes: {},
+            ancestry: [],
+            siblings: { siblingIndex: 0, siblingCount: 0, list: [] },
+            landmark: null,
+            sectionHeading: null,
+            componentRoot: null,
+            position: { viewportQuadrant: 'CENTER', isSticky: false, isFixed: false, zIndex: 0 },
+            semantic: { dataTestId: null, accessibleName: null, ariaRole: '', nameAttribute: null, htmlId: null },
+            structural: { componentAncestry: [], parentContainerTag: null, localNeighborhood: 'root>unknown', siblingIndex: 0, domDepth: 0, structuralHash: '00000000' },
+            lexical: { normalizedText: null, placeholder: null, associatedLabelText: null },
+            spatial: { viewportQuadrant: 'CENTER', aspectRatio: 1.0, visibility: 'HIDDEN' },
+            confidenceScore: 0.0,
+            anomalyFlags: (ValidationAnomalies.SPARSE_SEMANTICS | ValidationAnomalies.BOUNDING_BOX_ZERO),
+            identityHash: '00000000'
+        };
+    }
+
+    static _getImplicitRole(node) {
+        if (!node || !node.tagName) return '';
+        const tag = (node.tagName || node.nodeName || '').toLowerCase();
+        const type = (node.getAttribute && node.getAttribute('type')) ? String(node.getAttribute('type')).toLowerCase() : '';
+        if (tag === 'a' || tag === 'area') return 'link';
+        if (tag === 'button') return 'button';
+        if (tag === 'input') {
+            if (['button', 'submit', 'reset'].includes(type)) return 'button';
+            if (type === 'checkbox') return 'checkbox';
+            if (type === 'radio') return 'radio';
+            if (type === 'range') return 'slider';
+            if (type === 'search') return 'searchbox';
+            return 'textbox';
+        }
+        if (tag === 'select') return 'combobox';
+        if (tag === 'textarea') return 'textbox';
+        if (tag === 'form') return 'form';
+        if (tag === 'nav') return 'navigation';
+        if (tag === 'header') return 'banner';
+        if (tag === 'footer') return 'contentinfo';
+        if (tag === 'main') return 'main';
+        if (tag === 'aside') return 'complementary';
+        if (tag === 'section') return 'region';
+        if (tag === 'img') return 'img';
+        if (/^h[1-6]$/.test(tag)) return 'heading';
+        return '';
+    }
+
+    static _extractCleanText(el) {
+        if (!el) return '';
+        let textContent = '';
+        try {
+            if (el.childNodes && el.childNodes.length > 0) {
+                for (const node of el.childNodes) {
+                    if (node.nodeType === 3 || node.nodeName === '#text') {
+                        textContent += node.textContent || '';
+                    } else if (node.nodeType === 1 || (node.nodeName && !node.nodeName.startsWith('#'))) {
+                        const tag = (node.nodeName || '').toLowerCase();
+                        if (tag !== 'script' && tag !== 'style') {
+                            textContent += node.innerText || node.textContent || '';
+                        }
+                    }
+                }
+            } else if (el.textContent || el.innerText) {
+                textContent = el.innerText || el.textContent || '';
+            }
+        } catch (e) {}
+        return textContent.trim().replace(/\s+/g, ' ');
+    }
+
+    static extractProbabilisticIdentity(node, composedPath = [], context = null) {
+        if (!node || typeof node !== 'object' || ((typeof Element === 'undefined' || !(node instanceof Element)) && node.nodeType !== 1 && typeof node.getAttribute !== 'function')) {
+            return FeatureExtractor.getEmptyProbabilisticIdentity();
+        }
+
+        let flags = 0;
+        const getAttr = (n, attr) => {
+            try {
+                if (!n) return null;
+                if (typeof n.getAttribute === 'function') {
+                    const res = n.getAttribute(attr);
+                    if (res !== null && res !== undefined) return String(res);
+                }
+                if (n.attributes && n.attributes[attr]) return String(n.attributes[attr].value || n.attributes[attr]);
+            } catch (e) {}
+            return null;
+        };
+
+        // Vector 1: Semantic Synthesis
+        const dataTestId = getAttr(node, 'data-testid') || getAttr(node, 'data-qa') || getAttr(node, 'data-cy') || getAttr(node, 'data-id') || null;
+        let accessibleName = getAttr(node, 'aria-label') || getAttr(node, 'aria-labelledby') || node.title || getAttr(node, 'alt') || null;
+        if (!accessibleName && (node.value !== undefined || getAttr(node, 'value'))) {
+            accessibleName = String(node.value !== undefined ? node.value : getAttr(node, 'value'));
+        }
+        if (!accessibleName) {
+            const txt = FeatureExtractor._extractCleanText(node);
+            if (txt) accessibleName = txt;
+        }
+        if (accessibleName && accessibleName.length > 64) {
+            accessibleName = accessibleName.substring(0, 64);
+            flags |= ValidationAnomalies.DYNAMIC_TEXT_TRUNCATED;
+        }
+        const ariaRole = getAttr(node, 'role') || FeatureExtractor._getImplicitRole(node) || '';
+        const nameAttribute = getAttr(node, 'name') || null;
+        const rawId = node.id || getAttr(node, 'id') || null;
+        let validId = null;
+        if (rawId) {
+            if (/^(:?r[0-9a-z]+|uuid-|headlessui|el-[0-9]+|ember[0-9]+|ng-[0-9]+|vue-[0-9]+)/i.test(rawId)) {
+                flags |= ValidationAnomalies.VOLATILE_ID_DETECTED;
+            } else {
+                validId = rawId;
+            }
+        }
+
+        let s1 = 0.0;
+        if (dataTestId !== null) s1 = 1.0;
+        else if (accessibleName !== null && ariaRole !== '') s1 = 0.85;
+        else if (validId !== null) s1 = 0.50;
+        else if (nameAttribute !== null) s1 = 0.40;
+        if (s1 === 0.0) {
+            flags |= ValidationAnomalies.SPARSE_SEMANTICS;
+        }
+
+        const semantic = { dataTestId, accessibleName, ariaRole, nameAttribute, htmlId: rawId };
+
+        // Vector 2: Structural Synthesis
+        const ancestryList = [];
+        let curr = node.parentElement || node.parentNode;
+        let depth = 0;
+        let parentTag = null;
+        while (curr && depth < 10) {
+            const tag = (curr.nodeName || curr.tagName || '').toLowerCase();
+            if (!tag || tag.startsWith('#') || tag === 'document' || tag === 'window') break;
+            if (tag.includes('-')) {
+                ancestryList.push(tag);
+            }
+            if (parentTag === null && ['form', 'nav', 'header', 'footer', 'main', 'article', 'section', 'aside', 'dialog'].includes(tag)) {
+                parentTag = tag;
+            }
+            try {
+                if ((typeof ShadowRoot !== 'undefined' && curr instanceof ShadowRoot) || curr.toString() === '[object ShadowRoot]' || curr.nodeType === 11 || curr.host) {
+                    flags |= ValidationAnomalies.SHADOW_DOM_ENCAPSULATED;
+                }
+            } catch (e) {}
+            curr = curr.parentElement || curr.parentNode;
+            depth++;
+        }
+
+        if ((node.nodeName || '').toLowerCase() === 'iframe' || (typeof window !== 'undefined' && node.ownerDocument && node.ownerDocument !== window.document)) {
+            flags |= ValidationAnomalies.IFRAME_CROSS_ORIGIN;
+        }
+
+        const parentTagStr = node.parentElement || node.parentNode ? ((node.parentElement || node.parentNode).nodeName || (node.parentElement || node.parentNode).tagName) : 'root';
+        const neighborhood = `${(parentTagStr || 'root').toLowerCase()}>${(node.nodeName || node.tagName || '').toLowerCase()}`;
+
+        let siblingIndex = 0;
+        const parent = node.parentElement || node.parentNode;
+        if (parent) {
+            try {
+                const list = parent.children ? Array.from(parent.children) : (parent.childNodes ? Array.from(parent.childNodes) : []);
+                const myTag = (node.nodeName || node.tagName || '').toLowerCase();
+                const myRole = getAttr(node, 'role') || '';
+                for (const child of list) {
+                    if (child === node) break;
+                    if (child.nodeType !== 1 && child !== node) continue;
+                    const cTag = (child.nodeName || child.tagName || '').toLowerCase();
+                    const cRole = getAttr(child, 'role') || '';
+                    if (cTag === myTag && cRole === myRole) {
+                        siblingIndex++;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        const hashStr = ancestryList.join('/') + '|' + neighborhood + '|' + depth;
+        const structuralHash = ElementIdentityDocument.computeFNV1a(hashStr);
+        const s2 = (ancestryList.length > 0 ? 0.40 : 0.0) + (parentTag !== null ? 0.35 : 0.0) + 0.25;
+
+        const structural = {
+            componentAncestry: ancestryList,
+            parentContainerTag: parentTag,
+            localNeighborhood: neighborhood,
+            siblingIndex,
+            domDepth: depth,
+            structuralHash
+        };
+
+        // Vector 3: Lexical Synthesis
+        let rawText = FeatureExtractor._extractCleanText(node);
+        if (rawText.length > 64) {
+            rawText = rawText.substring(0, 64);
+            flags |= ValidationAnomalies.DYNAMIC_TEXT_TRUNCATED;
+        }
+        const normText = rawText.length > 0 ? rawText.toLowerCase() : null;
+        const placeholder = getAttr(node, 'placeholder') || null;
+        let labelText = null;
+        try {
+            const targetId = validId || rawId;
+            if (targetId && node.ownerDocument && typeof node.ownerDocument.querySelector === 'function') {
+                const labelEl = node.ownerDocument.querySelector(`label[for="${targetId}"]`);
+                if (labelEl) {
+                    const lTxt = FeatureExtractor._extractCleanText(labelEl);
+                    if (lTxt) labelText = lTxt;
+                }
+            }
+            if (!labelText) {
+                let closestLabel = null;
+                if (typeof node.closest === 'function') closestLabel = node.closest('label');
+                else if (node.parentElement && (node.parentElement.nodeName || '').toLowerCase() === 'label') closestLabel = node.parentElement;
+                if (closestLabel && closestLabel !== node) {
+                    const lTxt = FeatureExtractor._extractCleanText(closestLabel);
+                    if (lTxt) labelText = lTxt;
+                }
+            }
+            if (labelText && labelText.length > 64) {
+                labelText = labelText.substring(0, 64);
+                flags |= ValidationAnomalies.DYNAMIC_TEXT_TRUNCATED;
+            }
+        } catch (e) {}
+        const s3 = (normText !== null ? 0.65 : 0.0) + (labelText !== null ? 0.35 : 0.0);
+        const lexical = { normalizedText: normText, placeholder, associatedLabelText: labelText };
+
+        // Vector 4: Spatial Synthesis
+        let rect = { left: 0, top: 0, width: 0, height: 0 };
+        try {
+            if (typeof node.getBoundingClientRect === 'function') {
+                const r = node.getBoundingClientRect();
+                rect = { left: r.left || 0, top: r.top || 0, width: r.width || 0, height: r.height || 0 };
+            }
+        } catch (e) {}
+        if (rect.width === 0 || rect.height === 0) {
+            flags |= ValidationAnomalies.BOUNDING_BOX_ZERO;
+        }
+        const aspectRatio = Math.round((rect.width / (rect.height || 1)) * 100) / 100;
+        let viewportQuadrant = 'CENTER';
+        try {
+            const winW = (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 1920;
+            const winH = (typeof window !== 'undefined' && window.innerHeight) ? window.innerHeight : 1080;
+            const midX = rect.left + rect.width / 2;
+            const midY = rect.top + rect.height / 2;
+            const isTop = midY < winH / 2;
+            const isLeft = midX < winW / 2;
+            if (rect.width > 0 && rect.height > 0) {
+                viewportQuadrant = `${isTop ? 'TOP' : 'BOTTOM'}_${isLeft ? 'LEFT' : 'RIGHT'}`;
+            }
+        } catch (e) {}
+        let visibility = 'VISIBLE';
+        if (rect.width === 0 || rect.height === 0) {
+            visibility = 'HIDDEN';
+        } else {
+            try {
+                const style = (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') ? window.getComputedStyle(node) : (node.style || {});
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || style.opacity === 0) {
+                    visibility = 'HIDDEN';
+                } else if (typeof document !== 'undefined' && typeof document.elementFromPoint === 'function' && typeof window !== 'undefined') {
+                    const midX = rect.left + rect.width / 2;
+                    const midY = rect.top + rect.height / 2;
+                    if (midX >= 0 && midY >= 0 && midX <= window.innerWidth && midY <= window.innerHeight) {
+                        const topEl = document.elementFromPoint(midX, midY);
+                        if (topEl && topEl !== node && !node.contains(topEl) && !topEl.contains(node)) {
+                            visibility = 'OCCLUDED';
+                        }
+                    }
+                }
+            } catch (e) {}
+        }
+        const s4 = (visibility === 'VISIBLE' ? 1.0 : visibility === 'OCCLUDED' ? 0.5 : 0.0);
+        const spatial = { viewportQuadrant, aspectRatio, visibility };
+
+        // Score & Hash Convergence
+        const confidenceScore = Math.round(((0.45 * s1) + (0.25 * s2) + (0.20 * s3) + (0.10 * s4)) * 1000) / 1000;
+        const idStr = [dataTestId || '', accessibleName || '', ariaRole || '', structuralHash || '', normText || ''].join('###');
+        const identityHash = ElementIdentityDocument.computeFNV1a(idStr);
+
+        return {
+            semantic,
+            structural,
+            lexical,
+            spatial,
+            confidenceScore,
+            anomalyFlags: flags,
+            identityHash
+        };
     }
 }
 
@@ -2016,6 +2436,7 @@ class AdditiveRankingEngine extends PipelineStep {
 
 
 
+
 class LocatorSerializer extends PipelineStep {
     constructor() {
         super('LocatorSerializer');
@@ -2072,8 +2493,59 @@ class LocatorSerializer extends PipelineStep {
                 }
             }
         };
+
+        const eid = context.output.identityDocument;
+        const eidHash = TelemetryCollector.computeEIDHash(eid);
+        let valRes4 = 'PASS';
+        let err4 = null;
+        
+        const isEidValid = eid && (eid.confidenceScore === undefined || eid.confidenceScore > 0) && (eid.identityHash || eid.fingerprint);
+        
+        if (!isEidValid) {
+            valRes4 = 'FAIL_LF602';
+            err4 = { errorCode: 'LF-602', errorMessage: 'Payload Assembly missing or invalid identityDocument at Stage 4' };
+        }
+        TelemetryCollector.recordLifecycleEvent({
+            traceId: context.metadata?.traceId || 'tr-unknown',
+            spanId: 'sp-04',
+            parentSpanId: 'sp-02',
+            stageSequence: 4,
+            stageName: 'PAYLOAD_ASSEMBLED',
+            component: 'LocatorSerializer.mjs',
+            method: 'execute',
+            timestamp: Date.now(),
+            interactionId: context.metadata?.interactionId || 'ia-unknown',
+            interactionType: context.metadata?.interactionType || 'CLICK',
+            eidPresent: !!eid,
+            eidHash,
+            validationResult: valRes4,
+            errorDetails: err4
+        });
+
+        try {
+            const serializedStr = JSON.stringify(context.output);
+            TelemetryCollector.recordLifecycleEvent({
+                traceId: context.metadata?.traceId || 'tr-unknown',
+                spanId: 'sp-05',
+                parentSpanId: 'sp-04',
+                stageSequence: 5,
+                stageName: 'WIRE_SERIALIZED',
+                component: 'LocatorSerializer.mjs',
+                method: 'execute',
+                timestamp: Date.now(),
+                interactionId: context.metadata?.interactionId || 'ia-unknown',
+                interactionType: context.metadata?.interactionType || 'CLICK',
+                payloadSize: serializedStr.length,
+                serializationSize: serializedStr.length,
+                eidPresent: !!eid,
+                eidHash
+            });
+        } catch (e) {
+            // Ignore serialization error in telemetry calculation
+        }
     }
 }
+
 
 
 class RollingWindow {
@@ -2203,8 +2675,12 @@ class MetricsRegistry {
         // Phase 11: Resolution Memory
         this.memory = {
             hits: 0,
-            misses: 0
+            misses: 0,
+            evictions: 0
         };
+
+        // Telemetry-Driven Failure Localization (Lifecycle Trace Sink)
+        this.lifecycleEvents = [];
 
         // Failure Metrics (Map of LF Code -> Count)
         this.failures = new Map();
@@ -2335,6 +2811,10 @@ class MetricsRegistry {
                 averageInjectionLatency: this.epochSync.injectionLatency.average,
                 averageEpochWaitDuration: this.epochSync.epochWaitDuration.average,
                 averageEpochDrift: this.epochSync.epochDrift.average
+            },
+            lifecycle: {
+                totalEvents: this.lifecycleEvents.length,
+                recentEvents: this.lifecycleEvents.slice(-20)
             }
         };
     }
@@ -2557,6 +3037,18 @@ class TelemetryCollectorImpl {
         } catch (e) {}
     }
 
+    recordMemoryHit() {
+        try { this.registry.memory.hits++; } catch (e) {}
+    }
+
+    recordMemoryMiss() {
+        try { this.registry.memory.misses++; } catch (e) {}
+    }
+
+    recordMemoryEviction() {
+        try { if (this.registry.memory.evictions !== undefined) this.registry.memory.evictions++; } catch (e) {}
+    }
+
     /**
      * Records telemetry from StaleEpoch aborts.
      */
@@ -2724,6 +3216,90 @@ class TelemetryCollectorImpl {
             // Passive - ignore errors
         }
     }
+
+    /**
+     * Computes a deterministic 64-character hex cryptographic hash of a normalized EID object.
+     * Works synchronously in both Browser and Node.js environments without async crypto dependencies.
+     * @param {object} eid
+     * @returns {string|null}
+     */
+    computeEIDHash(eid) {
+        if (!eid || typeof eid !== 'object') return null;
+        try {
+            const str = typeof eid.serialize === 'function' ? JSON.stringify(eid.serialize()) : JSON.stringify(eid);
+            let h1 = 0xdeadbeef ^ str.length, h2 = 0x41c6ce57 ^ str.length, h3 = 0x811c9dc5 ^ str.length, h4 = 0xc761c23c ^ str.length;
+            for (let i = 0, ch; i < str.length; i++) {
+                ch = str.charCodeAt(i);
+                h1 = Math.imul(h1 ^ ch, 2654435761);
+                h2 = Math.imul(h2 ^ ch, 1597334677);
+                h3 = Math.imul(h3 ^ ch, 3266489917);
+                h4 = Math.imul(h4 ^ ch, 668265263);
+            }
+            h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489917);
+            h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489917);
+            h3 = Math.imul(h3 ^ (h3 >>> 16), 2246822507) ^ Math.imul(h4 ^ (h4 >>> 13), 3266489917);
+            h4 = Math.imul(h4 ^ (h4 >>> 16), 2246822507) ^ Math.imul(h3 ^ (h3 >>> 13), 3266489917);
+            const hex = (n) => (n >>> 0).toString(16).padStart(8, '0');
+            return hex(h1) + hex(h2) + hex(h3) + hex(h4) + hex(h1 ^ h3) + hex(h2 ^ h4) + hex(h1 ^ h4) + hex(h2 ^ h3);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /**
+     * Emits and stores a structured telemetry lifecycle span event.
+     * Enforces schema normalization and forwards across browser-to-node boundary if in injected browser script.
+     * @param {object} event
+     */
+    recordLifecycleEvent(event) {
+        try {
+            if (!event) return;
+            const normalized = {
+                eventId: event.eventId || ('ev-' + Math.random().toString(16).slice(2, 10)),
+                traceId: event.traceId || 'tr-unknown',
+                spanId: event.spanId || ('sp-' + Math.random().toString(16).slice(2, 10)),
+                parentSpanId: event.parentSpanId || null,
+                stageSequence: typeof event.stageSequence === 'number' ? event.stageSequence : 0,
+                stageName: event.stageName || 'UNKNOWN_STAGE',
+                component: event.component || 'Unknown.mjs',
+                method: event.method || 'unknown',
+                timestamp: typeof event.timestamp === 'number' ? event.timestamp : Date.now(),
+                browserId: event.browserId || (typeof window !== 'undefined' ? 'master' : 'node_controller'),
+                epoch: typeof event.epoch === 'number' ? event.epoch : (typeof window !== 'undefined' ? (window.__ANTIGRAVITY_EPOCH__ || 0) : 0),
+                interactionId: event.interactionId || 'ia-unknown',
+                commandId: event.commandId || null,
+                interactionType: event.interactionType || 'CLICK',
+                payloadSize: typeof event.payloadSize === 'number' ? event.payloadSize : 0,
+                eidPresent: !!event.eidPresent,
+                eidHash: event.eidHash || null,
+                serializationSize: typeof event.serializationSize === 'number' ? event.serializationSize : 0,
+                validationResult: event.validationResult || 'PASS',
+                stageDurationMs: typeof event.stageDurationMs === 'number' ? event.stageDurationMs : 0,
+                errorDetails: event.errorDetails || null
+            };
+
+            if (this.registry && Array.isArray(this.registry.lifecycleEvents)) {
+                this.registry.lifecycleEvents.push(normalized);
+                if (this.registry.lifecycleEvents.length > 500) {
+                    this.registry.lifecycleEvents.shift();
+                }
+            }
+
+            if (normalized.validationResult && normalized.validationResult.startsWith('FAIL')) {
+                const code = normalized.errorDetails?.errorCode || normalized.validationResult.replace('FAIL_', '');
+                if (this.registry && typeof this.registry.recordFailureCode === 'function') {
+                    this.registry.recordFailureCode(code);
+                }
+            }
+
+            // If in browser context, forward to Node.js controller via Playwright exposed binding
+            if (typeof window !== 'undefined' && typeof window.dispatchLifecycleEvent === 'function') {
+                window.dispatchLifecycleEvent(normalized).catch(() => {});
+            }
+        } catch (e) {
+            // Passive telemetry
+        }
+    }
 }
 const TelemetryCollector = new TelemetryCollectorImpl();
 
@@ -2801,11 +3377,30 @@ class LocatorIntelligenceEngine {
 
             function sendExecution(type, payload) {
                 if (window.dispatchExecutionEvent) {
+                    payload.timestamp = Date.now();
                     payload.captureTime = Date.now();
+                    payload.monotonicUs = Math.round(performance.now() * 1000);
                     payload.captureEpoch = window.__ANTIGRAVITY_EPOCH__ || 0;
                     payload.captureEpochUrl = window.__ANTIGRAVITY_EPOCH_URL__ || '';
                     payload.capturePerformanceTime = performance.now();
                     payload.payloadVersion = 3;
+                    
+                    TelemetryCollector.recordLifecycleEvent({
+                        traceId: payload.traceId || 'tr-unknown',
+                        spanId: 'sp-06',
+                        parentSpanId: 'sp-02',
+                        stageSequence: 6,
+                        stageName: 'IPC_TRANSMITTED',
+                        component: 'ActionDispatcher.mjs',
+                        method: 'sendExecution',
+                        timestamp: Date.now(),
+                        interactionId: payload.interactionId,
+                        interactionType: type,
+                        payloadSize: JSON.stringify(payload).length,
+                        eidPresent: !!(payload.identityDocument || payload.probabilisticEID),
+                        eidHash: payload.eidHash || TelemetryCollector.computeEIDHash(payload.identityDocument || payload.probabilisticEID)
+                    });
+
                     window.dispatchExecutionEvent({ type, payload });
                 }
             }
@@ -2836,7 +3431,46 @@ class LocatorIntelligenceEngine {
 
                 emit(type, data) {
                     const start = Date.now();
+                    const traceId = 'tr-' + generateUUID();
+                    const interactionId = 'ia-' + generateUUID().split('-')[0];
+
+                    TelemetryCollector.recordLifecycleEvent({
+                        traceId,
+                        spanId: 'sp-00',
+                        parentSpanId: null,
+                        stageSequence: 0,
+                        stageName: 'DOM_EVENT_CAPTURED',
+                        component: 'ActionDispatcher.mjs',
+                        method: 'handleDOMEvent',
+                        timestamp: start,
+                        interactionId,
+                        interactionType: type,
+                        validationResult: data.target ? 'PASS' : 'WARN_DOM_DETACHED'
+                    });
+
+                    let valRes1 = 'PASS';
+                    let err1 = null;
+                    if (typeof start !== 'number' || start < 1700000000000 || isNaN(start)) {
+                        valRes1 = 'FAIL_LF701';
+                        err1 = { errorCode: 'LF-701', errorMessage: 'Ingress Contract Violation at Stage 1: malformed absolute timestamp ' + start };
+                    }
+                    TelemetryCollector.recordLifecycleEvent({
+                        traceId,
+                        spanId: 'sp-01',
+                        parentSpanId: 'sp-00',
+                        stageSequence: 1,
+                        stageName: 'INTERACTION_CAPTURED',
+                        component: 'ActionDispatcher.mjs',
+                        method: 'captureInteraction',
+                        timestamp: start,
+                        interactionId,
+                        interactionType: type,
+                        validationResult: valRes1,
+                        errorDetails: err1
+                    });
+
                     const payload = {
+                        traceId,
                         interactionId: 'ia-' + generateUUID().split('-')[0],
                         sequenceNumber: ++window.__ANTIGRAVITY_SEQ__,
                         interactionType: type,
@@ -2845,7 +3479,9 @@ class LocatorIntelligenceEngine {
                         timestamp: start,
                         context: data.context
                     };
+                    payload.interactionId = interactionId;
 
+                    let eid = null;
                     if (data.target && ['CLICK', 'DOUBLE_CLICK', 'DRAG', 'INPUT'].includes(type)) {
                         const engine = new LocatorIntelligenceEngine();
                         const resolution = engine.process(data.target, data.composedPath || []);
@@ -2854,8 +3490,37 @@ class LocatorIntelligenceEngine {
                             payload.locatorMetadata = resolution.metadata;
                             payload.shadowPath = resolution.shadowPath;
                             payload.identityDocument = resolution.identityDocument || null;
+                            payload.probabilisticEID = resolution.identityDocument || null;
+                            eid = payload.identityDocument;
                         }
                     }
+
+                    const eidHash = TelemetryCollector.computeEIDHash(eid);
+                    payload.eidHash = eidHash;
+
+                    let valRes2 = 'PASS';
+                    let err2 = null;
+                    const isEidValid = eid && (eid.confidenceScore === undefined || eid.confidenceScore > 0) && (eid.identityHash || eid.fingerprint);
+                    if (data.target && ['CLICK', 'DOUBLE_CLICK', 'DRAG', 'INPUT'].includes(type) && !isEidValid) {
+                        valRes2 = 'FAIL_LF602';
+                        err2 = { errorCode: 'LF-602', errorMessage: 'EID Generation Failed at Stage 2: missing or invalid probabilisticEID' };
+                    }
+                    TelemetryCollector.recordLifecycleEvent({
+                        traceId,
+                        spanId: 'sp-02',
+                        parentSpanId: 'sp-01',
+                        stageSequence: 2,
+                        stageName: 'EID_GENERATED',
+                        component: 'FeatureExtractor.mjs',
+                        method: 'extractIdentityDocument',
+                        timestamp: Date.now(),
+                        interactionId,
+                        interactionType: type,
+                        eidPresent: !!eid,
+                        eidHash,
+                        validationResult: valRes2,
+                        errorDetails: err2
+                    });
 
                     if (data.coordinates) payload.coordinates = data.coordinates;
                     if (data.path) payload.path = data.path;

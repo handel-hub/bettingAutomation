@@ -4,6 +4,7 @@ import { promises as fsPromises } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import EventEmitter from 'node:events';
+import crypto from 'node:crypto';
 import { Command } from './Command.mjs';
 import { FramePathBuilder } from '../synchronization/providers/frame/FramePathBuilder.mjs';
 import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCollector.mjs';
@@ -113,7 +114,9 @@ export class ActionDispatcher extends EventEmitter {
                         window.__notifyNavigation({ 
                             type: 'pushState', 
                             url: location.href, 
-                            epoch: window.__ANTIGRAVITY_EPOCH__ 
+                            epoch: window.__ANTIGRAVITY_EPOCH__,
+                            timestamp: Date.now(),
+                            monotonicUs: Math.round(performance.now() * 1000)
                         });
                     }
                 };
@@ -124,7 +127,9 @@ export class ActionDispatcher extends EventEmitter {
                         window.__notifyNavigation({ 
                             type: 'replaceState', 
                             url: location.href, 
-                            epoch: window.__ANTIGRAVITY_EPOCH__ 
+                            epoch: window.__ANTIGRAVITY_EPOCH__,
+                            timestamp: Date.now(),
+                            monotonicUs: Math.round(performance.now() * 1000)
                         });
                     }
                 };
@@ -134,7 +139,9 @@ export class ActionDispatcher extends EventEmitter {
                         window.__notifyNavigation({ 
                             type: 'popstate', 
                             url: location.href, 
-                            epoch: window.__ANTIGRAVITY_EPOCH__ 
+                            epoch: window.__ANTIGRAVITY_EPOCH__,
+                            timestamp: Date.now(),
+                            monotonicUs: Math.round(performance.now() * 1000)
                         });
                     }
                 });
@@ -156,11 +163,30 @@ export class ActionDispatcher extends EventEmitter {
 
             function sendExecution(type, payload) {
                 if (window.dispatchExecutionEvent) {
+                    payload.timestamp = Date.now();
                     payload.captureTime = Date.now();
+                    payload.monotonicUs = Math.round(performance.now() * 1000);
                     payload.captureEpoch = window.__ANTIGRAVITY_EPOCH__ || 0;
                     payload.captureEpochUrl = window.__ANTIGRAVITY_EPOCH_URL__ || '';
                     payload.capturePerformanceTime = performance.now();
                     payload.payloadVersion = 3;
+                    
+                    TelemetryCollector.recordLifecycleEvent({
+                        traceId: payload.traceId || 'tr-unknown',
+                        spanId: 'sp-06',
+                        parentSpanId: 'sp-02',
+                        stageSequence: 6,
+                        stageName: 'IPC_TRANSMITTED',
+                        component: 'ActionDispatcher.mjs',
+                        method: 'sendExecution',
+                        timestamp: Date.now(),
+                        interactionId: payload.interactionId,
+                        interactionType: type,
+                        payloadSize: JSON.stringify(payload).length,
+                        eidPresent: !!(payload.identityDocument || payload.probabilisticEID),
+                        eidHash: payload.eidHash || TelemetryCollector.computeEIDHash(payload.identityDocument || payload.probabilisticEID)
+                    });
+
                     window.dispatchExecutionEvent({ type, payload });
                 }
             }
@@ -191,7 +217,46 @@ export class ActionDispatcher extends EventEmitter {
 
                 emit(type, data) {
                     const start = Date.now();
+                    const traceId = 'tr-' + generateUUID();
+                    const interactionId = 'ia-' + generateUUID().split('-')[0];
+
+                    TelemetryCollector.recordLifecycleEvent({
+                        traceId,
+                        spanId: 'sp-00',
+                        parentSpanId: null,
+                        stageSequence: 0,
+                        stageName: 'DOM_EVENT_CAPTURED',
+                        component: 'ActionDispatcher.mjs',
+                        method: 'handleDOMEvent',
+                        timestamp: start,
+                        interactionId,
+                        interactionType: type,
+                        validationResult: data.target ? 'PASS' : 'WARN_DOM_DETACHED'
+                    });
+
+                    let valRes1 = 'PASS';
+                    let err1 = null;
+                    if (typeof start !== 'number' || start < 1700000000000 || isNaN(start)) {
+                        valRes1 = 'FAIL_LF701';
+                        err1 = { errorCode: 'LF-701', errorMessage: 'Ingress Contract Violation at Stage 1: malformed absolute timestamp ' + start };
+                    }
+                    TelemetryCollector.recordLifecycleEvent({
+                        traceId,
+                        spanId: 'sp-01',
+                        parentSpanId: 'sp-00',
+                        stageSequence: 1,
+                        stageName: 'INTERACTION_CAPTURED',
+                        component: 'ActionDispatcher.mjs',
+                        method: 'captureInteraction',
+                        timestamp: start,
+                        interactionId,
+                        interactionType: type,
+                        validationResult: valRes1,
+                        errorDetails: err1
+                    });
+
                     const payload = {
+                        traceId,
                         interactionId: 'ia-' + generateUUID().split('-')[0],
                         sequenceNumber: ++window.__ANTIGRAVITY_SEQ__,
                         interactionType: type,
@@ -200,7 +265,9 @@ export class ActionDispatcher extends EventEmitter {
                         timestamp: start,
                         context: data.context
                     };
+                    payload.interactionId = interactionId;
 
+                    let eid = null;
                     if (data.target && ['CLICK', 'DOUBLE_CLICK', 'DRAG', 'INPUT'].includes(type)) {
                         const engine = new LocatorIntelligenceEngine();
                         const resolution = engine.process(data.target, data.composedPath || []);
@@ -209,8 +276,37 @@ export class ActionDispatcher extends EventEmitter {
                             payload.locatorMetadata = resolution.metadata;
                             payload.shadowPath = resolution.shadowPath;
                             payload.identityDocument = resolution.identityDocument || null;
+                            payload.probabilisticEID = resolution.identityDocument || null;
+                            eid = payload.identityDocument;
                         }
                     }
+
+                    const eidHash = TelemetryCollector.computeEIDHash(eid);
+                    payload.eidHash = eidHash;
+
+                    let valRes2 = 'PASS';
+                    let err2 = null;
+                    const isEidValid = eid && (eid.confidenceScore === undefined || eid.confidenceScore > 0) && (eid.identityHash || eid.fingerprint);
+                    if (data.target && ['CLICK', 'DOUBLE_CLICK', 'DRAG', 'INPUT'].includes(type) && !isEidValid) {
+                        valRes2 = 'FAIL_LF602';
+                        err2 = { errorCode: 'LF-602', errorMessage: 'EID Generation Failed at Stage 2: missing or invalid probabilisticEID' };
+                    }
+                    TelemetryCollector.recordLifecycleEvent({
+                        traceId,
+                        spanId: 'sp-02',
+                        parentSpanId: 'sp-01',
+                        stageSequence: 2,
+                        stageName: 'EID_GENERATED',
+                        component: 'FeatureExtractor.mjs',
+                        method: 'extractIdentityDocument',
+                        timestamp: Date.now(),
+                        interactionId,
+                        interactionType: type,
+                        eidPresent: !!eid,
+                        eidHash,
+                        validationResult: valRes2,
+                        errorDetails: err2
+                    });
 
                     if (data.coordinates) payload.coordinates = data.coordinates;
                     if (data.path) payload.path = data.path;
@@ -495,7 +591,34 @@ export class ActionDispatcher extends EventEmitter {
             logger.info(`[INSTRUMENTATION] [${eventData.captureTime}] Type: ${eventData.type} | Target: ${eventData.tag}#${eventData.id}.${eventData.class} | Selector: ${eventData.selector} | Extra: ${eventData.extra} | Error: ${eventData.error}`);
         });
 
+        await masterPage.exposeFunction('dispatchLifecycleEvent', async (eventData) => {
+            TelemetryCollector.recordLifecycleEvent(eventData);
+            if (eventData.validationResult && eventData.validationResult.startsWith('FAIL')) {
+                logger.warn(`[LIFECYCLE VIOLATION] [Stage ${eventData.stageSequence}: ${eventData.stageName}] [${eventData.validationResult}] ${eventData.errorDetails?.errorMessage || ''}`);
+            }
+        });
+
         await masterPage.exposeBinding('dispatchExecutionEvent', async ({ frame }, eventData) => {
+            const p = eventData.payload || {};
+            const traceId = p.traceId || ('tr-' + crypto.randomUUID());
+            const eid = p.identityDocument || p.probabilisticEID || null;
+            const eidHash = p.eidHash || TelemetryCollector.computeEIDHash(eid);
+
+            TelemetryCollector.recordLifecycleEvent({
+                traceId,
+                spanId: 'sp-07',
+                parentSpanId: 'sp-06',
+                stageSequence: 7,
+                stageName: 'IPC_RECEIVED',
+                component: 'CommandReceiver.mjs',
+                method: 'onMessage',
+                timestamp: Date.now(),
+                interactionId: p.interactionId || 'ia-unknown',
+                interactionType: eventData.type,
+                eidPresent: !!eid,
+                eidHash
+            });
+
             logger.info(`[Master Dispatch] ${eventData.type}`);
             
             if (this.memorySettings.record_action_sequence === 'true') {
@@ -564,7 +687,41 @@ export class ActionDispatcher extends EventEmitter {
                 payload: eventData.payload,
                 source: 'Master Browser',
                 executionMode: 'SLAVES_ONLY',
-                metadata
+                metadata,
+                timestamp: p.timestamp ?? p.captureTime ?? Date.now(),
+                captureTime: p.captureTime ?? p.timestamp ?? Date.now(),
+                traceId,
+                eidHash
+            });
+
+            let valRes3 = 'PASS';
+            let err3 = null;
+            const isEidValid = eid && (eid.confidenceScore === undefined || eid.confidenceScore > 0) && (eid.identityHash || eid.fingerprint);
+            if (!isEidValid) {
+                valRes3 = 'FAIL_LF602';
+                err3 = { errorCode: 'LF-602', errorMessage: 'Command Construction missing or invalid identityDocument at Stage 3' };
+            }
+            if (p.timestamp !== undefined && (typeof p.timestamp !== 'number' || p.timestamp < 1700000000000 || isNaN(p.timestamp))) {
+                valRes3 = 'FAIL_LF701';
+                err3 = { errorCode: 'LF-701', errorMessage: `Command Construction malformed timestamp ${p.timestamp}` };
+            }
+
+            TelemetryCollector.recordLifecycleEvent({
+                traceId,
+                spanId: 'sp-03',
+                parentSpanId: 'sp-07',
+                stageSequence: 3,
+                stageName: 'COMMAND_CONSTRUCTED',
+                component: 'Command.mjs',
+                method: 'Command.create',
+                timestamp: Date.now(),
+                interactionId: p.interactionId || 'ia-unknown',
+                commandId: command.id,
+                interactionType: eventData.type,
+                eidPresent: !!(command.payload && (command.payload.identityDocument || command.payload.probabilisticEID)),
+                eidHash: TelemetryCollector.computeEIDHash(command.payload && (command.payload.identityDocument || command.payload.probabilisticEID)),
+                validationResult: valRes3,
+                errorDetails: err3
             });
 
             this.emit('Command', command);

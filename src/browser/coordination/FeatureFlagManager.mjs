@@ -10,6 +10,7 @@ export class FeatureFlagManager {
     constructor(initialConfig = {}) {
         this._cache = new Map();
         this._versionHash = '';
+        featureFlags._onUpdate = () => this._rebuildCache();
         this.initialize(initialConfig);
     }
 
