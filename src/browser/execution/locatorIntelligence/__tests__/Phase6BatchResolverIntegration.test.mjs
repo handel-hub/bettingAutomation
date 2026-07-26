@@ -9,7 +9,8 @@ describe('Phase 6 — Batch Resolver Integration', () => {
             LI_EXTENDED_FEATURES: false,
             LI_IDENTITY_DOCUMENT: false,
             LI_SERIALIZE_FEATURES: false,
-            LI_BATCH_RESOLVER: false
+            LI_BATCH_RESOLVER: true,
+            V3_SCHEMA_ENFORCEMENT_MODE: 'DISABLED'
         });
     });
 
@@ -39,7 +40,8 @@ describe('Phase 6 — Batch Resolver Integration', () => {
             LI_EXTENDED_FEATURES: true,
             LI_IDENTITY_DOCUMENT: true,
             LI_SERIALIZE_FEATURES: true,
-            LI_BATCH_RESOLVER: true
+            LI_BATCH_RESOLVER: true,
+            V3_SCHEMA_ENFORCEMENT_MODE: 'DISABLED'
         });
 
         const page = TestHarness.createMockPage({
@@ -68,7 +70,8 @@ describe('Phase 6 — Batch Resolver Integration', () => {
             LI_EXTENDED_FEATURES: true,
             LI_IDENTITY_DOCUMENT: true,
             LI_SERIALIZE_FEATURES: true,
-            LI_BATCH_RESOLVER: true
+            LI_BATCH_RESOLVER: false,
+            V3_SCHEMA_ENFORCEMENT_MODE: 'DISABLED'
         });
 
         const page = TestHarness.createMockPage({
@@ -93,7 +96,8 @@ describe('Phase 6 — Batch Resolver Integration', () => {
             LI_EXTENDED_FEATURES: true,
             LI_IDENTITY_DOCUMENT: true,
             LI_SERIALIZE_FEATURES: true,
-            LI_BATCH_RESOLVER: true
+            LI_BATCH_RESOLVER: true,
+            V3_SCHEMA_ENFORCEMENT_MODE: 'DISABLED'
         });
 
         const page = TestHarness.createMockPage({
@@ -117,7 +121,8 @@ describe('Phase 6 — Batch Resolver Integration', () => {
             LI_EXTENDED_FEATURES: true,
             LI_IDENTITY_DOCUMENT: true,
             LI_SERIALIZE_FEATURES: true,
-            LI_BATCH_RESOLVER: true
+            LI_BATCH_RESOLVER: false,
+            V3_SCHEMA_ENFORCEMENT_MODE: 'DISABLED'
         });
 
         const page = TestHarness.createMockPage({

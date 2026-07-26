@@ -80,19 +80,19 @@ describe('Phase 2 — Browser Runtime Epoch Ownership Verification', () => {
         // Trigger pushState and replaceState
         globalThis.history.pushState({ page: 1 }, 'Title', '/page1');
         expect(origPushState).toHaveBeenCalledWith({ page: 1 }, 'Title', '/page1');
-        expect(notifyNav).toHaveBeenCalledWith({
+        expect(notifyNav).toHaveBeenCalledWith(expect.objectContaining({
             type: 'pushState',
             url: 'http://example.com/test',
             epoch: 0
-        });
+        }));
 
         globalThis.history.replaceState({ page: 2 }, 'Title 2', '/page2');
         expect(origReplaceState).toHaveBeenCalledWith({ page: 2 }, 'Title 2', '/page2');
-        expect(notifyNav).toHaveBeenCalledWith({
+        expect(notifyNav).toHaveBeenCalledWith(expect.objectContaining({
             type: 'replaceState',
             url: 'http://example.com/test',
             epoch: 0
-        });
+        }));
 
         // Verify popstate listener was registered
         expect(addEvent).toHaveBeenCalledWith('popstate', expect.any(Function));

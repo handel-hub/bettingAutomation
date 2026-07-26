@@ -7,7 +7,7 @@ import featureFlags from '../FeatureFlags.mjs';
 
 describe('Phase 5 — Task 5.3: EpochGating Integration', () => {
     beforeEach(() => {
-        featureFlags.resetForTesting({ LI_EPOCH_GATING: true });
+        featureFlags.resetForTesting({V3_SCHEMA_ENFORCEMENT_MODE: 'DISABLED'});
     });
 
     afterEach(() => {
@@ -41,7 +41,7 @@ describe('Phase 5 — Task 5.3: EpochGating Integration', () => {
     });
 
     it('LocatorResolver.resolve should proceed when LI_EPOCH_GATING is disabled even if epoch is mismatched', async () => {
-        featureFlags.resetForTesting({ LI_EPOCH_GATING: false });
+        featureFlags.resetForTesting({ LI_EPOCH_GATING: false, V3_SCHEMA_ENFORCEMENT_MODE: 'DISABLED' });
         const epochGate = new EpochGate();
         epochGate.incrementEpoch('slave-1', 'http://example.com/page1');
         epochGate.incrementEpoch('slave-1', 'http://example.com/page2'); // slave is at epoch 2

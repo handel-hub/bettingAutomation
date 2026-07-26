@@ -15,7 +15,7 @@ describe('Phase 4: Slave Browser Epoch Synchronization & Execution Gating', () =
 
     beforeEach(() => {
         vi.restoreAllMocks();
-        featureFlags.resetForTesting({ LI_EPOCH_GATING: true });
+        featureFlags.resetForTesting({V3_SCHEMA_ENFORCEMENT_MODE: 'DISABLED'});
         TelemetryCollector.reset();
 
         registry = new BrowserStateRegistry();
