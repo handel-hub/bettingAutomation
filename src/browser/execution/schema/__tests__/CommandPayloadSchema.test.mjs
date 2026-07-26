@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { CommandPayloadSchema } from '../CommandPayloadSchema.mjs';
 import { ContractViolationError } from '../../errors.mjs';
+import { Command } from '../../Command.mjs';
 import { CommandRouter } from '../../../CommandRouter.mjs';
 import featureFlags from '../../locatorIntelligence/FeatureFlags.mjs';
 import { TelemetryCollector } from '../../locatorIntelligence/telemetry/TelemetryCollector.mjs';
@@ -285,6 +286,82 @@ describe('Milestone 1: Authoritative Ingress Contract & Schema Gating Tests', ()
 
             const normal = new RollingWindow(256);
             expect(normal.size).toBe(256);
+        });
+    });
+
+    describe('Phase 1: Canonical Timestamp Ingress Standardization (LF-701)', () => {
+        it('rejects ISO string timestamp even in SHADOW mode with LF-701 error message', () => {
+            const now = Date.now();
+            const isoString = new Date(now).toISOString();
+            const cmd = {
+                commandId: '550e8400-e29b-41d4-a716-446655440000',
+                type: 'CLICK',
+                category: 'Execution',
+                timestamp: isoString,
+                target: { primarySelector: '#btn' }
+            };
+
+            const res = CommandPayloadSchema.validate(cmd, 'SHADOW');
+            expect(res.valid).toBe(false);
+            expect(res.coercedTimestamp).toBe(false);
+            expect(res.errors.some(e => e.includes('Int64 Unix Epoch Milliseconds'))).toBe(true);
+        });
+
+        it('rejects ISO string timestamp in STRICT mode with LF-701 error message', () => {
+            const now = Date.now();
+            const isoString = new Date(now).toISOString();
+            const cmd = {
+                commandId: '550e8400-e29b-41d4-a716-446655440000',
+                type: 'CLICK',
+                category: 'Execution',
+                timestamp: isoString,
+                target: { primarySelector: '#btn' }
+            };
+
+            const res = CommandPayloadSchema.validate(cmd, 'STRICT');
+            expect(res.valid).toBe(false);
+            expect(res.coercedTimestamp).toBe(false);
+            expect(res.errors.some(e => e.includes('Int64 Unix Epoch Milliseconds'))).toBe(true);
+        });
+
+        it('rejects non-integer float timestamp in STRICT and SHADOW mode', () => {
+            const floatTs = Date.now() + 0.45;
+            const cmdStrict = {
+                commandId: '550e8400-e29b-41d4-a716-446655440000',
+                type: 'CLICK',
+                category: 'Execution',
+                timestamp: floatTs,
+                target: { primarySelector: '#btn' }
+            };
+            const resStrict = CommandPayloadSchema.validate(cmdStrict, 'STRICT');
+            expect(resStrict.valid).toBe(false);
+            expect(resStrict.errors.some(e => e.includes('must be an integer'))).toBe(true);
+
+            const cmdShadow = {
+                commandId: '550e8400-e29b-41d4-a716-446655440000',
+                type: 'CLICK',
+                category: 'Execution',
+                timestamp: floatTs,
+                target: { primarySelector: '#btn' }
+            };
+            const resShadow = CommandPayloadSchema.validate(cmdShadow, 'SHADOW');
+            expect(resShadow.valid).toBe(false);
+            expect(resShadow.coercedTimestamp).toBe(false);
+            expect(resShadow.errors.some(e => e.includes('must be an integer'))).toBe(true);
+        });
+
+        it('Command constructor stores timestamp and captureTime strictly as integer milliseconds', () => {
+            const now = Date.now();
+            const iso = new Date(now).toISOString();
+            const cmd = new Command({
+                type: 'click',
+                timestamp: iso,
+                captureTime: iso
+            });
+            expect(typeof cmd.timestamp).toBe('number');
+            expect(typeof cmd.captureTime).toBe('number');
+            expect(cmd.timestamp).toBe(Date.parse(iso));
+            expect(cmd.captureTime).toBe(Date.parse(iso));
         });
     });
 });

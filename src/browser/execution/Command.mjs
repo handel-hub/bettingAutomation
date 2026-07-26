@@ -16,7 +16,7 @@ export class Command {
         category = 'Execution', type, target = null, payload = {}, 
         source, executionMode = 'ALL', metadata = {},
         version = 2, lifecycle = 'CREATED',
-        id, captureTime, creationTime
+        id, captureTime, creationTime, traceId, eidHash, timestamp
     }) {
         this.version = version;
         this.lifecycle = lifecycle;
@@ -27,10 +27,30 @@ export class Command {
         this.payload = payload;
         this.source = source;
         this.executionMode = executionMode;
-        this.timestamp = new Date().toISOString();
-        this.captureTime = captureTime ?? payload.captureTime ?? Date.now();
-        this.creationTime = creationTime ?? Date.now();
+
+        const nowMs = Date.now();
+        let ts = timestamp ?? captureTime ?? payload.timestamp ?? payload.captureTime ?? nowMs;
+        if (typeof ts === 'string') {
+            const parsed = Number(ts);
+            if (!isNaN(parsed) && parsed > 0 && Number.isInteger(parsed)) {
+                ts = parsed;
+            } else {
+                const dt = Date.parse(ts);
+                if (!isNaN(dt) && dt > 0) ts = dt;
+                else ts = nowMs;
+            }
+        } else if (typeof ts !== 'number' || isNaN(ts)) {
+            ts = nowMs;
+        } else {
+            ts = Math.round(ts);
+        }
+
+        this.timestamp = ts;
+        this.captureTime = ts;
+        this.creationTime = typeof creationTime === 'number' && !isNaN(creationTime) ? Math.round(creationTime) : nowMs;
         this.metadata = metadata;
+        if (traceId !== undefined) this.traceId = traceId;
+        if (eidHash !== undefined) this.eidHash = eidHash;
 
         deepFreeze(this);
     }

@@ -1,4 +1,6 @@
 import { ContractViolationError } from '../errors.mjs';
+import featureFlags from '../locatorIntelligence/FeatureFlags.mjs';
+import { TelemetryCollector } from '../locatorIntelligence/telemetry/TelemetryCollector.mjs';
 
 /**
  * Authoritative v3 schema validation engine for incoming IPC command payloads.
@@ -55,16 +57,18 @@ export class CommandPayloadSchema {
      * @param {object} command - The incoming command object to validate
      * @returns {{ valid: boolean, errors: string[] }}
      */
-    static validate(command) {
+    static validate(command, mode) {
         if (!this._compiled) {
             this.compileSchema();
         }
 
         const errors = [];
+        let coercedTimestamp = false;
+        const enforcementMode = mode || (featureFlags ? featureFlags.get('V3_SCHEMA_ENFORCEMENT_MODE') : 'DISABLED') || 'DISABLED';
 
         if (!command || typeof command !== 'object') {
             errors.push('Command must be a non-null object.');
-            return { valid: false, errors };
+            return { valid: false, errors, coercedTimestamp };
         }
 
         // Top-level mandatory attributes (v2 id or v3 commandId)
@@ -85,11 +89,26 @@ export class CommandPayloadSchema {
             errors.push('Command missing valid string "category".');
         }
 
-        const timestamp = command.timestamp !== undefined ? command.timestamp : command.captureTime;
-        if (timestamp === undefined || typeof timestamp !== 'number' || isNaN(timestamp)) {
+        const ts = command.timestamp !== undefined ? command.timestamp : command.captureTime;
+        let finalTs = ts;
+        if (ts === undefined || ts === null) {
             errors.push('Command missing valid numeric timestamp or captureTime.');
-        } else if (timestamp < 0 || timestamp > Date.now() + 5000) {
-            errors.push('Command timestamp out of bounds (negative or in the far future).');
+        } else if (typeof ts === 'string') {
+            errors.push('Command timestamp must be Int64 Unix Epoch Milliseconds (number); received ISO string.');
+        } else if (typeof ts !== 'number' || isNaN(ts)) {
+            errors.push('Command missing valid numeric timestamp or captureTime.');
+        } else if (!Number.isInteger(ts)) {
+            errors.push('Command timestamp must be an integer (Int64 Unix Epoch Milliseconds).');
+        } else if (ts <= 0) {
+            errors.push('Command timestamp must be a positive integer.');
+        } else {
+            finalTs = ts;
+        }
+
+        if (typeof finalTs === 'number' && !isNaN(finalTs)) {
+            if (finalTs < 0 || finalTs > Date.now() + 5000) {
+                errors.push('Command timestamp out of bounds (negative or in the far future).');
+            }
         }
 
         // v3 numeric attributes validation if present
@@ -114,9 +133,9 @@ export class CommandPayloadSchema {
 
         // Validate target descriptor if present
         if (command.target !== undefined && command.target !== null) {
-            if (typeof command.target !== 'object') {
+            if (typeof command.target !== 'object' && category !== 'Recovery') {
                 errors.push('Command target must be an object.');
-            } else if (command.target.primarySelector !== undefined && typeof command.target.primarySelector !== 'string') {
+            } else if (typeof command.target === 'object' && command.target.primarySelector !== undefined && typeof command.target.primarySelector !== 'string') {
                 errors.push('Command target.primarySelector must be a string.');
             }
         }
@@ -150,7 +169,9 @@ export class CommandPayloadSchema {
 
         return {
             valid: errors.length === 0,
-            errors
+            errors,
+            coercedTimestamp,
+            normalizedCommand: errors.length === 0 ? command : undefined
         };
     }
 

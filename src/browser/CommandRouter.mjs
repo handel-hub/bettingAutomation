@@ -152,7 +152,7 @@ export class CommandRouter {
         // v3 Ingress Contract Gating
         const enforcementMode = this._mode || (this.featureFlagManager ? this.featureFlagManager.getSchemaMode() : featureFlags.get('V3_SCHEMA_ENFORCEMENT_MODE')) || 'DISABLED';
         if (enforcementMode === 'STRICT' || enforcementMode === 'SHADOW') {
-            const validation = CommandPayloadSchema.validate(command);
+            const validation = CommandPayloadSchema.validate(command, enforcementMode);
             if (!validation.valid) {
                 const errorMsg = `[LF-701] Ingress Contract Violation (${command.id || command.commandId || 'unknown'}): ${validation.errors.join('; ')}`;
                 this._emitViolation(errorMsg, command);
