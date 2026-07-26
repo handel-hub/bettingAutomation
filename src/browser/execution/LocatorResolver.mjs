@@ -9,13 +9,19 @@ import {
     StaleEpochError,
     ConfidenceGateRejectionError,
     GlobalTimeoutError,
-    QueueDeadlineExceededError
+    QueueDeadlineExceededError,
+    ContractViolationError,
+    MaxAttemptsReachedError,
+    RecoveryExhaustedError,
+    AmbiguousResolutionError,
+    VerificationMismatchError
 } from './errors.mjs';
 import { DefaultPolicy } from './locatorIntelligence/resolution/ResolutionPolicy.mjs';
 import { ResolutionContext, ResolutionState } from './locatorIntelligence/resolution/ResolutionContext.mjs';
 import { getValidationProfile } from './locatorIntelligence/resolution/ValidationProfile.mjs';
 import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCollector.mjs';
 import { DeadlineBudget } from './time/DeadlineBudget.mjs';
+import { TimeConstants } from './time/TimeConstants.mjs';
 import featureFlags from './locatorIntelligence/FeatureFlags.mjs';
 import { BatchResolver } from './locatorIntelligence/resolution/BatchResolver.mjs';
 import { DisambiguationEngine } from './locatorIntelligence/resolution/DisambiguationEngine.mjs';
@@ -59,6 +65,13 @@ export class LocatorResolver {
         const deadlineBudget = options.deadlineBudget || null;
         if (deadlineBudget) {
             deadlineBudget.checkOrThrow('LocatorResolver');
+        }
+
+        // Task 3.1: Ingress Contract Fast-Fail Boundary (< 15ms)
+        if (options.enforceEID === true || (featureFlags.isEnabled('V3_SCHEMA_ENFORCEMENT_MODE') && featureFlags.get('V3_SCHEMA_ENFORCEMENT_MODE') === 'STRICT')) {
+            if (!options.identityDocument || !options.identityDocument.identityHash) {
+                throw new ContractViolationError("[LF-701] Fast-Fail: Missing required EID in STRICT schema enforcement mode");
+            }
         }
 
         // Phase 14: URL Mismatch Abort
@@ -394,7 +407,7 @@ export class LocatorResolver {
                     return result;
                     
                 } catch (err) {
-                    if (err instanceof ConfidenceGateRejectionError || err.name === 'ConfidenceBelowThresholdError' || err.code === 'LF-602' || err instanceof GlobalTimeoutError || err instanceof QueueDeadlineExceededError || err.code === 'LF-504' || err.code === 'LF-702') {
+                    if (err instanceof ConfidenceGateRejectionError || err.name === 'ConfidenceBelowThresholdError' || err.code === 'LF-602' || err instanceof GlobalTimeoutError || err instanceof QueueDeadlineExceededError || err.code === 'LF-504' || err.code === 'LF-702' || err instanceof ContractViolationError || err.code === 'LF-701' || err instanceof MaxAttemptsReachedError || err.code === 'LF-505' || err instanceof RecoveryExhaustedError || err.code === 'LF-605' || err instanceof AmbiguousResolutionError || err.code === 'LF-603' || err instanceof VerificationMismatchError || err.code === 'LF-601') {
                         throw err;
                     }
                     const isTerminal = !policy.retry.retryableFailures.includes(err.name);
@@ -413,7 +426,7 @@ export class LocatorResolver {
         if (featureFlags.isEnabled('LI_RECOVERY_HIERARCHY')) {
             const { RecoveryOrchestrator } = await import('./locatorIntelligence/resolution/RecoveryOrchestrator.mjs');
             const orchestrator = new RecoveryOrchestrator();
-            const outcome = await orchestrator.orchestrate(resolveAttempt, interactionType, page);
+            const outcome = await orchestrator.orchestrate(resolveAttempt, interactionType, page, options);
             
             if (outcome.status === 'RESOLVED') {
                 return outcome.result;
@@ -442,8 +455,8 @@ export class LocatorResolver {
                     const result = await resolveAttempt();
                     if (result && result.success) return result;
                 } catch (err) {
-                    if (err instanceof ConfidenceGateRejectionError || err.name === 'ConfidenceBelowThresholdError' || err.code === 'LF-602' || err instanceof GlobalTimeoutError || err instanceof QueueDeadlineExceededError || err.code === 'LF-504' || err.code === 'LF-702') {
-                        throw err; // propagate terminal budget errors immediately without retrying!
+                    if (err instanceof ConfidenceGateRejectionError || err.name === 'ConfidenceBelowThresholdError' || err.code === 'LF-602' || err instanceof GlobalTimeoutError || err instanceof QueueDeadlineExceededError || err.code === 'LF-504' || err.code === 'LF-702' || err instanceof ContractViolationError || err.code === 'LF-701' || err instanceof MaxAttemptsReachedError || err.code === 'LF-505' || err instanceof RecoveryExhaustedError || err.code === 'LF-605' || err instanceof AmbiguousResolutionError || err.code === 'LF-603' || err instanceof VerificationMismatchError || err.code === 'LF-601') {
+                        throw err; // propagate terminal budget and contract errors immediately without retrying!
                     }
                 }
                 await new Promise(r => setTimeout(r, policy.limits.retryIntervalMs));

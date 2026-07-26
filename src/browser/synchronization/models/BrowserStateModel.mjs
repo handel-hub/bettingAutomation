@@ -1,4 +1,5 @@
 import { BrowserCapabilities } from './BrowserCapabilities.mjs';
+import featureFlags from '../../execution/locatorIntelligence/FeatureFlags.mjs';
 
 /**
  * Valid lifecycle states for a browser instance.
@@ -113,7 +114,7 @@ export class BrowserStateModel {
         this.page = null;
         this.username = null;
         this.proxyUrl = null;
-        this.state = 'Initializing';
+        this._state = 'Initializing';
         this.url = 'about:blank';
         this.health = 'Good';
         this.isDisconnected = false;
@@ -230,5 +231,21 @@ export class BrowserStateModel {
         };
 
         this.capabilities = new BrowserCapabilities();
+    }
+
+    get state() {
+        return this._state;
+    }
+
+    set state(val) {
+        if (featureFlags.isEnabled('V3_DECOUPLE_HEALTH_MONITOR')) {
+            if (val === 'LOGICAL_FAULT' || val === 'Error' || (typeof val === 'string' && val.startsWith('LF-5'))) {
+                this.lastLogicalFault = val;
+                if (this._state === 'Ready' || this._state === 'READY' || this._state === 'Executing' || this._state === 'EXECUTING' || this._state === 'IDLE' || this._state === 'Ready/Idle') {
+                    return;
+                }
+            }
+        }
+        this._state = val;
     }
 }

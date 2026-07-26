@@ -1,5 +1,6 @@
 import { pageStateMonitor } from './PageStateMonitor.mjs';
 import { TelemetryCollector } from '../telemetry/TelemetryCollector.mjs';
+import { TimeConstants } from '../../time/TimeConstants.mjs';
 
 export class RecoveryOutcome {
     constructor({ status, result, level, attempts, duration, history }) {
@@ -17,15 +18,29 @@ export class RecoveryOrchestrator {
         this.pageStateMonitor = pageStateMonitor;
     }
 
-    async orchestrate(resolveFn, interactionType, page) {
+    _abortOutcome(state, startTime, level) {
+        return new RecoveryOutcome({
+            status: 'ABORTED',
+            result: null,
+            level,
+            attempts: state.attempts,
+            duration: Date.now() - startTime,
+            history: state.history
+        });
+    }
+
+    async orchestrate(resolveFn, interactionType, page, options = {}) {
         const startTime = Date.now();
+        const maxRecoveryMs = options.maxRecoveryMs !== undefined ? options.maxRecoveryMs : TimeConstants.T_MAX_RECOVERY_MS;
+        const hardDeadline = startTime + maxRecoveryMs;
         const state = {
             attempts: 0,
             history: []
         };
 
-        // L1: Fast Retry (budget: 500ms, retry interval: 50ms)
-        const l1Result = await this._executeL1(resolveFn, startTime + 500, state);
+        // L1: Fast Retry (budget: 500ms, capped by hardDeadline)
+        const l1Deadline = Math.min(startTime + 500, hardDeadline);
+        const l1Result = await this._executeL1(resolveFn, l1Deadline, state);
         if (l1Result.success) {
             TelemetryCollector.recordRecovery(1);
             return new RecoveryOutcome({
@@ -37,9 +52,11 @@ export class RecoveryOrchestrator {
                 history: state.history
             });
         }
+        if (Date.now() >= hardDeadline) return this._abortOutcome(state, startTime, 'L1');
 
-        // L2: DOM Settlement (budget: 2000ms from start)
-        const l2Result = await this._executeL2(resolveFn, page, startTime + 2500, state);
+        // L2: DOM Settlement (budget: 2000ms from start, capped by hardDeadline)
+        const l2Deadline = Math.min(startTime + 2500, hardDeadline);
+        const l2Result = await this._executeL2(resolveFn, page, l2Deadline, state);
         if (l2Result.success) {
             TelemetryCollector.recordRecovery(2);
             return new RecoveryOutcome({
@@ -51,6 +68,7 @@ export class RecoveryOrchestrator {
                 history: state.history
             });
         }
+        if (Date.now() >= hardDeadline) return this._abortOutcome(state, startTime, 'L2');
 
         // L3: Skip
         if (this._isSkippable(interactionType)) {
@@ -65,9 +83,10 @@ export class RecoveryOrchestrator {
                 history: state.history
             });
         }
+        if (Date.now() >= hardDeadline) return this._abortOutcome(state, startTime, 'L3');
 
         // L4: Reload
-        const l4Result = await this._executeL4(resolveFn, page, state);
+        const l4Result = await this._executeL4(resolveFn, page, state, hardDeadline);
         if (l4Result.success) {
             TelemetryCollector.recordRecovery(4);
             return new RecoveryOutcome({
@@ -80,14 +99,7 @@ export class RecoveryOrchestrator {
             });
         }
 
-        return new RecoveryOutcome({
-            status: 'ABORTED',
-            result: null,
-            level: 'L4',
-            attempts: state.attempts,
-            duration: Date.now() - startTime,
-            history: state.history
-        });
+        return this._abortOutcome(state, startTime, 'L4');
     }
 
     async _executeL1(resolveFn, deadline, state) {
@@ -149,16 +161,19 @@ export class RecoveryOrchestrator {
         return ['hover', 'scroll'].includes(type);
     }
 
-    async _executeL4(resolveFn, page, state) {
+    async _executeL4(resolveFn, page, state, hardDeadline = Infinity) {
         const levelStart = Date.now();
         try {
-            await page.reload({ waitUntil: 'domcontentloaded', timeout: 5000 });
-            await new Promise(r => setTimeout(r, 500)); // DOM settlement
+            const remainingMs = Math.max(100, hardDeadline - Date.now());
+            await page.reload({ waitUntil: 'domcontentloaded', timeout: remainingMs });
+            await new Promise(r => setTimeout(r, Math.min(500, Math.max(50, hardDeadline - Date.now())))); // DOM settlement
 
-            state.attempts++;
-            const result = await resolveFn();
-            if (result && result.success) {
-                return { success: true, result };
+            if (Date.now() < hardDeadline) {
+                state.attempts++;
+                const result = await resolveFn();
+                if (result && result.success) {
+                    return { success: true, result };
+                }
             }
         } catch (err) {
             state.history.push({ level: 'L4', error: err.message, duration: Date.now() - levelStart });
