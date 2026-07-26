@@ -1,4 +1,7 @@
 import { BrowserStateModel, LifecycleState } from './models/BrowserStateModel.mjs';
+import { StandbyPoolManager } from './pool/StandbyPoolManager.mjs';
+import { NTPClockSync } from '../execution/time/NTPClockSync.mjs';
+import { logger } from '../../config.mjs';
 import EventEmitter from 'node:events';
 
 /**
@@ -6,9 +9,10 @@ import EventEmitter from 'node:events';
  * This is the authoritative owner of mutations for BrowserStateModel.
  */
 export class BrowserStateRegistry extends EventEmitter {
-    constructor() {
+    constructor(options = {}) {
         super();
         this.states = new Map();
+        this.standbyPool = options.standbyPool ?? new StandbyPoolManager(options.standbyOptions);
     }
 
     /**
@@ -91,6 +95,65 @@ export class BrowserStateRegistry extends EventEmitter {
         this.emit('StateUpdated', { browserId, state });
     }
 
+    /**
+     * Executes atomic failover replacement for a broken or hung worker browser using a warm standby page.
+     * Replaces context and page handles in under 500ms, migrates session cookies, and emits WORKER_FAILOVER.
+     * @param {string} brokenId - Browser ID of the broken worker
+     * @param {string} [targetUrl=null] - Optional URL to restore navigation state
+     * @returns {Promise<BrowserStateModel>} The updated state model with warm standby handles
+     * @throws {StandbyPoolExhaustedError} If the warm standby pool is exhausted (LF-703)
+     */
+    async failover(brokenId, targetUrl = null) {
+        const oldState = this.getState(brokenId);
+        const destinationUrl = targetUrl ?? oldState.url ?? 'about:blank';
+        
+        logger.warn(`[BrowserStateRegistry] Initiating atomic failover for broken worker [${brokenId}] (targetUrl: ${destinationUrl})`);
+        
+        // Acquire warm standby page from pool (throws StandbyPoolExhaustedError on LF-703)
+        const standby = await this.standbyPool.acquireStandby(destinationUrl);
+        
+        // Migrate session cookies if available
+        if (oldState.context && typeof oldState.context.cookies === 'function' && standby.context && typeof standby.context.addCookies === 'function') {
+            try {
+                const cookies = await oldState.context.cookies();
+                if (Array.isArray(cookies) && cookies.length > 0) {
+                    await standby.context.addCookies(cookies);
+                    logger.debug(`[BrowserStateRegistry] Migrated ${cookies.length} session cookies during failover for [${brokenId}]`);
+                }
+            } catch (cookieErr) {
+                logger.warn(`[BrowserStateRegistry] Could not migrate cookies during failover for [${brokenId}]: ${cookieErr.message}`);
+            }
+        }
+        
+        // Close broken handles asynchronously in background without blocking failover latency
+        if (oldState.page && typeof oldState.page.close === 'function') {
+            oldState.page.close().catch(() => {});
+        }
+        if (oldState.context && typeof oldState.context.close === 'function') {
+            oldState.context.close().catch(() => {});
+        }
+
+        // Atomically rebind worker state
+        oldState.context = standby.context;
+        oldState.page = standby.page;
+        oldState.state = 'Ready';
+        oldState.health = 'Good';
+        oldState.url = destinationUrl;
+        oldState.lifecycleState = LifecycleState.READY;
+        oldState.recoveryState = {
+            ...oldState.recoveryState,
+            lastFailover: NTPClockSync.now(),
+            failoverCount: (oldState.recoveryState?.failoverCount ?? 0) + 1,
+            previousStandbyId: standby.id
+        };
+
+        logger.info(`[BrowserStateRegistry] Atomic failover completed for [${brokenId}] using standby [${standby.id}]`);
+        this.emit('WORKER_FAILOVER', { browserId: brokenId, standbyId: standby.id, targetUrl: destinationUrl });
+        this.emit('StateUpdated', { browserId: brokenId, state: oldState });
+        
+        return oldState;
+    }
+
     // --- Unified Legacy Registry Methods ---
 
     register(id, role, browser, context, page, meta = {}) {
@@ -162,6 +225,18 @@ export class BrowserStateRegistry extends EventEmitter {
     remove(id) {
         this.states.delete(id);
     }
+
+    /**
+     * Dispose the registry and its underlying standby worker pool.
+     */
+    async dispose() {
+        if (this.standbyPool && typeof this.standbyPool.dispose === 'function') {
+            await this.standbyPool.dispose();
+        }
+        this.states.clear();
+        this.removeAllListeners();
+    }
 }
+
 
 
