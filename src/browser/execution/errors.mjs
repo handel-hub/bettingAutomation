@@ -110,6 +110,7 @@ export class RecoveryExhaustedError extends VerificationFailure { constructor(ms
 export class ContractViolationError extends SystemFailure { constructor(msg) { super('LF-701', msg, 'ERROR', 'CommandRouter'); } }
 export class QueueDeadlineExceededError extends SystemFailure { constructor(msg) { super('LF-702', msg, 'WARNING', 'ExecutionScheduler'); } }
 export class StandbyPoolExhaustedError extends SystemFailure { constructor(msg) { super('LF-703', msg, 'CRITICAL', 'StandbyPoolManager'); } }
+export class ClockDriftError extends SystemFailure { constructor(msg) { super('LF-704', msg, 'WARNING', 'NTPClockSync'); } }
 
 // Legacy export to maintain backward compatibility during rollout
 export class LocatorResolutionError extends GlobalTimeoutError {
