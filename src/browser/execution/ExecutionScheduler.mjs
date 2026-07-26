@@ -6,7 +6,7 @@ import { SynchronizationBarrier } from '../synchronization/SynchronizationBarrie
 import { EpochGate } from './locatorIntelligence/resolution/EpochGate.mjs';
 import featureFlags from './locatorIntelligence/FeatureFlags.mjs';
 import { DeadlineBudget } from './time/DeadlineBudget.mjs';
-import { QueueDeadlineExceededError } from './errors.mjs';
+import { QueueDeadlineExceededError, StaleEpochError } from './errors.mjs';
 import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCollector.mjs';
 
 
@@ -170,6 +170,13 @@ export class ExecutionScheduler {
                 }
             });
         }
+        if (this.epochGate && typeof this.epochGate.on === 'function') {
+            this.epochGate.on('ACK_epoch', ({ browserId }) => {
+                if (browserId && this.browserQueues.has(browserId)) {
+                    this._drain({ id: browserId }).catch(() => {});
+                }
+            });
+        }
         this.browserQueues = new Map();
         this.drainLocks = new Set();
         this.telemetry = {
@@ -303,10 +310,28 @@ export class ExecutionScheduler {
                     if (featureFlags.isEnabled('LI_EPOCH_GATING')) {
                         const capEpoch = finalCommand.metadata?.captureEpoch ?? finalCommand.metadata?.navigation?.epoch;
                         if (capEpoch !== undefined && capEpoch !== null && capEpoch !== 0) {
-                            const decisionObj = await this.epochGate.evaluateAsync(browserId, capEpoch, 2000);
-                            if (decisionObj.decision === 'SKIP') {
-                                logger.info(`[Scheduler] Skipping stale command ${finalCommand.id} on [${browserId}]: ${decisionObj.reason}`);
+                            const initialDecision = this.epochGate.evaluate(browserId, capEpoch);
+                            if (initialDecision.decision === 'SKIP' || initialDecision.action === 'PURGE_STALE') {
+                                const errorMsg = `[LF-604] Stale epoch command ${finalCommand.id || 'unknown'} on [${browserId}]: ${initialDecision.reason}`;
+                                logger.warn(`[ExecutionScheduler] ${errorMsg}`);
+                                if (TelemetryCollector && TelemetryCollector.registry && typeof TelemetryCollector.registry.recordFailureCode === 'function') {
+                                    TelemetryCollector.registry.recordFailureCode('LF-604');
+                                }
+                                this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new StaleEpochError(errorMsg) });
                                 continue;
+                            }
+                            if (initialDecision.decision === 'WAIT' || initialDecision.action === 'BUFFER_COMMAND') {
+                                logger.info(`[ExecutionScheduler] Command ${finalCommand.id} on [${browserId}] buffered waiting for epoch alignment (target epoch: ${capEpoch})`);
+                                const decisionObj = await this.epochGate.evaluateAsync(browserId, capEpoch, 5000);
+                                if (decisionObj.decision === 'SKIP' || decisionObj.action === 'PURGE_STALE') {
+                                    const errorMsg = `[LF-604] Stale epoch command ${finalCommand.id || 'unknown'} on [${browserId}] after barrier wait: ${decisionObj.reason}`;
+                                    logger.warn(`[ExecutionScheduler] ${errorMsg}`);
+                                    if (TelemetryCollector && TelemetryCollector.registry && typeof TelemetryCollector.registry.recordFailureCode === 'function') {
+                                        TelemetryCollector.registry.recordFailureCode('LF-604');
+                                    }
+                                    this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new StaleEpochError(errorMsg) });
+                                    continue;
+                                }
                             }
                         }
                     }
