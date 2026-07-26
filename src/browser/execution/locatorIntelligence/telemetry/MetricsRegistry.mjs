@@ -77,8 +77,12 @@ export class MetricsRegistry {
         // Phase 11: Resolution Memory
         this.memory = {
             hits: 0,
-            misses: 0
+            misses: 0,
+            evictions: 0
         };
+
+        // Telemetry-Driven Failure Localization (Lifecycle Trace Sink)
+        this.lifecycleEvents = [];
 
         // Failure Metrics (Map of LF Code -> Count)
         this.failures = new Map();
@@ -209,6 +213,10 @@ export class MetricsRegistry {
                 averageInjectionLatency: this.epochSync.injectionLatency.average,
                 averageEpochWaitDuration: this.epochSync.epochWaitDuration.average,
                 averageEpochDrift: this.epochSync.epochDrift.average
+            },
+            lifecycle: {
+                totalEvents: this.lifecycleEvents.length,
+                recentEvents: this.lifecycleEvents.slice(-20)
             }
         };
     }

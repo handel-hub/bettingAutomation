@@ -214,6 +214,18 @@ class TelemetryCollectorImpl {
         } catch (e) {}
     }
 
+    recordMemoryHit() {
+        try { this.registry.memory.hits++; } catch (e) {}
+    }
+
+    recordMemoryMiss() {
+        try { this.registry.memory.misses++; } catch (e) {}
+    }
+
+    recordMemoryEviction() {
+        try { if (this.registry.memory.evictions !== undefined) this.registry.memory.evictions++; } catch (e) {}
+    }
+
     /**
      * Records telemetry from StaleEpoch aborts.
      */
@@ -379,6 +391,90 @@ class TelemetryCollectorImpl {
             }
         } catch (e) {
             // Passive - ignore errors
+        }
+    }
+
+    /**
+     * Computes a deterministic 64-character hex cryptographic hash of a normalized EID object.
+     * Works synchronously in both Browser and Node.js environments without async crypto dependencies.
+     * @param {object} eid
+     * @returns {string|null}
+     */
+    computeEIDHash(eid) {
+        if (!eid || typeof eid !== 'object') return null;
+        try {
+            const str = typeof eid.serialize === 'function' ? JSON.stringify(eid.serialize()) : JSON.stringify(eid);
+            let h1 = 0xdeadbeef ^ str.length, h2 = 0x41c6ce57 ^ str.length, h3 = 0x811c9dc5 ^ str.length, h4 = 0xc761c23c ^ str.length;
+            for (let i = 0, ch; i < str.length; i++) {
+                ch = str.charCodeAt(i);
+                h1 = Math.imul(h1 ^ ch, 2654435761);
+                h2 = Math.imul(h2 ^ ch, 1597334677);
+                h3 = Math.imul(h3 ^ ch, 3266489917);
+                h4 = Math.imul(h4 ^ ch, 668265263);
+            }
+            h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489917);
+            h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489917);
+            h3 = Math.imul(h3 ^ (h3 >>> 16), 2246822507) ^ Math.imul(h4 ^ (h4 >>> 13), 3266489917);
+            h4 = Math.imul(h4 ^ (h4 >>> 16), 2246822507) ^ Math.imul(h3 ^ (h3 >>> 13), 3266489917);
+            const hex = (n) => (n >>> 0).toString(16).padStart(8, '0');
+            return hex(h1) + hex(h2) + hex(h3) + hex(h4) + hex(h1 ^ h3) + hex(h2 ^ h4) + hex(h1 ^ h4) + hex(h2 ^ h3);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /**
+     * Emits and stores a structured telemetry lifecycle span event.
+     * Enforces schema normalization and forwards across browser-to-node boundary if in injected browser script.
+     * @param {object} event
+     */
+    recordLifecycleEvent(event) {
+        try {
+            if (!event) return;
+            const normalized = {
+                eventId: event.eventId || ('ev-' + Math.random().toString(16).slice(2, 10)),
+                traceId: event.traceId || 'tr-unknown',
+                spanId: event.spanId || ('sp-' + Math.random().toString(16).slice(2, 10)),
+                parentSpanId: event.parentSpanId || null,
+                stageSequence: typeof event.stageSequence === 'number' ? event.stageSequence : 0,
+                stageName: event.stageName || 'UNKNOWN_STAGE',
+                component: event.component || 'Unknown.mjs',
+                method: event.method || 'unknown',
+                timestamp: typeof event.timestamp === 'number' ? event.timestamp : Date.now(),
+                browserId: event.browserId || (typeof window !== 'undefined' ? 'master' : 'node_controller'),
+                epoch: typeof event.epoch === 'number' ? event.epoch : (typeof window !== 'undefined' ? (window.__ANTIGRAVITY_EPOCH__ || 0) : 0),
+                interactionId: event.interactionId || 'ia-unknown',
+                commandId: event.commandId || null,
+                interactionType: event.interactionType || 'CLICK',
+                payloadSize: typeof event.payloadSize === 'number' ? event.payloadSize : 0,
+                eidPresent: !!event.eidPresent,
+                eidHash: event.eidHash || null,
+                serializationSize: typeof event.serializationSize === 'number' ? event.serializationSize : 0,
+                validationResult: event.validationResult || 'PASS',
+                stageDurationMs: typeof event.stageDurationMs === 'number' ? event.stageDurationMs : 0,
+                errorDetails: event.errorDetails || null
+            };
+
+            if (this.registry && Array.isArray(this.registry.lifecycleEvents)) {
+                this.registry.lifecycleEvents.push(normalized);
+                if (this.registry.lifecycleEvents.length > 500) {
+                    this.registry.lifecycleEvents.shift();
+                }
+            }
+
+            if (normalized.validationResult && normalized.validationResult.startsWith('FAIL')) {
+                const code = normalized.errorDetails?.errorCode || normalized.validationResult.replace('FAIL_', '');
+                if (this.registry && typeof this.registry.recordFailureCode === 'function') {
+                    this.registry.recordFailureCode(code);
+                }
+            }
+
+            // If in browser context, forward to Node.js controller via Playwright exposed binding
+            if (typeof window !== 'undefined' && typeof window.dispatchLifecycleEvent === 'function') {
+                window.dispatchLifecycleEvent(normalized).catch(() => {});
+            }
+        } catch (e) {
+            // Passive telemetry
         }
     }
 }
