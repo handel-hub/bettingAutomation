@@ -5,6 +5,7 @@
  * Evaluates resolution confidence against interaction-type-dependent thresholds.
  */
 import { TelemetryCollector } from '../telemetry/TelemetryCollector.mjs';
+import { EntropyScaler } from '../inference/EntropyScaler.mjs';
 
 export class ConfidenceDecision {
     constructor({
@@ -70,9 +71,20 @@ export class ConfidenceGate {
      * @param {string} interactionType - Type of interaction (e.g. 'click', 'input', 'hover')
      * @returns {ConfidenceDecision}
      */
-    evaluate(resolutionConfidence, interactionType) {
+    evaluate(resolutionConfidence, interactionType, identityDocument = null) {
         const typeStr = String(interactionType || 'UNKNOWN').toUpperCase().trim();
-        const threshold = this._getThreshold(typeStr);
+        const baseThreshold = this._getThreshold(typeStr);
+        let threshold = baseThreshold;
+
+        if (identityDocument && typeof EntropyScaler !== 'undefined' && baseThreshold > 0) {
+            const entropy = EntropyScaler.computeEntropy(identityDocument);
+            const floor = Math.min(0.10, baseThreshold);
+            if (entropy < 0.3) {
+                threshold = Math.max(floor, Number((baseThreshold * entropy).toFixed(4)));
+            } else {
+                threshold = Math.max(floor, Number((baseThreshold * (0.5 + 0.5 * entropy)).toFixed(4)));
+            }
+        }
 
         let conf = NaN;
         if (resolutionConfidence !== null && resolutionConfidence !== undefined) {
@@ -103,7 +115,7 @@ export class ConfidenceGate {
             return new ConfidenceDecision({
                 decision: 'REJECT',
                 confidence: invalidConf,
-                threshold,
+                threshold: baseThreshold,
                 thresholdApplied: threshold,
                 margin,
                 interactionType: typeStr,
@@ -112,7 +124,7 @@ export class ConfidenceGate {
         }
 
         const margin = Number((conf - threshold).toFixed(4));
-        const decisionObj = this._classifyMargin(conf, threshold, margin, typeStr);
+        const decisionObj = this._classifyMargin(conf, baseThreshold, threshold, margin, typeStr);
         TelemetryCollector.recordConfidenceGateDecision(decisionObj.decision);
         return decisionObj;
     }
@@ -142,48 +154,48 @@ export class ConfidenceGate {
         return Number(this.thresholds.DEFAULT || 0.50);
     }
 
-    _classifyMargin(confidence, threshold, margin, typeStr) {
+    _classifyMargin(confidence, baseThreshold, thresholdApplied, margin, typeStr) {
         if (margin < -0.20) {
             return new ConfidenceDecision({
                 decision: 'REJECT',
                 confidence,
-                threshold,
-                thresholdApplied: threshold,
+                threshold: baseThreshold,
+                thresholdApplied,
                 margin,
                 interactionType: typeStr,
-                reason: `Confidence ${confidence.toFixed(2)} far below threshold ${threshold.toFixed(2)} for ${typeStr}`
+                reason: `Confidence ${confidence.toFixed(2)} far below threshold ${thresholdApplied.toFixed(2)} for ${typeStr}`
             });
         }
         if (margin < 0) {
             return new ConfidenceDecision({
                 decision: 'RECOVER',
                 confidence,
-                threshold,
-                thresholdApplied: threshold,
+                threshold: baseThreshold,
+                thresholdApplied,
                 margin,
                 interactionType: typeStr,
-                reason: `Confidence ${confidence.toFixed(2)} slightly below threshold ${threshold.toFixed(2)} for ${typeStr} (Eligible for Recovery)`
+                reason: `Confidence ${confidence.toFixed(2)} slightly below threshold ${thresholdApplied.toFixed(2)} for ${typeStr} (Eligible for Recovery)`
             });
         }
         if (margin < 0.05) {
             return new ConfidenceDecision({
                 decision: 'TENTATIVE',
                 confidence,
-                threshold,
-                thresholdApplied: threshold,
+                threshold: baseThreshold,
+                thresholdApplied,
                 margin,
                 interactionType: typeStr,
-                reason: `Confidence ${confidence.toFixed(2)} marginally exceeds threshold ${threshold.toFixed(2)} for ${typeStr}`
+                reason: `Confidence ${confidence.toFixed(2)} marginally exceeds threshold ${thresholdApplied.toFixed(2)} for ${typeStr}`
             });
         }
         return new ConfidenceDecision({
             decision: 'ACCEPT',
             confidence,
-            threshold,
-            thresholdApplied: threshold,
+            threshold: baseThreshold,
+            thresholdApplied,
             margin,
             interactionType: typeStr,
-            reason: `Confidence ${confidence.toFixed(2)} firmly exceeds threshold ${threshold.toFixed(2)} for ${typeStr}`
+            reason: `Confidence ${confidence.toFixed(2)} firmly exceeds threshold ${thresholdApplied.toFixed(2)} for ${typeStr}`
         });
     }
 }

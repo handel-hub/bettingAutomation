@@ -20,6 +20,13 @@ export class ResolutionOutcome {
         this.similarityScore = similarityScore;
         this.recoveryLevel = recoveryLevel;
         this.durationMs = Number(durationMs) || 0;
+        this.latency = {
+            totalDurationMs: this.durationMs,
+            extractDurationMs: 0,
+            rankDurationMs: 0,
+            memoryLookupDurationMs: 0,
+            ipcDurationMs: 0
+        };
         this.attempts = Number(attempts) || 0;
         this.error = error;
         this.telemetry = Array.isArray(telemetry) ? [...telemetry] : [];
@@ -38,6 +45,7 @@ export class ResolutionOutcome {
             similarityScore: this.similarityScore && typeof this.similarityScore.serialize === 'function' ? this.similarityScore.serialize() : (this.similarityScore ? { ...this.similarityScore } : null),
             recoveryLevel: this.recoveryLevel,
             durationMs: this.durationMs,
+            latency: { ...this.latency },
             attempts: this.attempts,
             error: this.error ? (this.error.code ? `[${this.error.code}] ${this.error.message}` : String(this.error.message || this.error)) : null,
             telemetry: this.telemetry.map(t => (t && typeof t.serialize === 'function' ? t.serialize() : { ...t }))

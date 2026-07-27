@@ -3,14 +3,15 @@ import { TelemetryCollector } from '../telemetry/TelemetryCollector.mjs';
 import { TimeConstants } from '../../time/TimeConstants.mjs';
 
 export class RecoveryOutcome {
-    constructor({ status, result, level, attempts, duration, history, terminalError = null }) {
+    constructor({ status, result, level, attempts, duration, history, terminalError = null, circuitBreakerTripped = false }) {
         this.status = status;     // 'RESOLVED' | 'SKIPPED' | 'ABORTED'
         this.result = result;     // ResolutionResult | null
-        this.level = level;       // 'L1' | 'L2' | 'L3' | 'L4'
+        this.level = level;       // 'L1' | 'L2' | 'L3' | 'L3.5' | 'L4'
         this.attempts = attempts; // Total attempts
         this.duration = duration; // Total time
         this.history = history;   // Array<{level, error, duration}>
         this.terminalError = terminalError;
+        this.circuitBreakerTripped = circuitBreakerTripped;
     }
 }
 
@@ -19,7 +20,7 @@ export class RecoveryOrchestrator {
         this.pageStateMonitor = pageStateMonitor;
     }
 
-    _abortOutcome(state, startTime, level, terminalError = null) {
+    _abortOutcome(state, startTime, level, terminalError = null, circuitBreakerTripped = false) {
         return new RecoveryOutcome({
             status: 'ABORTED',
             result: null,
@@ -27,7 +28,8 @@ export class RecoveryOrchestrator {
             attempts: state.attempts,
             duration: Date.now() - startTime,
             history: state.history,
-            terminalError
+            terminalError,
+            circuitBreakerTripped
         });
     }
 
@@ -59,7 +61,25 @@ export class RecoveryOrchestrator {
 
         // L2: DOM Settlement (budget: 2000ms from start, capped by hardDeadline)
         const l2Deadline = Math.min(startTime + 2500, hardDeadline);
-        const l2Result = await this._executeL2(resolveFn, page, l2Deadline, state, options);
+        const scheduler = options.scheduler || options.executionScheduler;
+        const browserId = options.browserId || (page && (page.id || page.browserId)) || null;
+        if (scheduler && typeof scheduler.setBackpressure === 'function') {
+            scheduler.setBackpressure(browserId || 'global', true);
+        } else if (scheduler && 'backpressureActive' in scheduler) {
+            scheduler.backpressureActive = true;
+        }
+
+        let l2Result;
+        try {
+            l2Result = await this._executeL2(resolveFn, page, l2Deadline, state, options);
+        } finally {
+            if (scheduler && typeof scheduler.setBackpressure === 'function') {
+                scheduler.setBackpressure(browserId || 'global', false);
+            } else if (scheduler && 'backpressureActive' in scheduler) {
+                scheduler.backpressureActive = false;
+            }
+        }
+
         if (l2Result.success) {
             TelemetryCollector.recordRecovery(2);
             return new RecoveryOutcome({
@@ -89,8 +109,25 @@ export class RecoveryOrchestrator {
         }
         if (Date.now() >= hardDeadline) return this._abortOutcome(state, startTime, 'L3');
 
+        // L3.5: Semantic Fallback (budget: 500ms, capped by hardDeadline)
+        const l35Deadline = Math.min(Date.now() + 500, hardDeadline);
+        const l35Result = await this._executeL3_5(page, l35Deadline, state, options);
+        if (l35Result.success) {
+            TelemetryCollector.recordRecovery('3.5');
+            return new RecoveryOutcome({
+                status: 'RESOLVED',
+                result: l35Result.result,
+                level: 'L3.5',
+                attempts: state.attempts,
+                duration: Date.now() - startTime,
+                history: state.history
+            });
+        }
+        if (l35Result.terminalError) return this._abortOutcome(state, startTime, 'L3.5', l35Result.terminalError);
+        if (Date.now() >= hardDeadline) return this._abortOutcome(state, startTime, 'L3.5');
+
         // L4: Reload
-        const l4Result = await this._executeL4(resolveFn, page, state, hardDeadline);
+        const l4Result = await this._executeL4(resolveFn, page, state, hardDeadline, options);
         if (l4Result.success) {
             TelemetryCollector.recordRecovery(4);
             return new RecoveryOutcome({
@@ -102,9 +139,9 @@ export class RecoveryOrchestrator {
                 history: state.history
             });
         }
-        if (l4Result.terminalError) return this._abortOutcome(state, startTime, 'L4', l4Result.terminalError);
+        if (l4Result.terminalError) return this._abortOutcome(state, startTime, 'L4', l4Result.terminalError, l4Result.circuitBreakerTripped);
 
-        return this._abortOutcome(state, startTime, 'L4');
+        return this._abortOutcome(state, startTime, 'L4', null, l4Result.circuitBreakerTripped);
     }
 
     _isTerminalError(err) {
@@ -202,7 +239,76 @@ export class RecoveryOrchestrator {
         return ['hover', 'scroll'].includes(type);
     }
 
-    async _executeL4(resolveFn, page, state, hardDeadline = Infinity) {
+    async _executeL3_5(page, deadline, state, options = {}) {
+        const levelStart = Date.now();
+        const eid = options.originalEID || options.eid || options.identityDocument || null;
+        const text = eid ? (eid.textContent || eid.ariaLabel || eid.placeholder || eid.dataTestId) : (options.semanticText || null);
+
+        if (typeof options.semanticFallback === 'function') {
+            state.attempts++;
+            try {
+                const res = await options.semanticFallback(text, page, options);
+                if (res && res.success) return { success: true, result: res };
+            } catch (err) {
+                if (typeof console !== 'undefined' && process.env.DEBUG_RECOVERY) console.warn('[Recovery L3.5 Error]', err.stack || err.message);
+                if (this._isTerminalError(err)) return { success: false, terminalError: err };
+                state.history.push({ level: 'L3.5', error: err.message, duration: Date.now() - levelStart });
+            }
+        }
+
+        if (page && text && Date.now() < deadline) {
+            state.attempts++;
+            try {
+                let locator;
+                if (typeof page.getByText === 'function') {
+                    locator = page.getByText(text);
+                } else if (typeof page.locator === 'function') {
+                    locator = page.locator(`text="${text}"`);
+                }
+                if (locator) {
+                    let isVisible = true;
+                    if (typeof locator.isVisible === 'function') {
+                        isVisible = await locator.isVisible();
+                    }
+                    if (isVisible) {
+                        const { ResolutionResult } = await import('./ResolutionResult.mjs');
+                        const candidate = { locator: `text="${text}"`, strategy: 'semantic-fallback', rank: 99 };
+                        const winScore = 40.0;
+                        const result = new ResolutionResult({
+                            success: true,
+                            playwrightLocator: locator,
+                            locator: `text="${text}"`,
+                            candidate,
+                            strategy: 'semantic-fallback',
+                            duration: Date.now() - levelStart,
+                            resolutionCycles: 1,
+                            winningCandidate: candidate,
+                            winningStrategy: 'semantic-fallback',
+                            winningScore: winScore,
+                            similarity: 0.4,
+                            totalCandidates: 1,
+                            exhaustedCandidates: 0,
+                            telemetry: []
+                        });
+                        
+                        const memory = options.resolutionMemory || options.memory;
+                        if (memory && typeof memory.remember === 'function' && eid && eid.identityHash && options.urlPathname) {
+                            memory.remember(options.urlPathname, eid.identityHash, 'semantic-fallback', `text="${text}"`, winScore);
+                        }
+                        return { success: true, result };
+                    }
+                }
+            } catch (err) {
+                if (typeof console !== 'undefined' && process.env.DEBUG_RECOVERY) console.warn('[Recovery L3.5 Error]', err.stack || err.message);
+                if (this._isTerminalError(err)) return { success: false, terminalError: err };
+                state.history.push({ level: 'L3.5', error: err.message, duration: Date.now() - levelStart });
+            }
+        }
+
+        return { success: false };
+    }
+
+    async _executeL4(resolveFn, page, state, hardDeadline = Infinity, options = {}) {
         const levelStart = Date.now();
         try {
             const remainingMs = Math.max(100, hardDeadline - Date.now());
@@ -221,6 +327,12 @@ export class RecoveryOrchestrator {
             if (this._isTerminalError(err)) return { success: false, terminalError: err };
             state.history.push({ level: 'L4', error: err.message, duration: Date.now() - levelStart });
         }
-        return { success: false };
+        if (options.healthMonitor && typeof options.healthMonitor.recordRecoveryFailure === 'function' && options.browserId) {
+            options.healthMonitor.recordRecoveryFailure(options.browserId);
+        } else if (options.circuitBreaker && typeof options.circuitBreaker.recordFailure === 'function') {
+            options.circuitBreaker.recordFailure();
+        }
+        const circuitBreakerTripped = (options.healthMonitor?.getCircuitBreaker?.(options.browserId)?.isTripped() || options.circuitBreaker?.isTripped() || false);
+        return { success: false, circuitBreakerTripped };
     }
 }

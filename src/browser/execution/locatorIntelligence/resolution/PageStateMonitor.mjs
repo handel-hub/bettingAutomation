@@ -93,6 +93,29 @@ export class PageStateMonitor {
         }
     }
 
+    async getMutationRate(page) {
+        if (!page || (typeof page.isClosed === 'function' && page.isClosed())) {
+            return 0;
+        }
+        const stateRecord = this.pageStates.get(page);
+        if (!stateRecord) {
+            await this.attach(page);
+            return 0;
+        }
+        try {
+            const currentCount = await page.evaluate(() => window.__pgMonitorMutCount || 0);
+            const now = Date.now();
+            const timeDiff = now - stateRecord.lastTimestamp;
+            if (timeDiff <= 0) return 0;
+            const ratePerSec = ((currentCount - stateRecord.lastCount) / timeDiff) * 1000;
+            stateRecord.lastCount = currentCount;
+            stateRecord.lastTimestamp = now;
+            return ratePerSec;
+        } catch (e) {
+            return 0;
+        }
+    }
+
     async detach(page) {
         if (!page) return;
         

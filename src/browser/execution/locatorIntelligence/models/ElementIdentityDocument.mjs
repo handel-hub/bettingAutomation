@@ -24,6 +24,16 @@ export class ElementIdentityDocument {
     constructor(data = {}) {
         this.version = data.version || '1.0.0';
         this.captureEpoch = data.captureEpoch !== undefined ? data.captureEpoch : Date.now();
+        this.captureTimestamp = data.captureTimestamp !== undefined ? data.captureTimestamp : (typeof data.captureEpoch === 'number' && data.captureEpoch > 100000000000 ? data.captureEpoch : Date.now());
+        this.sourceEpoch = data.sourceEpoch !== undefined ? data.sourceEpoch : (typeof data.captureEpoch === 'number' && data.captureEpoch < 100000000000 ? data.captureEpoch : 0);
+        this.anchor = data.anchor ? {
+            textContent: data.anchor.textContent || '',
+            tagName: (data.anchor.tagName || '').toUpperCase(),
+            ariaRole: data.anchor.ariaRole || null,
+            edgeDistance: data.anchor.edgeDistance !== undefined ? data.anchor.edgeDistance : 0,
+            spatialVector: data.anchor.spatialVector ? { dx: data.anchor.spatialVector.dx || 0, dy: data.anchor.spatialVector.dy || 0 } : null
+        } : null;
+        this.cssSelector = data.cssSelector || null;
         this.url = data.url || '';
         this.frameUrl = data.frameUrl || null;
 
@@ -204,6 +214,16 @@ export class ElementIdentityDocument {
             version: this.version,
             identityHash: this.identityHash,
             captureEpoch: this.captureEpoch,
+            captureTimestamp: this.captureTimestamp,
+            sourceEpoch: this.sourceEpoch,
+            anchor: this.anchor ? {
+                textContent: this.anchor.textContent,
+                tagName: this.anchor.tagName,
+                ariaRole: this.anchor.ariaRole,
+                edgeDistance: this.anchor.edgeDistance,
+                spatialVector: this.anchor.spatialVector ? { ...this.anchor.spatialVector } : null
+            } : null,
+            cssSelector: this.cssSelector,
             url: this.url,
             frameUrl: this.frameUrl,
             element: {

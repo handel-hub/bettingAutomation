@@ -48,7 +48,7 @@ export class MetricsRegistry {
             roundTrips: new RollingWindow(128)
         };
 
-        // Phase 7: Disambiguation & Verification
+        // Phase 7: Disambiguation & Verification & Observability Sampling
         this.disambiguation = {
             triggered: 0,
             failed: 0
@@ -57,6 +57,10 @@ export class MetricsRegistry {
             passed: 0,
             failed: 0,
             similarityScore: new RollingWindow(128)
+        };
+        this.sampling = {
+            sampled: 0,
+            suppressed: 0
         };
 
         // Phase 8: Confidence Gate Metrics
@@ -119,6 +123,9 @@ export class MetricsRegistry {
             ipcDuplicatesDropped: 0,
             ipcOutOfOrder: 0,
             spaNavigationDetected: 0,
+            syncGap: 0,
+            syncAssertionFailure: 0,
+            syncAckTimeout: 0,
             ipcDeliveryLatency: new RollingWindow(128),
             injectionLatency: new RollingWindow(128),
             epochWaitDuration: new RollingWindow(128),
@@ -182,6 +189,7 @@ export class MetricsRegistry {
             },
             strategies: Object.fromEntries(this.strategies),
             validation: { ...this.validation },
+            sampling: { ...this.sampling },
             confidence: { ...this.confidence },
             recovery: { ...this.recovery },
             memory: { ...this.memory },
@@ -209,6 +217,9 @@ export class MetricsRegistry {
                 ipcDuplicatesDropped: this.epochSync.ipcDuplicatesDropped,
                 ipcOutOfOrder: this.epochSync.ipcOutOfOrder,
                 spaNavigationDetected: this.epochSync.spaNavigationDetected,
+                syncGap: this.epochSync.syncGap,
+                syncAssertionFailure: this.epochSync.syncAssertionFailure,
+                syncAckTimeout: this.epochSync.syncAckTimeout,
                 averageIpcDeliveryLatency: this.epochSync.ipcDeliveryLatency.average,
                 averageInjectionLatency: this.epochSync.injectionLatency.average,
                 averageEpochWaitDuration: this.epochSync.epochWaitDuration.average,

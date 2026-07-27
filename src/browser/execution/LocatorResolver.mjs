@@ -6,7 +6,6 @@ import {
     HiddenError,
     DisabledError,
     SyntaxError,
-    StaleEpochError,
     ConfidenceGateRejectionError,
     GlobalTimeoutError,
     QueueDeadlineExceededError,
@@ -29,6 +28,7 @@ import { VerificationEngine } from './locatorIntelligence/resolution/Verificatio
 import { ConfidenceGate } from './locatorIntelligence/resolution/ConfidenceGate.mjs';
 import { resolutionMemory } from './locatorIntelligence/memory/ResolutionMemory.mjs';
 import { strategySuccessTracker } from './locatorIntelligence/memory/StrategySuccessTracker.mjs';
+import { InferenceEngine } from './locatorIntelligence/inference/InferenceEngine.mjs';
 
 export class ResolutionResult {
     constructor({ success, playwrightLocator, locator, candidate, strategy, duration, resolutionCycles, failureReason, winningCandidate, winningStrategy, winningScore, similarity, totalCandidates, exhaustedCandidates, telemetry }) {
@@ -58,6 +58,34 @@ export class LocatorResolver {
      */
     static async resolve(page, candidates, interactionType, policy = DefaultPolicy, options = {}) {
         const resStart = Date.now();
+        if (!options.disableMemoization && options.executionContext && options.executionContext.memoizedResolution) {
+            const context = options.executionContext;
+            const currentMsn = (options.sequenceGate && options.browserId) ? (context.command?.metadata?.msn || 0) : 0;
+            const memo = context.memoizedResolution;
+            const cmdId = context.command?.id || options.commandId;
+            if (memo.commandId === cmdId && memo.msn === currentMsn) {
+                let isConnected = false;
+                try {
+                    if (memo.elementHandle) {
+                        isConnected = typeof memo.elementHandle.isConnected === 'function' ? await memo.elementHandle.isConnected() : true;
+                    } else if (memo.resolutionOutcome?.playwrightLocator) {
+                        const handle = await memo.resolutionOutcome.playwrightLocator.elementHandle({ timeout: 100 });
+                        if (handle) {
+                            isConnected = typeof handle.isConnected === 'function' ? await handle.isConnected() : true;
+                        }
+                    }
+                } catch (e) {
+                    isConnected = false;
+                }
+                if (isConnected) {
+                    logger.info(`[LocatorResolver] Lifecycle memoization hit for command ${cmdId}`);
+                    return memo.resolutionOutcome;
+                } else {
+                    logger.info(`[LocatorResolver] Memoized handle detached from DOM; evicting cache.`);
+                    context.memoizedResolution = null;
+                }
+            }
+        }
         const originalEID = options.identityDocument || null;
         try {
             const result = await this._resolveInternal(page, candidates, interactionType, policy, options);
@@ -91,6 +119,25 @@ export class LocatorResolver {
                 validationResult: valRes13,
                 errorDetails: err13
             });
+            if (result && result.success && !options.disableMemoization && options.executionContext) {
+                const context = options.executionContext;
+                const currentMsn = (options.sequenceGate && options.browserId) ? (context.command?.metadata?.msn || 0) : 0;
+                const cmdId = context.command?.id || options.commandId;
+                let elementHandle = null;
+                try {
+                    if (result.playwrightLocator && typeof result.playwrightLocator.elementHandle === 'function') {
+                        elementHandle = await result.playwrightLocator.elementHandle({ timeout: 100 });
+                    }
+                } catch (e) {}
+                context.memoizedResolution = {
+                    commandId: cmdId,
+                    msn: currentMsn,
+                    browserId: options.browserId,
+                    resolutionOutcome: result,
+                    elementHandle,
+                    timestamp: Date.now()
+                };
+            }
             return result;
         } catch (err) {
             const durationMs = Date.now() - resStart;
@@ -162,57 +209,22 @@ export class LocatorResolver {
             }
         }
 
-        if (featureFlags.isEnabled('LI_EPOCH_GATING') && options.epochGate && options.browserId && options.commandEpoch !== undefined && options.commandEpoch !== null && options.commandEpoch !== 0) {
-            const timeoutMs = policy.limits?.epochWaitTimeoutMs || 2000;
-            const decisionObj = await options.epochGate.evaluateAsync(options.browserId, options.commandEpoch, timeoutMs);
-            TelemetryCollector.recordLifecycleEvent({
-                traceId: options.traceId || 'tr-unknown',
-                spanId: 'sp-11-' + (options.browserId || 'unknown').slice(0, 4),
-                parentSpanId: 'sp-10-' + (options.browserId || 'unknown').slice(0, 4),
-                stageSequence: 11,
-                stageName: 'NAVIGATION_EPOCH_GATING',
-                component: 'LocatorResolver.mjs',
-                method: 'resolve',
-                timestamp: Date.now(),
-                browserId: options.browserId,
-                interactionId: options.interactionId || 'ia-unknown',
-                commandId: options.commandId || null,
-                interactionType,
-                epoch: options.commandEpoch,
-                validationResult: decisionObj.decision === 'SKIP' ? 'FAIL_LF604' : 'PASS',
-                errorDetails: decisionObj.decision === 'SKIP' ? { errorCode: 'LF-604', errorMessage: decisionObj.reason } : null
-            });
-            if (decisionObj.decision === 'SKIP') {
-                TelemetryCollector.recordEpochSkip();
-                const duration = Date.now() - startTime;
-                const failureReason = `[LF-604] StaleEpochError: ${decisionObj.reason}`;
-                logger.warn(`[LocatorResolver] ${failureReason}`);
-                const result = new ResolutionResult({
-                    success: false, duration, resolutionCycles: 0, failureReason,
-                    totalCandidates: candidates.length, exhaustedCandidates: 0,
-                    telemetry: []
-                });
-                TelemetryCollector.recordResolution(result);
-                return result;
-            }
-        } else {
-            TelemetryCollector.recordLifecycleEvent({
-                traceId: options.traceId || 'tr-unknown',
-                spanId: 'sp-11-' + (options.browserId || 'unknown').slice(0, 4),
-                parentSpanId: 'sp-10-' + (options.browserId || 'unknown').slice(0, 4),
-                stageSequence: 11,
-                stageName: 'NAVIGATION_EPOCH_GATING',
-                component: 'LocatorResolver.mjs',
-                method: 'resolve',
-                timestamp: Date.now(),
-                browserId: options.browserId || 'slave',
-                interactionId: options.interactionId || 'ia-unknown',
-                commandId: options.commandId || null,
-                interactionType,
-                epoch: options.commandEpoch || 0,
-                validationResult: 'PASS'
-            });
-        }
+        TelemetryCollector.recordLifecycleEvent({
+            traceId: options.traceId || 'tr-unknown',
+            spanId: 'sp-11-' + (options.browserId || 'unknown').slice(0, 4),
+            parentSpanId: 'sp-10-' + (options.browserId || 'unknown').slice(0, 4),
+            stageSequence: 11,
+            stageName: 'NAVIGATION_EPOCH_GATING',
+            component: 'LocatorResolver.mjs',
+            method: 'resolve',
+            timestamp: Date.now(),
+            browserId: options.browserId || 'slave',
+            interactionId: options.interactionId || 'ia-unknown',
+            commandId: options.commandId || null,
+            interactionType,
+            epoch: 0,
+            validationResult: 'PASS'
+        });
 
         const profile = getValidationProfile(interactionType);
         const verificationEngine = new VerificationEngine(policy.verification || {});
@@ -252,12 +264,150 @@ export class LocatorResolver {
                 }
             }
             
+            if (featureFlags.isEnabled('SCENE_GRAPH_ENABLED') && originalEID) {
+                let sgResults = null;
+                try {
+                    sgResults = await page.evaluate((eid) => {
+                        if (window.__sceneGraph && window.__sceneGraph.isReady()) {
+                            const records = window.__sceneGraph.query(eid);
+                            return records.map((rec, idx) => ({
+                                candidateId: `sg-${idx}`,
+                                locator: rec.locator,
+                                count: 1,
+                                visible: rec.isVisible,
+                                enabled: !rec.isDisabled,
+                                strategy: 'scene-graph',
+                                rank: idx,
+                                candidate: {
+                                    id: `sg-${idx}`,
+                                    locator: rec.locator,
+                                    strategy: 'scene-graph',
+                                    ranking: { finalScore: 1.0 }
+                                }
+                            }));
+                        }
+                        return null;
+                    }, originalEID);
+                } catch (e) {
+                    logger.warn(`[LocatorResolver] SceneGraph query failed: ${e.message}`);
+                }
+
+                if (sgResults && sgResults.length > 0) {
+                    for (const item of sgResults) {
+                        if (profile.includes('visible') && item.visible === false) continue;
+                        if (profile.includes('enabled') && item.enabled === false) continue;
+
+                        let similarity = null;
+                        if (featureFlags.isEnabled('LI_VERIFICATION')) {
+                            const verifyResult = await verificationEngine.verify(page, item.locator, originalEID);
+                            if (!verifyResult.verified) {
+                                logger.warn(`[LocatorResolver] Verification failed for SceneGraph locator [${item.locator}]: ${verifyResult.reason}`);
+                                continue;
+                            }
+                            similarity = verifyResult.similarity;
+                        }
+
+                        let locator;
+                        try {
+                            locator = page.locator(item.locator);
+                        } catch (e) {
+                            continue;
+                        }
+
+                        const duration = Date.now() - startTime;
+                        const winningScore = 1.0;
+
+                        if (featureFlags.isEnabled('LI_CONFIDENCE_GATE')) {
+                            const gateDecision = confidenceGate.evaluate(winningScore, interactionType, duration, { similarity });
+                            if (gateDecision.action === 'ABORT') {
+                                return new ResolutionResult({ success: false, reason: gateDecision.reason, confidence: winningScore, duration });
+                            }
+                        }
+
+                        if (featureFlags.isEnabled('LI_RESOLUTION_MEMORY') && originalEID.identityHash && urlPathname) {
+                            resolutionMemory.record(urlPathname, originalEID.identityHash, item.locator, 'scene-graph', winningScore, { durationMs: duration, verificationPassed: true });
+                        }
+
+                        return new ResolutionResult({
+                            success: true,
+                            playwrightLocator: locator,
+                            strategyName: 'scene-graph',
+                            candidateUsed: item.candidate,
+                            confidence: winningScore,
+                            attempts: resolutionCycles,
+                            duration,
+                            fallbackUsed: false,
+                            resolvedVia: 'scene-graph'
+                        });
+                    }
+                }
+            }
+
+            if ((featureFlags.isEnabled('INFERENCE_ENGINE_V2') || featureFlags.isEnabled('LI_INFERENCE_ENGINE_V2')) && originalEID) {
+                const startTime = Date.now();
+                const spatialCallback = options.spatialCallback || null;
+                const inferenceRes = inferenceEngine.infer(originalEID, candidatesToEvaluate, spatialCallback);
+                if (inferenceRes.outcome === 'MATCH' && inferenceRes.candidate) {
+                    const duration = Date.now() - startTime;
+                    const winCand = inferenceRes.candidate;
+                    const winningStrategy = winCand.strategy || 'inference-engine';
+                    const winningScore = inferenceRes.confidence;
+
+                    let locator;
+                    try {
+                        locator = page.locator(winCand.locator);
+                        const count = await page.locator(winCand.locator).count();
+                        if (count > 0) {
+                            if (featureFlags.isEnabled('LI_CONFIDENCE_GATE')) {
+                                const gateDecision = confidenceGate.evaluate(winningScore, interactionType);
+                                TelemetryCollector.recordConfidenceGateDecision(gateDecision);
+                                if (gateDecision.decision === 'REJECT') {
+                                    throw new ConfidenceGateRejectionError(gateDecision.reason);
+                                }
+                                if (gateDecision.decision === 'RECOVER') {
+                                    throw new Error(`[LF-302] Recoverable Confidence Miss: ${gateDecision.reason}`);
+                                }
+                            }
+
+                            if (featureFlags.isEnabled('LI_RESOLUTION_MEMORY') && originalEID.identityHash && urlPathname) {
+                                resolutionMemory.remember(urlPathname, originalEID.identityHash, winningStrategy, winCand.locator, winningScore);
+                                strategySuccessTracker.recordOutcome(winningStrategy, new URL(page.url()).hostname, true);
+                            }
+
+                            const result = new ResolutionResult({
+                                success: true,
+                                playwrightLocator: locator,
+                                locator: winCand.locator,
+                                candidate: winCand,
+                                strategy: winningStrategy,
+                                duration,
+                                resolutionCycles: 1,
+                                winningCandidate: winCand,
+                                winningStrategy,
+                                winningScore,
+                                similarity: winningScore,
+                                totalCandidates: candidates.length,
+                                exhaustedCandidates: 0,
+                                telemetry: []
+                            });
+                            TelemetryCollector.recordResolution(result);
+                            return result;
+                        }
+                    } catch (e) {
+                        if (e instanceof ConfidenceGateRejectionError || e.message?.includes('LF-302')) throw e;
+                    }
+                } else if (inferenceRes.outcome === 'AMBIGUOUS') {
+                    throw new AmbiguousMatchError(`InferenceEngine ambiguous match: ${inferenceRes.trace?.reason}`);
+                } else if (inferenceRes.outcome === 'NO_MATCH') {
+                    throw new Error(`[LF-505] All Candidates Exhausted in InferenceEngine (${Date.now() - startTime}ms)`);
+                }
+            }
+
             if (featureFlags.isEnabled('LI_BATCH_RESOLVER')) {
             const batchResult = await BatchResolver.resolve(page, candidatesToEvaluate, profile, { 
                 shadowPath: options.shadowPath || [],
-                epochGate: options.epochGate,
-                browserId: options.browserId,
-                commandEpoch: options.commandEpoch
+                sequenceGate: options.sequenceGate,
+                browserId: options.browserId
             });
             if (batchResult.success) {
                 const categorized = BatchResolver.categorize(batchResult, candidatesToEvaluate);
@@ -283,7 +433,7 @@ export class LocatorResolver {
 
                     let locator;
                     try {
-                        locator = page.locator(item.locator).first();
+                        locator = page.locator(item.locator);
                     } catch (e) {
                         continue;
                     }
@@ -451,8 +601,7 @@ export class LocatorResolver {
                                     throw new AmbiguousMatchError(disambigResult.error);
                                 }
                             } else {
-                                logger.warn(`[LF-102] AmbiguousMatchError: Locator resolved to ${count} elements. Falling back to .first() | Strategy: ${ctx.candidate.strategy} | Locator: ${ctx.candidate.locator}`);
-                                locator = locator.first();
+                                throw new AmbiguousMatchError(`Locator resolved to ${count} elements. Implicit .first() fallback is disabled. Strategy: ${ctx.candidate.strategy} | Locator: ${ctx.candidate.locator}`);
                             }
                         } else {
                             if (featureFlags.isEnabled('LI_VERIFICATION')) {
@@ -462,11 +611,11 @@ export class LocatorResolver {
                                 }
                                 ctx.similarity = verifyResult.similarity;
                             }
-                            locator = locator.first();
+                            // locator already strictly represents 1 element.
                         }
                         ctx.transitionTo(ResolutionState.LOCATED);
                     } else {
-                        locator = locator.first();
+                        // locator is already standard.
                     }
                     
                     // 2. Visibility Check

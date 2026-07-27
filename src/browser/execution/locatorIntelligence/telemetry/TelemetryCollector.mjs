@@ -4,6 +4,11 @@ import featureFlags from '../FeatureFlags.mjs';
 class TelemetryCollectorImpl {
     constructor() {
         this.registry = new MetricsRegistry();
+        this.mundaneSamplingRate = 0.01; // 1% by default for mundane commands
+        this._mundaneCounter = 0;
+        this.dispatchQueue = [];
+        this.drainScheduled = false;
+        this.onDispatch = null;
     }
 
     /**
@@ -11,6 +16,96 @@ class TelemetryCollectorImpl {
      */
     reset() {
         this.registry.reset();
+        this._mundaneCounter = 0;
+        this.dispatchQueue = [];
+        this.drainScheduled = false;
+    }
+
+    setSamplingRate(rate) {
+        if (typeof rate === 'number' && rate >= 0 && rate <= 1) {
+            this.mundaneSamplingRate = rate;
+        }
+    }
+
+    shouldSample(event) {
+        if (!event) return false;
+        // Always sample errors, failures, recovery, and rejections
+        if (event.validationResult && event.validationResult.startsWith('FAIL')) return true;
+        if (event.errorDetails != null && (typeof event.errorDetails === 'string' || Object.keys(event.errorDetails).length > 0)) return true;
+        if (event.stageName && (event.stageName.includes('RECOVERY') || event.stageName.includes('FAIL') || event.stageName.includes('REJECT') || event.stageName.includes('ERROR'))) return true;
+
+        // Check if mundane interaction type
+        const type = (event.interactionType || '').toLowerCase();
+        const isMundane = ['hover', 'scroll', 'mousemove', 'pointermove'].includes(type);
+        if (isMundane && (event.validationResult === 'PASS' || !event.validationResult)) {
+            if (this.mundaneSamplingRate <= 0) return false;
+            if (this.mundaneSamplingRate >= 1) return true;
+            this._mundaneCounter = (this._mundaneCounter || 0) + 1;
+            const interval = Math.round(1 / this.mundaneSamplingRate);
+            return (this._mundaneCounter % interval) === 1;
+        }
+
+        // Always sample all other commands (click, keypress, fill, navigate, etc.)
+        return true;
+    }
+
+    scrubPII(value, depth = 0) {
+        if (depth > 5 || value === null || value === undefined) return value;
+        if (typeof value === 'string') {
+            let str = value;
+            // Scrub 16-digit credit cards
+            str = str.replace(/\b\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{4}\b/g, '[SCRUBBED_CARD]');
+            // Scrub 9-digit SSNs
+            str = str.replace(/\b\d{3}[ -]\d{2}[ -]\d{4}\b/g, '[SCRUBBED_SSN]');
+            // Scrub Email addresses
+            str = str.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, '[SCRUBBED_EMAIL]');
+            // Scrub tokens and secrets
+            str = str.replace(/\b(?:bearer\s+)[a-zA-Z0-9._~+/-]+=*/gi, 'Bearer [SCRUBBED_TOKEN]');
+            str = str.replace(/(password|passwd|pwd|secret|token)(\s*(?:[=:]|\bis\b)\s*)([^\s,;"]+)/gi, '$1$2[SCRUBBED]');
+            return str;
+        }
+        if (Array.isArray(value)) {
+            return value.map(v => this.scrubPII(v, depth + 1));
+        }
+        if (typeof value === 'object') {
+            const scrubbed = {};
+            for (const [k, v] of Object.entries(value)) {
+                scrubbed[k] = this.scrubPII(v, depth + 1);
+            }
+            return scrubbed;
+        }
+        return value;
+    }
+
+    flush() {
+        if (!this.dispatchQueue || !this.dispatchQueue.length) return;
+        const batch = this.dispatchQueue.splice(0, this.dispatchQueue.length);
+        this.drainScheduled = false;
+        try {
+            const serialized = JSON.stringify(batch);
+            if (typeof this.onDispatch === 'function') {
+                this.onDispatch(serialized, batch);
+            }
+            if (typeof window !== 'undefined' && typeof window.dispatchLifecycleEvent === 'function') {
+                for (const ev of batch) {
+                    window.dispatchLifecycleEvent(ev).catch(() => {});
+                }
+            }
+        } catch (e) {
+            // Passive error handling
+        }
+    }
+
+    _scheduleDrain() {
+        if (this.drainScheduled) return;
+        this.drainScheduled = true;
+        const scheduleFn = (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function')
+            ? window.requestIdleCallback
+            : (cb) => setTimeout(cb, 0);
+        scheduleFn(() => {
+            this.drainScheduled = false;
+            this.flush();
+        });
     }
 
     /**
@@ -321,6 +416,23 @@ class TelemetryCollectorImpl {
     }
 
     /**
+     * Records telemetry for epoch barrier stalls.
+     * @param {object} probeData 
+     */
+    recordBarrierProbe(probeData) {
+        try {
+            if (!this.registry.epochSync.barrierProbes) {
+                this.registry.epochSync.barrierProbes = [];
+            }
+            this.registry.epochSync.barrierProbes.push({
+                eventType: 'EPOCH_BARRIER_PROBE',
+                timestamp: Date.now(),
+                ...probeData
+            });
+        } catch (e) {}
+    }
+
+    /**
      * Records telemetry for IPC message delivery.
      * @param {number} [latencyMs]
      */
@@ -382,8 +494,15 @@ class TelemetryCollectorImpl {
                 this.registry.shadowMode = { total: 0, matches: 0, mismatches: 0 };
             }
             this.registry.shadowMode.total++;
-            const legacyLoc = legacyResult?.locator || legacyResult?.playwrightLocator || null;
-            const v2Loc = v2Result?.locator || v2Result?.playwrightLocator || null;
+            let legacyLoc = legacyResult?.locator || legacyResult?.playwrightLocator || null;
+            let v2Loc = v2Result?.locator || v2Result?.playwrightLocator || null;
+            
+            // Support passing a single combined object { legacyLocator, newLocator } as second argument
+            if (v2Result === undefined && legacyResult && (legacyResult.legacyLocator !== undefined || legacyResult.newLocator !== undefined)) {
+                legacyLoc = legacyResult.legacyLocator || null;
+                v2Loc = legacyResult.newLocator || null;
+            }
+            
             if (legacyLoc !== v2Loc) {
                 this.registry.shadowMode.mismatches++;
             } else {
@@ -431,6 +550,18 @@ class TelemetryCollectorImpl {
     recordLifecycleEvent(event) {
         try {
             if (!event) return;
+
+            // Asymmetrical sampling check
+            if (!this.shouldSample(event)) {
+                if (this.registry && this.registry.sampling) {
+                    this.registry.sampling.suppressed++;
+                }
+                return;
+            }
+            if (this.registry && this.registry.sampling) {
+                this.registry.sampling.sampled++;
+            }
+
             const normalized = {
                 eventId: event.eventId || ('ev-' + Math.random().toString(16).slice(2, 10)),
                 traceId: event.traceId || 'tr-unknown',
@@ -455,27 +586,89 @@ class TelemetryCollectorImpl {
                 errorDetails: event.errorDetails || null
             };
 
+            // PII Scrubbing on string properties
+            const scrubbed = this.scrubPII(normalized);
+
             if (this.registry && Array.isArray(this.registry.lifecycleEvents)) {
-                this.registry.lifecycleEvents.push(normalized);
+                this.registry.lifecycleEvents.push(scrubbed);
                 if (this.registry.lifecycleEvents.length > 500) {
                     this.registry.lifecycleEvents.shift();
                 }
             }
 
-            if (normalized.validationResult && normalized.validationResult.startsWith('FAIL')) {
-                const code = normalized.errorDetails?.errorCode || normalized.validationResult.replace('FAIL_', '');
+            if (scrubbed.validationResult && scrubbed.validationResult.startsWith('FAIL')) {
+                const code = scrubbed.errorDetails?.errorCode || scrubbed.validationResult.replace('FAIL_', '');
                 if (this.registry && typeof this.registry.recordFailureCode === 'function') {
                     this.registry.recordFailureCode(code);
                 }
             }
 
-            // If in browser context, forward to Node.js controller via Playwright exposed binding
-            if (typeof window !== 'undefined' && typeof window.dispatchLifecycleEvent === 'function') {
-                window.dispatchLifecycleEvent(normalized).catch(() => {});
+            // Deferred asynchronous dispatch off the critical path
+            this.dispatchQueue.push(scrubbed);
+            if (scrubbed.validationResult && scrubbed.validationResult.startsWith('FAIL')) {
+                // Synchronous immediate flush on failure/error to prevent loss on crash
+                this.flush();
+            } else {
+                this._scheduleDrain();
             }
         } catch (e) {
             // Passive telemetry
         }
+    }
+
+    /**
+     * Records a SYNC-100: MSN Gap Detected event.
+     * @param {string} browserId
+     * @param {number} expectedMsn
+     * @param {number} actualMsn
+     */
+    recordSyncGap(browserId, expectedMsn, actualMsn) {
+        try {
+            this.registry.epochSync.syncGap++;
+            this.recordLifecycleEvent({
+                stageName: 'SYNC_ERROR',
+                component: 'SequenceGate.mjs',
+                method: 'validateMsn',
+                browserId,
+                errorDetails: { errorCode: 'SYNC-100', expectedMsn, actualMsn }
+            });
+        } catch (e) {}
+    }
+
+    /**
+     * Records a SYNC-201: URL Assertion Failure event.
+     * @param {string} browserId
+     * @param {string} expectedUrl
+     * @param {string} actualUrl
+     */
+    recordSyncAssertionFailure(browserId, expectedUrl, actualUrl) {
+        try {
+            this.registry.epochSync.syncAssertionFailure++;
+            this.recordLifecycleEvent({
+                stageName: 'SYNC_ERROR',
+                component: 'SynchronizationBarrier.mjs',
+                method: 'assertUrl',
+                browserId,
+                errorDetails: { errorCode: 'SYNC-201', expectedUrl, actualUrl }
+            });
+        } catch (e) {}
+    }
+
+    /**
+     * Records a SYNC-300: Ingress ACK Timeout event.
+     * @param {string} interactionId
+     */
+    recordSyncAckTimeout(interactionId) {
+        try {
+            this.registry.epochSync.syncAckTimeout++;
+            this.recordLifecycleEvent({
+                stageName: 'SYNC_ERROR',
+                component: 'ActionDispatcher.mjs',
+                method: 'ackTimeout',
+                interactionId,
+                errorDetails: { errorCode: 'SYNC-300', interactionId }
+            });
+        } catch (e) {}
     }
 }
 

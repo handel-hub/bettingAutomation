@@ -22,6 +22,9 @@ export class MockElement {
         if (id) this._attributes.set('id', id);
         if (className) this._attributes.set('class', className);
         if (role) this._attributes.set('role', role);
+        this.role = role || null;
+        this.nodeType = 1;
+        this.nodeName = this.tagName;
 
         this.parentElement = null;
         this.children = [];
@@ -29,6 +32,15 @@ export class MockElement {
         this._visible = visible;
         this.disabled = disabled;
         this.shadowRoot = null;
+        this.isConnected = true;
+    }
+
+    get childNodes() {
+        const nodes = [];
+        if (this._text) {
+            nodes.push({ nodeType: 3, nodeName: '#text', textContent: this._text });
+        }
+        return nodes.concat(this.children);
     }
 
     get className() {
@@ -90,6 +102,17 @@ export class MockElement {
 
     getBoundingClientRect() {
         return this._rect;
+    }
+
+    contains(otherNode) {
+        if (!otherNode) return false;
+        if (otherNode === this) return true;
+        let curr = otherNode.parentElement || otherNode.parentNode;
+        while (curr) {
+            if (curr === this) return true;
+            curr = curr.parentElement || curr.parentNode;
+        }
+        return false;
     }
 
     attachShadow(init) {
@@ -236,6 +259,16 @@ export class MockLocator {
         }
         this.page._actionLog.push({ type: 'click', selector: this.selector, element: this.elements[0] });
     }
+
+    async elementHandle() {
+        if (this.elements.length === 0) return null;
+        const el = this.elements[0];
+        return {
+            isConnected: async () => el.parentElement !== null || el.tagName === 'BODY',
+            evaluate: async (fn, arg) => fn(el, arg),
+            dispose: async () => {}
+        };
+    }
 }
 
 export class MockPage {
@@ -245,6 +278,14 @@ export class MockPage {
             document: this.mockDocument,
             location: { href: url, pathname: new URL(url).pathname }
         };
+        if (!this.mockDocument.elementFromPoint) {
+            this.mockDocument.elementFromPoint = (x, y) => {
+                if (this.mockDocument._elementFromPointMock !== undefined) {
+                    return typeof this.mockDocument._elementFromPointMock === 'function' ? this.mockDocument._elementFromPointMock(x, y) : this.mockDocument._elementFromPointMock;
+                }
+                return null;
+            };
+        }
         this.url = () => this.mockWindow.location.href;
         this._actionLog = [];
         this._exposedBindings = new Map();

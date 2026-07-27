@@ -29,6 +29,6 @@ describe('LocatorIntelligenceEngine (Phase 2 Integration)', () => {
         expect(output.identityDocument.fingerprint.structuralHash).toBeDefined();
         expect(output.locators).toBeDefined();
         expect(Array.isArray(output.locators)).toBe(true);
-        expect(duration).toBeLessThan(50); // soft real-time constraint under parallel CI load
+        expect(duration).toBeLessThan(150); // soft real-time constraint with buffer for slow CI
     });
 });

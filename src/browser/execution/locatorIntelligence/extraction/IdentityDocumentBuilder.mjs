@@ -1,5 +1,6 @@
 import { PipelineStep } from '../engine/PipelineStep.mjs';
 import { ElementIdentityDocument } from '../models/ElementIdentityDocument.mjs';
+import { FeatureExtractor } from './FeatureExtractor.mjs';
 
 export class IdentityDocumentBuilder extends PipelineStep {
     constructor() {
@@ -16,6 +17,10 @@ export class IdentityDocumentBuilder extends PipelineStep {
         const rawData = {
             version: '1.0.0',
             captureEpoch: context.metadata ? (context.metadata.captureEpoch || context.metadata.startTime || Date.now()) : Date.now(),
+            captureTimestamp: context.metadata ? (context.metadata.captureTimestamp || context.metadata.timestamp || context.metadata.startTime || Date.now()) : Date.now(),
+            sourceEpoch: context.metadata ? (context.metadata.sourceEpoch || context.metadata.epoch || 0) : (typeof window !== 'undefined' && window.__ANTIGRAVITY_EPOCH__ !== undefined ? window.__ANTIGRAVITY_EPOCH__ : 0),
+            anchor: f.anchor || null,
+            cssSelector: f.cssSelector || null,
             url: typeof window !== 'undefined' && window.location ? window.location.href : (context.metadata?.url || ''),
             frameUrl: f.isIframe ? (f.src || null) : null,
             element: {
@@ -32,7 +37,7 @@ export class IdentityDocumentBuilder extends PipelineStep {
             },
             text: {
                 exact: f.text || '',
-                normalized: (f.text || '').toLowerCase().trim(),
+                normalized: FeatureExtractor.normalizeText(f.text || ''),
                 wordCount: (f.text || '').split(/\s+/).filter(Boolean).length,
                 isNumeric: /^\d+$/.test((f.text || '').trim()),
                 isDynamic: false

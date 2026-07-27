@@ -25,7 +25,7 @@ export class FeatureExtractor extends PipelineStep {
             text: '',
             dataOps: {},
             ariaLabel: (el.getAttribute && el.getAttribute('aria-label')) || '',
-            role: (el.getAttribute && el.getAttribute('role')) || '',
+            role: (el.role !== undefined && el.role !== null ? el.role : ((el.getAttribute && el.getAttribute('role')) || '')),
             href: (el.getAttribute && el.getAttribute('href')) || '',
             src: (el.getAttribute && el.getAttribute('src')) || '',
             alt: (el.getAttribute && el.getAttribute('alt')) || '',
@@ -45,7 +45,9 @@ export class FeatureExtractor extends PipelineStep {
             landmark: null,
             sectionHeading: null,
             componentRoot: null,
-            position: { viewportQuadrant: null, isSticky: false, isFixed: false, zIndex: 0 }
+            position: { viewportQuadrant: null, isSticky: false, isFixed: false, zIndex: 0 },
+            anchor: null,
+            cssSelector: null
         };
 
         // Extract text carefully excluding scripts/styles
@@ -113,6 +115,8 @@ export class FeatureExtractor extends PipelineStep {
         features.sectionHeading = this._extractSectionHeading(el, features.ancestry);
         features.componentRoot = this._extractComponentRoot(el, features.ancestry);
         features.position = this._extractPosition(el, features.rect);
+        features.anchor = this.extractAnchor(el, context);
+        features.cssSelector = this._extractCssSelector(el, context);
 
         const probId = FeatureExtractor.extractProbabilisticIdentity(el, context.composedPath, context);
         features.semantic = probId.semantic;
@@ -144,7 +148,7 @@ export class FeatureExtractor extends PipelineStep {
                     tagName: tag.toUpperCase(),
                     id: node.id || null,
                     classes: typeof node.className === 'string' && node.className ? node.className.split(/\s+/).filter(Boolean) : (Array.isArray(node.classList) ? [...node.classList] : []),
-                    role: (node.getAttribute && node.getAttribute('role')) || null,
+                    role: (node.role !== undefined && node.role !== null ? node.role : ((node.getAttribute && node.getAttribute('role')) || null)),
                     testId: (node.getAttribute && node.getAttribute('data-testid')) || null
                 });
             }
@@ -158,7 +162,7 @@ export class FeatureExtractor extends PipelineStep {
                     tagName: tag.toUpperCase(),
                     id: current.id || null,
                     classes: typeof current.className === 'string' && current.className ? current.className.split(/\s+/).filter(Boolean) : (Array.isArray(current.classList) ? [...current.classList] : []),
-                    role: (current.getAttribute && current.getAttribute('role')) || null,
+                    role: (current.role !== undefined && current.role !== null ? current.role : ((current.getAttribute && current.getAttribute('role')) || null)),
                     testId: (current.getAttribute && current.getAttribute('data-testid')) || null
                 });
                 current = current.parentElement || current.parentNode;
@@ -193,7 +197,7 @@ export class FeatureExtractor extends PipelineStep {
             list.push({
                 tagName: tag.toUpperCase(),
                 text: ((c.innerText || c.textContent || '').trim()).substring(0, 50),
-                role: (c.getAttribute && c.getAttribute('role')) || null,
+                role: (c.role !== undefined && c.role !== null ? c.role : ((c.getAttribute && c.getAttribute('role')) || null)),
                 id: c.id || null,
                 classes: typeof c.className === 'string' && c.className ? c.className.split(/\s+/).filter(Boolean) : (Array.isArray(c.classList) ? [...c.classList] : [])
             });
@@ -211,7 +215,7 @@ export class FeatureExtractor extends PipelineStep {
         const landmarkRoles = ['main', 'nav', 'header', 'footer', 'aside', 'section', 'region', 'form', 'search', 'banner', 'contentinfo'];
         const landmarkTags = ['main', 'nav', 'header', 'footer', 'aside', 'section', 'form'];
 
-        const elRole = (el.getAttribute && el.getAttribute('role')) || '';
+        const elRole = (el.role !== undefined && el.role !== null ? el.role : ((el.getAttribute && el.getAttribute('role')) || ''));
         const elTag = (el.nodeName || el.tagName || '').toLowerCase();
         if (landmarkRoles.includes(elRole)) return elRole;
         if (landmarkTags.includes(elTag)) return elTag;
@@ -307,6 +311,161 @@ export class FeatureExtractor extends PipelineStep {
         return pos;
     }
 
+    static normalizeText(str) {
+        if (!str || typeof str !== 'string') return '';
+        return str.substring(0, 256).replace(/\s+/g, ' ').trim().toLowerCase();
+    }
+
+    extractAnchor(target, context = null) {
+        if (!target || typeof target !== 'object' || ((typeof Element === 'undefined' || !(target instanceof Element)) && target.nodeType !== 1 && typeof target.getAttribute !== 'function')) {
+            return null;
+        }
+
+        const candidates = [];
+        const maxDepth = 5;
+        let curr = target.parentElement || target.parentNode;
+        let depth = 1;
+        const targetText = FeatureExtractor._extractCleanText(target);
+        let targetRect = { left: 0, top: 0 };
+        try {
+            if (typeof target.getBoundingClientRect === 'function') {
+                const r = target.getBoundingClientRect();
+                targetRect = { left: r.left || 0, top: r.top || 0 };
+            }
+        } catch (e) {}
+
+        const getAttr = (n, attr) => {
+            try {
+                if (!n) return null;
+                if (typeof n.getAttribute === 'function') {
+                    const res = n.getAttribute(attr);
+                    if (res !== null && res !== undefined) return String(res);
+                }
+                if (n.attributes && n.attributes[attr]) return String(n.attributes[attr].value || n.attributes[attr]);
+            } catch (e) {}
+            return null;
+        };
+
+        while (curr && depth <= maxDepth) {
+            const tag = (curr.nodeName || curr.tagName || '').toLowerCase();
+            if (!tag || tag.startsWith('#') || tag === 'document' || tag === 'window' || tag === 'body' || tag === 'html') break;
+
+            const txt = FeatureExtractor._extractCleanText(curr);
+            const ariaLabel = getAttr(curr, 'aria-label') || getAttr(curr, 'aria-labelledby') || null;
+            const testId = getAttr(curr, 'data-testid') || getAttr(curr, 'data-qa') || getAttr(curr, 'data-cy') || getAttr(curr, 'data-id') || null;
+
+            const hasUniqueText = txt && txt.length > 3 && txt !== targetText;
+            if (hasUniqueText || ariaLabel || testId) {
+                const normTxt = FeatureExtractor.normalizeText(txt || ariaLabel || testId || tag);
+                let ancRect = { left: 0, top: 0 };
+                try {
+                    if (typeof curr.getBoundingClientRect === 'function') {
+                        const r = curr.getBoundingClientRect();
+                        ancRect = { left: r.left || 0, top: r.top || 0 };
+                    }
+                } catch (e) {}
+
+                candidates.push({
+                    textContent: normTxt,
+                    tagName: (curr.nodeName || curr.tagName || '').toUpperCase(),
+                    ariaRole: (curr.role !== undefined && curr.role !== null ? curr.role : (getAttr(curr, 'role') || null)),
+                    edgeDistance: depth,
+                    textLen: normTxt.length,
+                    spatialVector: {
+                        dx: Math.round(ancRect.left - targetRect.left),
+                        dy: Math.round(ancRect.top - targetRect.top)
+                    }
+                });
+            }
+
+            curr = curr.parentElement || curr.parentNode;
+            depth++;
+        }
+
+        if (candidates.length === 0 && (target.parentElement || target.parentNode)) {
+            const parent = target.parentElement || target.parentNode;
+            try {
+                const rawChildren = parent.children ? Array.from(parent.children) : (parent.childNodes ? Array.from(parent.childNodes) : []);
+                const siblings = rawChildren.filter(n => n !== target && (n.nodeType === 1 || (n.nodeName && !n.nodeName.startsWith('#'))));
+                let checked = 0;
+                for (const sib of siblings) {
+                    if (checked >= 3) break;
+                    checked++;
+                    const tag = (sib.nodeName || sib.tagName || '').toLowerCase();
+                    if (!tag || tag.startsWith('#')) continue;
+
+                    const txt = FeatureExtractor._extractCleanText(sib);
+                    const ariaLabel = getAttr(sib, 'aria-label') || getAttr(sib, 'aria-labelledby') || null;
+                    const testId = getAttr(sib, 'data-testid') || getAttr(sib, 'data-qa') || getAttr(sib, 'data-cy') || getAttr(sib, 'data-id') || null;
+
+                    const hasUniqueText = txt && txt.length > 3 && txt !== targetText;
+                    if (hasUniqueText || ariaLabel || testId) {
+                        const normTxt = FeatureExtractor.normalizeText(txt || ariaLabel || testId || tag);
+                        let ancRect = { left: 0, top: 0 };
+                        try {
+                            if (typeof sib.getBoundingClientRect === 'function') {
+                                const r = sib.getBoundingClientRect();
+                                ancRect = { left: r.left || 0, top: r.top || 0 };
+                            }
+                        } catch (e) {}
+
+                        candidates.push({
+                            textContent: normTxt,
+                            tagName: (sib.nodeName || sib.tagName || '').toUpperCase(),
+                            ariaRole: (sib.role !== undefined && sib.role !== null ? sib.role : (getAttr(sib, 'role') || null)),
+                            edgeDistance: 2,
+                            textLen: normTxt.length,
+                            spatialVector: {
+                                dx: Math.round(ancRect.left - targetRect.left),
+                                dy: Math.round(ancRect.top - targetRect.top)
+                            }
+                        });
+                    }
+                }
+            } catch (e) {}
+        }
+
+        if (candidates.length === 0) return null;
+
+        candidates.sort((a, b) => {
+            if (b.textLen !== a.textLen) return b.textLen - a.textLen;
+            return a.edgeDistance - b.edgeDistance;
+        });
+
+        const best = candidates[0];
+        return {
+            textContent: best.textContent,
+            tagName: best.tagName,
+            ariaRole: best.ariaRole,
+            edgeDistance: best.edgeDistance,
+            spatialVector: best.spatialVector
+        };
+    }
+
+    _extractCssSelector(el) {
+        if (!el || typeof el !== 'object' || ((typeof Element === 'undefined' || !(el instanceof Element)) && el.nodeType !== 1 && typeof el.getAttribute !== 'function')) {
+            return null;
+        }
+        try {
+            if (el.id && !/^(:?r[0-9a-z]+|uuid-|headlessui|el-[0-9]+|ember[0-9]+|ng-[0-9]+|vue-[0-9]+)/i.test(el.id)) {
+                return `#${el.id}`;
+            }
+            const testId = el.getAttribute ? (el.getAttribute('data-testid') || el.getAttribute('data-qa') || el.getAttribute('data-cy')) : null;
+            if (testId) {
+                return `[data-testid="${testId}"]`;
+            }
+            const tag = (el.nodeName || el.tagName || '').toLowerCase();
+            if (!tag || tag.startsWith('#')) return null;
+            if (typeof el.className === 'string' && el.className.trim()) {
+                const cls = el.className.split(/\s+/).filter(Boolean).slice(0, 2).join('.');
+                if (cls) return `${tag}.${cls}`;
+            }
+            return tag;
+        } catch (e) {
+            return null;
+        }
+    }
+
     static getEmptyProbabilisticIdentity() {
         return {
             id: '',
@@ -334,6 +493,8 @@ export class FeatureExtractor extends PipelineStep {
             sectionHeading: null,
             componentRoot: null,
             position: { viewportQuadrant: 'CENTER', isSticky: false, isFixed: false, zIndex: 0 },
+            anchor: null,
+            cssSelector: null,
             semantic: { dataTestId: null, accessibleName: null, ariaRole: '', nameAttribute: null, htmlId: null },
             structural: { componentAncestry: [], parentContainerTag: null, localNeighborhood: 'root>unknown', siblingIndex: 0, domDepth: 0, structuralHash: '00000000' },
             lexical: { normalizedText: null, placeholder: null, associatedLabelText: null },
@@ -403,6 +564,7 @@ export class FeatureExtractor extends PipelineStep {
         const getAttr = (n, attr) => {
             try {
                 if (!n) return null;
+                if (attr === 'role' && n.role !== undefined && n.role !== null && n.role !== '') return String(n.role);
                 if (typeof n.getAttribute === 'function') {
                     const res = n.getAttribute(attr);
                     if (res !== null && res !== undefined) return String(res);

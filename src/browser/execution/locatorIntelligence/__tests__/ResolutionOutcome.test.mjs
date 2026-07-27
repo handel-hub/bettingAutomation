@@ -6,7 +6,6 @@ import {
     VerificationMismatchError, 
     ConfidenceBelowThresholdError, 
     AmbiguousResolutionError, 
-    StaleEpochError, 
     RecoveryExhaustedError 
 } from '../../errors.mjs';
 
@@ -57,9 +56,6 @@ describe('ResolutionOutcome & New Errors', () => {
         const err603 = new AmbiguousResolutionError('Ambiguous');
         expect(err603.code).toBe('LF-603');
         expect(err603.severity).toBe('WARNING');
-
-        const err604 = new StaleEpochError('Stale epoch');
-        expect(err604.code).toBe('LF-604');
 
         const err605 = new RecoveryExhaustedError('Recovery failed');
         expect(err605.code).toBe('LF-605');

@@ -48,6 +48,38 @@ export class CommandPayloadSchema {
                 return false;
             }
         }
+        if (eid.anchor !== undefined && eid.anchor !== null) {
+            const anc = eid.anchor;
+            if (typeof anc !== 'object' ||
+                typeof anc.textContent !== 'string' ||
+                typeof anc.tagName !== 'string') {
+                return false;
+            }
+            if (anc.edgeDistance !== undefined && (typeof anc.edgeDistance !== 'number' || isNaN(anc.edgeDistance))) {
+                return false;
+            }
+            if (anc.spatialVector !== undefined && anc.spatialVector !== null) {
+                const sv = anc.spatialVector;
+                if (typeof sv !== 'object' || typeof sv.dx !== 'number' || isNaN(sv.dx) || typeof sv.dy !== 'number' || isNaN(sv.dy)) {
+                    return false;
+                }
+            }
+        }
+        if (eid.captureTimestamp !== undefined && eid.captureTimestamp !== null) {
+            if (typeof eid.captureTimestamp !== 'number' || isNaN(eid.captureTimestamp)) {
+                return false;
+            }
+        }
+        if (eid.sourceEpoch !== undefined && eid.sourceEpoch !== null) {
+            if (typeof eid.sourceEpoch !== 'number' || isNaN(eid.sourceEpoch) || !Number.isInteger(eid.sourceEpoch)) {
+                return false;
+            }
+        }
+        if (eid.cssSelector !== undefined && eid.cssSelector !== null) {
+            if (typeof eid.cssSelector !== 'string') {
+                return false;
+            }
+        }
         return true;
     }
 

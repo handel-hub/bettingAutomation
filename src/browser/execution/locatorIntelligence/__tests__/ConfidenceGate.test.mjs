@@ -108,4 +108,17 @@ describe('ConfidenceGate (Phase 8)', () => {
         expect(json.margin).toBe(0.02);
         expect(json.interactionType).toBe('CLICK');
     });
+
+    it('should scale threshold down with EID entropy when identityDocument is provided', () => {
+        const sparseEID = { textContent: '' }; // Base entropy 0.2
+        const richEID = { textContent: 'Submit Order Now', dataTestId: 'btn-submit', ariaRole: 'button' }; // Entropy 1.0
+
+        const sparseDecision = gate.evaluate(0.15, 'click', sparseEID);
+        expect(sparseDecision.thresholdApplied).toBe(0.10);
+        expect(sparseDecision.decision).toBe('ACCEPT');
+
+        const richDecision = gate.evaluate(0.40, 'click', richEID);
+        expect(richDecision.thresholdApplied).toBe(0.45);
+        expect(richDecision.decision).toBe('RECOVER');
+    });
 });
