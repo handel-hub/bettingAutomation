@@ -2,6 +2,7 @@ import { BrowserStateModel, LifecycleState } from './models/BrowserStateModel.mj
 import { StandbyPoolManager } from './pool/StandbyPoolManager.mjs';
 import { NTPClockSync } from '../execution/time/NTPClockSync.mjs';
 import { logger } from '../../config.mjs';
+import { ReplicatedLog } from './ReplicatedLog.mjs';
 import EventEmitter from 'node:events';
 
 /**
@@ -13,6 +14,7 @@ export class BrowserStateRegistry extends EventEmitter {
         super();
         this.states = new Map();
         this.standbyPool = options.standbyPool ?? new StandbyPoolManager(options.standbyOptions);
+        this.replicatedLog = new ReplicatedLog();
     }
 
     /**
@@ -25,6 +27,35 @@ export class BrowserStateRegistry extends EventEmitter {
             this.states.set(browserId, new BrowserStateModel(browserId));
         }
         return this.states.get(browserId);
+    }
+
+    /**
+     * Appends an event to the ReplicatedLog, assigning it an MSN.
+     * @returns {Object} { msn, duplicated, entry }
+     */
+    appendSequence(interactionId, framePath, type, payload) {
+        const result = this.replicatedLog.appendSequence(interactionId, framePath, type, payload);
+        if (!result.duplicated) {
+            this.emit('SequenceAppended', result.entry);
+        }
+        return result;
+    }
+    
+    /**
+     * Gets the ReplicatedLog instance.
+     */
+    getReplicatedLog() {
+        return this.replicatedLog;
+    }
+
+    /**
+     * Increments the Slave MSN.
+     * Must only be called when Slave successfully executes the sequence.
+     */
+    incrementSlaveMsn(browserId) {
+        const state = this.getState(browserId);
+        state.currentMsn++;
+        this.emit('StateUpdated', { browserId, state });
     }
 
     /**
@@ -48,9 +79,6 @@ export class BrowserStateRegistry extends EventEmitter {
         }
 
         if (updates.navigationContext) {
-            if (updates.navigationContext.navigationId && state.navigationContext.navigationId !== updates.navigationContext.navigationId) {
-                state.navigationEpoch++;
-            }
             Object.assign(state.navigationContext, updates.navigationContext);
         }
 
@@ -214,9 +242,6 @@ export class BrowserStateRegistry extends EventEmitter {
     updateUrl(id, urlValue) {
         if (this.states.has(id)) {
             const state = this.states.get(id);
-            if (state.url !== urlValue && urlValue !== 'about:blank') {
-                state.navigationEpoch++;
-            }
             state.url = urlValue;
             this.emit('StateUpdated', { browserId: id, state });
         }

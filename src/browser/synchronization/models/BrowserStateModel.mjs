@@ -123,7 +123,8 @@ export class BrowserStateModel {
 
         // --- Synchronization State ---
         this.lifecycleState = LifecycleState.DISCONNECTED;
-        this.navigationEpoch = 0;
+        this.currentMsn = 0;
+        this.targetMsn = 0;
         
         this.healthMetrics = {
             healthScore: 0,
