@@ -46,7 +46,7 @@ export class MacroEngine {
                         const count = await locator.count();
                         if (count === 0) throw new Error(`Selector not found: ${command.payload.selector}`);
                         if (command.type === 'click' || command.type === 'input') {
-                            const visible = await locator.first().isVisible();
+                            const visible = await locator.isVisible();
                             if (!visible) throw new Error(`Selector present but not visible: ${command.payload.selector}`);
                         }
                     }

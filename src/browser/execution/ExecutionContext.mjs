@@ -35,6 +35,9 @@ export class ExecutionContext {
             max: 3,
             attempted: 0
         };
+
+        // Phase 3: Strict Command-Lifecycle Handle Memoization
+        this.memoizedResolution = options.memoizedResolution || null;
     }
 
     /**

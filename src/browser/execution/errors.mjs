@@ -101,7 +101,7 @@ export class VerificationMismatchError extends VerificationFailure { constructor
 export class ConfidenceBelowThresholdError extends VerificationFailure { constructor(msg) { super('LF-602', msg, 'ERROR', 'ConfidenceGate'); } }
 export const ConfidenceGateRejectionError = ConfidenceBelowThresholdError;
 export class AmbiguousResolutionError extends VerificationFailure { constructor(msg) { super('LF-603', msg, 'WARNING', 'DisambiguationEngine'); } }
-export class StaleEpochError extends VerificationFailure { constructor(msg) { super('LF-604', msg, 'WARNING', 'EpochGate'); } }
+
 export class RecoveryExhaustedError extends VerificationFailure { constructor(msg) { super('LF-605', msg, 'CRITICAL', 'RecoveryOrchestrator'); } }
 
 // ----------------------------------------------------

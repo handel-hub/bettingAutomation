@@ -3,10 +3,9 @@ import { Command } from './Command.mjs';
 import { ExecutionContext } from './ExecutionContext.mjs';
 import { SynchronizationProfiles } from '../synchronization/profiles/SynchronizationProfiles.mjs';
 import { SynchronizationBarrier } from '../synchronization/SynchronizationBarrier.mjs';
-import { EpochGate } from './locatorIntelligence/resolution/EpochGate.mjs';
-import featureFlags from './locatorIntelligence/FeatureFlags.mjs';
+import { SequenceGate } from '../synchronization/SequenceGate.mjs';
 import { DeadlineBudget } from './time/DeadlineBudget.mjs';
-import { QueueDeadlineExceededError, StaleEpochError } from './errors.mjs';
+import { QueueDeadlineExceededError } from './errors.mjs';
 import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCollector.mjs';
 
 
@@ -147,38 +146,27 @@ export class QueueManager {
             entry.command.type === 'navigate' || entry.command.type === 'CLICK' || entry.command.category === 'Navigation'
         );
     }
+
+    applyBackpressure() {
+        this.buckets.Continuous = [];
+        this.buckets.Aggregated = [];
+    }
 }
 
 export class ExecutionScheduler {
-    constructor(actionSimulator, registry, syncManager, epochGate = new EpochGate()) {
+    constructor(actionSimulator, registry, syncManager, sequenceGate = null) {
         this.simulator = actionSimulator;
         this.registry = registry;
         this.syncManager = syncManager;
-        this.epochGate = epochGate;
-        if (this.simulator && !this.simulator.epochGate) {
-            this.simulator.epochGate = this.epochGate;
+        this.sequenceGate = sequenceGate || new SequenceGate(registry);
+        if (this.simulator) {
+            this.simulator.registry = this.registry;
         }
-        if (this.registry && typeof this.registry.on === 'function') {
-            this.registry.on('StateUpdated', ({ browserId, state }) => {
-                if (state && state.url && state.url !== 'about:blank') {
-                    const rec = this.epochGate.getEpochRecord(browserId);
-                    if (rec.url !== state.url || (state.navigationEpoch !== undefined && state.navigationEpoch > rec.value)) {
-                        while (this.epochGate.getCurrentEpoch(browserId) < (state.navigationEpoch || (rec.value + 1))) {
-                            this.epochGate.incrementEpoch(browserId, state.url);
-                        }
-                    }
-                }
-            });
-        }
-        if (this.epochGate && typeof this.epochGate.on === 'function') {
-            this.epochGate.on('ACK_epoch', ({ browserId }) => {
-                if (browserId && this.browserQueues.has(browserId)) {
-                    this._drain({ id: browserId }).catch(() => {});
-                }
-            });
-        }
+        
         this.browserQueues = new Map();
         this.drainLocks = new Set();
+        this.backpressureActive = false;
+        this.browserBackpressure = new Set();
         this.telemetry = {
             totalEnqueued: 0,
             totalDequeued: 0,
@@ -189,6 +177,29 @@ export class ExecutionScheduler {
         this.telemetryIntervalId = setInterval(() => this.logTelemetry(), 10000);
     }
 
+    setBackpressure(browserId, active) {
+        if (browserId === 'global' || !browserId) {
+            this.backpressureActive = active;
+            if (active) {
+                for (const qManager of this.browserQueues.values()) {
+                    qManager.applyBackpressure();
+                }
+            }
+        } else {
+            if (active) {
+                this.browserBackpressure.add(browserId);
+                const qManager = this.browserQueues.get(browserId);
+                if (qManager) qManager.applyBackpressure();
+            } else {
+                this.browserBackpressure.delete(browserId);
+            }
+        }
+    }
+
+    isBackpressureActive(browserId) {
+        return this.backpressureActive || (browserId && this.browserBackpressure.has(browserId));
+    }
+
     dispose() {
         if (this.telemetryIntervalId) {
             clearInterval(this.telemetryIntervalId);
@@ -196,6 +207,7 @@ export class ExecutionScheduler {
         }
         this.browserQueues.clear();
         this.drainLocks.clear();
+        this.browserBackpressure.clear();
     }
 
     enqueue(browserObj, command) {
@@ -207,6 +219,10 @@ export class ExecutionScheduler {
         const qManager = this.browserQueues.get(browserId);
         
         const { class: queueClass, priority } = ClassificationPolicy.classify(command);
+        if (this.isBackpressureActive(browserId) && (queueClass === 'Continuous' || queueClass === 'Aggregated')) {
+            logger.debug(`[ExecutionScheduler] Backpressure active on [${browserId}]: dropping ${queueClass} command ${command.type}`);
+            return;
+        }
         
         const entry = {
             command: command,
@@ -267,6 +283,10 @@ export class ExecutionScheduler {
                 const nextEntry = qManager.dequeueNext();
                 if (!nextEntry) {
                     break;
+                }
+                if (this.isBackpressureActive(browserId) && (nextEntry.queueClass === 'Continuous' || nextEntry.queueClass === 'Aggregated')) {
+                    logger.debug(`[ExecutionScheduler] Backpressure active on [${browserId}] during drain: dropping ${nextEntry.queueClass} command ${nextEntry.command.type}`);
+                    continue;
                 }
 
                 try {
@@ -346,31 +366,42 @@ export class ExecutionScheduler {
                         eidHash: nextEntry.command.eidHash || TelemetryCollector.computeEIDHash(eid)
                     });
 
-                    if (featureFlags.isEnabled('LI_EPOCH_GATING')) {
-                        const capEpoch = finalCommand.metadata?.captureEpoch ?? finalCommand.metadata?.navigation?.epoch;
-                        if (capEpoch !== undefined && capEpoch !== null && capEpoch !== 0) {
-                            const initialDecision = this.epochGate.evaluate(browserId, capEpoch);
-                            if (initialDecision.decision === 'SKIP' || initialDecision.action === 'PURGE_STALE') {
-                                const errorMsg = `[LF-604] Stale epoch command ${finalCommand.id || 'unknown'} on [${browserId}]: ${initialDecision.reason}`;
+                    // Sequence Gate Evaluation (Phase 7 Integration)
+                    const msn = finalCommand.metadata?.msn ?? finalCommand.payload?.msn;
+                    if (msn !== undefined && msn !== null) {
+                        const initialDecision = this.sequenceGate.evaluate(browserId, msn);
+                        if (initialDecision === 'STALE') {
+                            const errorMsg = `[LF-604] Stale command ${finalCommand.id || 'unknown'} on [${browserId}]: MSN ${msn} is less than or equal to current Slave MSN`;
+                            logger.warn(`[ExecutionScheduler] ${errorMsg}`);
+                            if (TelemetryCollector && TelemetryCollector.registry && typeof TelemetryCollector.registry.recordFailureCode === 'function') {
+                                TelemetryCollector.registry.recordFailureCode('LF-604');
+                            }
+                            // Using QueueDeadlineExceededError as a generic terminal error for now since StaleEpochError is deleted
+                            this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new QueueDeadlineExceededError(errorMsg) });
+                            continue;
+                        }
+                        
+                        if (initialDecision === 'WAITING') {
+                            logger.info(`[ExecutionScheduler] Command ${finalCommand.id} on [${browserId}] buffered waiting for MSN alignment (target MSN: ${msn})`);
+                            // Wait up to 5s for MSN to align
+                            const decisionObj = await this.sequenceGate.evaluateAsync(browserId, msn, 5000);
+                            
+                            if (decisionObj.status === 'STALE') {
+                                const errorMsg = `[LF-604] Stale command ${finalCommand.id || 'unknown'} on [${browserId}] after barrier wait: MSN ${msn} is now STALE`;
                                 logger.warn(`[ExecutionScheduler] ${errorMsg}`);
                                 if (TelemetryCollector && TelemetryCollector.registry && typeof TelemetryCollector.registry.recordFailureCode === 'function') {
                                     TelemetryCollector.registry.recordFailureCode('LF-604');
                                 }
-                                this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new StaleEpochError(errorMsg) });
+                                this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new QueueDeadlineExceededError(errorMsg) });
                                 continue;
-                            }
-                            if (initialDecision.decision === 'WAIT' || initialDecision.action === 'BUFFER_COMMAND') {
-                                logger.info(`[ExecutionScheduler] Command ${finalCommand.id} on [${browserId}] buffered waiting for epoch alignment (target epoch: ${capEpoch})`);
-                                const decisionObj = await this.epochGate.evaluateAsync(browserId, capEpoch, 5000);
-                                if (decisionObj.decision === 'SKIP' || decisionObj.action === 'PURGE_STALE') {
-                                    const errorMsg = `[LF-604] Stale epoch command ${finalCommand.id || 'unknown'} on [${browserId}] after barrier wait: ${decisionObj.reason}`;
-                                    logger.warn(`[ExecutionScheduler] ${errorMsg}`);
-                                    if (TelemetryCollector && TelemetryCollector.registry && typeof TelemetryCollector.registry.recordFailureCode === 'function') {
-                                        TelemetryCollector.registry.recordFailureCode('LF-604');
-                                    }
-                                    this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new StaleEpochError(errorMsg) });
-                                    continue;
+                            } else if (decisionObj.status === 'TIMEOUT') {
+                                const errorMsg = `[SYNC-100] Command ${finalCommand.id || 'unknown'} on [${browserId}] timed out waiting for MSN alignment. Expected MSN: ${msn}`;
+                                logger.error(`[ExecutionScheduler] ${errorMsg}`);
+                                if (TelemetryCollector && TelemetryCollector.registry && typeof TelemetryCollector.registry.recordFailureCode === 'function') {
+                                    TelemetryCollector.registry.recordFailureCode('SYNC-100');
                                 }
+                                this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new QueueDeadlineExceededError(errorMsg) });
+                                continue;
                             }
                         }
                     }
@@ -403,7 +434,7 @@ export class ExecutionScheduler {
                         continue;
                     }
 
-                    await this.simulator.execute(currentState, finalCommand, { deadlineBudget });
+                    await this.simulator.execute(currentState, finalCommand, { deadlineBudget, executionContext: context });
                 } catch(e) {
                     logger.error(`[Scheduler] Failed to process entry for ${nextEntry?.command?.id ?? 'unknown'}: ${e.message}`);
                 }

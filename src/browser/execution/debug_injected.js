@@ -3,9 +3,6 @@
             if (window.__locatorIntelligenceInjected) return;
             window.__locatorIntelligenceInjected = true;
             window.__ANTIGRAVITY_SEQ__ = 0;
-            window.__ANTIGRAVITY_EPOCH__ = window.__ANTIGRAVITY_EPOCH__ || 0;
-            window.__ANTIGRAVITY_EPOCH_URL__ = window.__ANTIGRAVITY_EPOCH_URL__ || location.href;
-            window.__ANTIGRAVITY_EPOCH_TS__ = window.__ANTIGRAVITY_EPOCH_TS__ || Date.now();
 
             (function() {
                 const _origPush = history.pushState;
@@ -17,7 +14,6 @@
                         window.__notifyNavigation({ 
                             type: 'pushState', 
                             url: location.href, 
-                            epoch: window.__ANTIGRAVITY_EPOCH__,
                             timestamp: Date.now(),
                             monotonicUs: Math.round(performance.now() * 1000)
                         });
@@ -30,7 +26,6 @@
                         window.__notifyNavigation({ 
                             type: 'replaceState', 
                             url: location.href, 
-                            epoch: window.__ANTIGRAVITY_EPOCH__,
                             timestamp: Date.now(),
                             monotonicUs: Math.round(performance.now() * 1000)
                         });
@@ -42,7 +37,6 @@
                         window.__notifyNavigation({ 
                             type: 'popstate', 
                             url: location.href, 
-                            epoch: window.__ANTIGRAVITY_EPOCH__,
                             timestamp: Date.now(),
                             monotonicUs: Math.round(performance.now() * 1000)
                         });
@@ -68,8 +62,7 @@
         this.definitions = {
             LI_EXTENDED_FEATURES: { default: false, dependsOn: [], description: 'Enable extended feature extraction' },
             LI_IDENTITY_DOCUMENT: { default: false, dependsOn: ['LI_EXTENDED_FEATURES'], description: 'Enable EID generation and transmission' },
-            LI_REMOVE_VALIDATOR: { default: false, dependsOn: [], description: 'Bypass CandidateValidator in pipeline' },
-            LI_ADDITIVE_SCORING: { default: false, dependsOn: ['LI_REMOVE_VALIDATOR'], description: 'Use additive vector scoring model' },
+            LI_ADDITIVE_SCORING: { default: false, dependsOn: [], description: 'Use additive vector scoring model' },
             LI_SERIALIZE_FEATURES: { default: false, dependsOn: ['LI_IDENTITY_DOCUMENT'], description: 'Include features/EID in serialized output' },
             LI_EPOCH_GATING: { default: false, dependsOn: [], description: 'Enable navigation epoch checks' },
             LI_BATCH_RESOLVER: { default: false, dependsOn: ['LI_SERIALIZE_FEATURES'], description: 'Use batch resolution via page.evaluate' },
@@ -80,9 +73,12 @@
             LI_RESOLUTION_MEMORY: { default: false, dependsOn: ['LI_VERIFICATION'], description: 'Enable resolution caching' },
             LI_SHADOW_MODE: { default: false, dependsOn: [], description: 'Run new pipeline in parallel with legacy for comparison' },
             V3_SCHEMA_ENFORCEMENT_MODE: { default: 'STRICT', dependsOn: [], description: 'Schema enforcement mode: DISABLED, SHADOW, or STRICT' },
-            V3_DECOUPLE_HEALTH_MONITOR: { default: false, dependsOn: [], description: 'Decouple HealthMonitor from command execution failure state' },
+            V3_DECOUPLE_HEALTH_MONITOR: { default: true, dependsOn: [], description: 'Decouple HealthMonitor from command execution failure state' },
             V3_ENABLE_STANDBY_POOL: { default: false, dependsOn: [], description: 'Enable WARM_STANDBY browser failover pool' },
-            V3_ENABLE_GLOBAL_TTL: { default: false, dependsOn: [], description: 'Enable 1,500ms global distributed deadline budgeting' }
+            V3_ENABLE_GLOBAL_TTL: { default: false, dependsOn: [], description: 'Enable 1,500ms global distributed deadline budgeting' },
+            SCENE_GRAPH_ENABLED: { default: false, dependsOn: [], description: 'Enable Scene Graph indexing and query planner in Slave browser' },
+            INFERENCE_ENGINE_V2: { default: false, dependsOn: [], description: 'Route resolution through multiplicative InferenceEngine' },
+            LI_INFERENCE_ENGINE_V2: { default: false, dependsOn: [], description: 'Route resolution through multiplicative InferenceEngine (alias)' }
         };
         this.init();
     }
@@ -242,6 +238,16 @@ class ElementIdentityDocument {
     constructor(data = {}) {
         this.version = data.version || '1.0.0';
         this.captureEpoch = data.captureEpoch !== undefined ? data.captureEpoch : Date.now();
+        this.captureTimestamp = data.captureTimestamp !== undefined ? data.captureTimestamp : (typeof data.captureEpoch === 'number' && data.captureEpoch > 100000000000 ? data.captureEpoch : Date.now());
+        this.sourceEpoch = data.sourceEpoch !== undefined ? data.sourceEpoch : (typeof data.captureEpoch === 'number' && data.captureEpoch < 100000000000 ? data.captureEpoch : 0);
+        this.anchor = data.anchor ? {
+            textContent: data.anchor.textContent || '',
+            tagName: (data.anchor.tagName || '').toUpperCase(),
+            ariaRole: data.anchor.ariaRole || null,
+            edgeDistance: data.anchor.edgeDistance !== undefined ? data.anchor.edgeDistance : 0,
+            spatialVector: data.anchor.spatialVector ? { dx: data.anchor.spatialVector.dx || 0, dy: data.anchor.spatialVector.dy || 0 } : null
+        } : null;
+        this.cssSelector = data.cssSelector || null;
         this.url = data.url || '';
         this.frameUrl = data.frameUrl || null;
 
@@ -422,6 +428,16 @@ class ElementIdentityDocument {
             version: this.version,
             identityHash: this.identityHash,
             captureEpoch: this.captureEpoch,
+            captureTimestamp: this.captureTimestamp,
+            sourceEpoch: this.sourceEpoch,
+            anchor: this.anchor ? {
+                textContent: this.anchor.textContent,
+                tagName: this.anchor.tagName,
+                ariaRole: this.anchor.ariaRole,
+                edgeDistance: this.anchor.edgeDistance,
+                spatialVector: this.anchor.spatialVector ? { ...this.anchor.spatialVector } : null
+            } : null,
+            cssSelector: this.cssSelector,
             url: this.url,
             frameUrl: this.frameUrl,
             element: {
@@ -652,7 +668,7 @@ class FeatureExtractor extends PipelineStep {
             text: '',
             dataOps: {},
             ariaLabel: (el.getAttribute && el.getAttribute('aria-label')) || '',
-            role: (el.getAttribute && el.getAttribute('role')) || '',
+            role: (el.role !== undefined && el.role !== null ? el.role : ((el.getAttribute && el.getAttribute('role')) || '')),
             href: (el.getAttribute && el.getAttribute('href')) || '',
             src: (el.getAttribute && el.getAttribute('src')) || '',
             alt: (el.getAttribute && el.getAttribute('alt')) || '',
@@ -672,7 +688,9 @@ class FeatureExtractor extends PipelineStep {
             landmark: null,
             sectionHeading: null,
             componentRoot: null,
-            position: { viewportQuadrant: null, isSticky: false, isFixed: false, zIndex: 0 }
+            position: { viewportQuadrant: null, isSticky: false, isFixed: false, zIndex: 0 },
+            anchor: null,
+            cssSelector: null
         };
 
         // Extract text carefully excluding scripts/styles
@@ -740,6 +758,8 @@ class FeatureExtractor extends PipelineStep {
         features.sectionHeading = this._extractSectionHeading(el, features.ancestry);
         features.componentRoot = this._extractComponentRoot(el, features.ancestry);
         features.position = this._extractPosition(el, features.rect);
+        features.anchor = this.extractAnchor(el, context);
+        features.cssSelector = this._extractCssSelector(el, context);
 
         const probId = FeatureExtractor.extractProbabilisticIdentity(el, context.composedPath, context);
         features.semantic = probId.semantic;
@@ -771,7 +791,7 @@ class FeatureExtractor extends PipelineStep {
                     tagName: tag.toUpperCase(),
                     id: node.id || null,
                     classes: typeof node.className === 'string' && node.className ? node.className.split(/\s+/).filter(Boolean) : (Array.isArray(node.classList) ? [...node.classList] : []),
-                    role: (node.getAttribute && node.getAttribute('role')) || null,
+                    role: (node.role !== undefined && node.role !== null ? node.role : ((node.getAttribute && node.getAttribute('role')) || null)),
                     testId: (node.getAttribute && node.getAttribute('data-testid')) || null
                 });
             }
@@ -785,7 +805,7 @@ class FeatureExtractor extends PipelineStep {
                     tagName: tag.toUpperCase(),
                     id: current.id || null,
                     classes: typeof current.className === 'string' && current.className ? current.className.split(/\s+/).filter(Boolean) : (Array.isArray(current.classList) ? [...current.classList] : []),
-                    role: (current.getAttribute && current.getAttribute('role')) || null,
+                    role: (current.role !== undefined && current.role !== null ? current.role : ((current.getAttribute && current.getAttribute('role')) || null)),
                     testId: (current.getAttribute && current.getAttribute('data-testid')) || null
                 });
                 current = current.parentElement || current.parentNode;
@@ -820,7 +840,7 @@ class FeatureExtractor extends PipelineStep {
             list.push({
                 tagName: tag.toUpperCase(),
                 text: ((c.innerText || c.textContent || '').trim()).substring(0, 50),
-                role: (c.getAttribute && c.getAttribute('role')) || null,
+                role: (c.role !== undefined && c.role !== null ? c.role : ((c.getAttribute && c.getAttribute('role')) || null)),
                 id: c.id || null,
                 classes: typeof c.className === 'string' && c.className ? c.className.split(/\s+/).filter(Boolean) : (Array.isArray(c.classList) ? [...c.classList] : [])
             });
@@ -838,7 +858,7 @@ class FeatureExtractor extends PipelineStep {
         const landmarkRoles = ['main', 'nav', 'header', 'footer', 'aside', 'section', 'region', 'form', 'search', 'banner', 'contentinfo'];
         const landmarkTags = ['main', 'nav', 'header', 'footer', 'aside', 'section', 'form'];
 
-        const elRole = (el.getAttribute && el.getAttribute('role')) || '';
+        const elRole = (el.role !== undefined && el.role !== null ? el.role : ((el.getAttribute && el.getAttribute('role')) || ''));
         const elTag = (el.nodeName || el.tagName || '').toLowerCase();
         if (landmarkRoles.includes(elRole)) return elRole;
         if (landmarkTags.includes(elTag)) return elTag;
@@ -934,6 +954,161 @@ class FeatureExtractor extends PipelineStep {
         return pos;
     }
 
+    static normalizeText(str) {
+        if (!str || typeof str !== 'string') return '';
+        return str.substring(0, 256).replace(/\s+/g, ' ').trim().toLowerCase();
+    }
+
+    extractAnchor(target, context = null) {
+        if (!target || typeof target !== 'object' || ((typeof Element === 'undefined' || !(target instanceof Element)) && target.nodeType !== 1 && typeof target.getAttribute !== 'function')) {
+            return null;
+        }
+
+        const candidates = [];
+        const maxDepth = 5;
+        let curr = target.parentElement || target.parentNode;
+        let depth = 1;
+        const targetText = FeatureExtractor._extractCleanText(target);
+        let targetRect = { left: 0, top: 0 };
+        try {
+            if (typeof target.getBoundingClientRect === 'function') {
+                const r = target.getBoundingClientRect();
+                targetRect = { left: r.left || 0, top: r.top || 0 };
+            }
+        } catch (e) {}
+
+        const getAttr = (n, attr) => {
+            try {
+                if (!n) return null;
+                if (typeof n.getAttribute === 'function') {
+                    const res = n.getAttribute(attr);
+                    if (res !== null && res !== undefined) return String(res);
+                }
+                if (n.attributes && n.attributes[attr]) return String(n.attributes[attr].value || n.attributes[attr]);
+            } catch (e) {}
+            return null;
+        };
+
+        while (curr && depth <= maxDepth) {
+            const tag = (curr.nodeName || curr.tagName || '').toLowerCase();
+            if (!tag || tag.startsWith('#') || tag === 'document' || tag === 'window' || tag === 'body' || tag === 'html') break;
+
+            const txt = FeatureExtractor._extractCleanText(curr);
+            const ariaLabel = getAttr(curr, 'aria-label') || getAttr(curr, 'aria-labelledby') || null;
+            const testId = getAttr(curr, 'data-testid') || getAttr(curr, 'data-qa') || getAttr(curr, 'data-cy') || getAttr(curr, 'data-id') || null;
+
+            const hasUniqueText = txt && txt.length > 3 && txt !== targetText;
+            if (hasUniqueText || ariaLabel || testId) {
+                const normTxt = FeatureExtractor.normalizeText(txt || ariaLabel || testId || tag);
+                let ancRect = { left: 0, top: 0 };
+                try {
+                    if (typeof curr.getBoundingClientRect === 'function') {
+                        const r = curr.getBoundingClientRect();
+                        ancRect = { left: r.left || 0, top: r.top || 0 };
+                    }
+                } catch (e) {}
+
+                candidates.push({
+                    textContent: normTxt,
+                    tagName: (curr.nodeName || curr.tagName || '').toUpperCase(),
+                    ariaRole: (curr.role !== undefined && curr.role !== null ? curr.role : (getAttr(curr, 'role') || null)),
+                    edgeDistance: depth,
+                    textLen: normTxt.length,
+                    spatialVector: {
+                        dx: Math.round(ancRect.left - targetRect.left),
+                        dy: Math.round(ancRect.top - targetRect.top)
+                    }
+                });
+            }
+
+            curr = curr.parentElement || curr.parentNode;
+            depth++;
+        }
+
+        if (candidates.length === 0 && (target.parentElement || target.parentNode)) {
+            const parent = target.parentElement || target.parentNode;
+            try {
+                const rawChildren = parent.children ? Array.from(parent.children) : (parent.childNodes ? Array.from(parent.childNodes) : []);
+                const siblings = rawChildren.filter(n => n !== target && (n.nodeType === 1 || (n.nodeName && !n.nodeName.startsWith('#'))));
+                let checked = 0;
+                for (const sib of siblings) {
+                    if (checked >= 3) break;
+                    checked++;
+                    const tag = (sib.nodeName || sib.tagName || '').toLowerCase();
+                    if (!tag || tag.startsWith('#')) continue;
+
+                    const txt = FeatureExtractor._extractCleanText(sib);
+                    const ariaLabel = getAttr(sib, 'aria-label') || getAttr(sib, 'aria-labelledby') || null;
+                    const testId = getAttr(sib, 'data-testid') || getAttr(sib, 'data-qa') || getAttr(sib, 'data-cy') || getAttr(sib, 'data-id') || null;
+
+                    const hasUniqueText = txt && txt.length > 3 && txt !== targetText;
+                    if (hasUniqueText || ariaLabel || testId) {
+                        const normTxt = FeatureExtractor.normalizeText(txt || ariaLabel || testId || tag);
+                        let ancRect = { left: 0, top: 0 };
+                        try {
+                            if (typeof sib.getBoundingClientRect === 'function') {
+                                const r = sib.getBoundingClientRect();
+                                ancRect = { left: r.left || 0, top: r.top || 0 };
+                            }
+                        } catch (e) {}
+
+                        candidates.push({
+                            textContent: normTxt,
+                            tagName: (sib.nodeName || sib.tagName || '').toUpperCase(),
+                            ariaRole: (sib.role !== undefined && sib.role !== null ? sib.role : (getAttr(sib, 'role') || null)),
+                            edgeDistance: 2,
+                            textLen: normTxt.length,
+                            spatialVector: {
+                                dx: Math.round(ancRect.left - targetRect.left),
+                                dy: Math.round(ancRect.top - targetRect.top)
+                            }
+                        });
+                    }
+                }
+            } catch (e) {}
+        }
+
+        if (candidates.length === 0) return null;
+
+        candidates.sort((a, b) => {
+            if (b.textLen !== a.textLen) return b.textLen - a.textLen;
+            return a.edgeDistance - b.edgeDistance;
+        });
+
+        const best = candidates[0];
+        return {
+            textContent: best.textContent,
+            tagName: best.tagName,
+            ariaRole: best.ariaRole,
+            edgeDistance: best.edgeDistance,
+            spatialVector: best.spatialVector
+        };
+    }
+
+    _extractCssSelector(el) {
+        if (!el || typeof el !== 'object' || ((typeof Element === 'undefined' || !(el instanceof Element)) && el.nodeType !== 1 && typeof el.getAttribute !== 'function')) {
+            return null;
+        }
+        try {
+            if (el.id && !/^(:?r[0-9a-z]+|uuid-|headlessui|el-[0-9]+|ember[0-9]+|ng-[0-9]+|vue-[0-9]+)/i.test(el.id)) {
+                return `#${el.id}`;
+            }
+            const testId = el.getAttribute ? (el.getAttribute('data-testid') || el.getAttribute('data-qa') || el.getAttribute('data-cy')) : null;
+            if (testId) {
+                return `[data-testid="${testId}"]`;
+            }
+            const tag = (el.nodeName || el.tagName || '').toLowerCase();
+            if (!tag || tag.startsWith('#')) return null;
+            if (typeof el.className === 'string' && el.className.trim()) {
+                const cls = el.className.split(/\s+/).filter(Boolean).slice(0, 2).join('.');
+                if (cls) return `${tag}.${cls}`;
+            }
+            return tag;
+        } catch (e) {
+            return null;
+        }
+    }
+
     static getEmptyProbabilisticIdentity() {
         return {
             id: '',
@@ -961,6 +1136,8 @@ class FeatureExtractor extends PipelineStep {
             sectionHeading: null,
             componentRoot: null,
             position: { viewportQuadrant: 'CENTER', isSticky: false, isFixed: false, zIndex: 0 },
+            anchor: null,
+            cssSelector: null,
             semantic: { dataTestId: null, accessibleName: null, ariaRole: '', nameAttribute: null, htmlId: null },
             structural: { componentAncestry: [], parentContainerTag: null, localNeighborhood: 'root>unknown', siblingIndex: 0, domDepth: 0, structuralHash: '00000000' },
             lexical: { normalizedText: null, placeholder: null, associatedLabelText: null },
@@ -1030,6 +1207,7 @@ class FeatureExtractor extends PipelineStep {
         const getAttr = (n, attr) => {
             try {
                 if (!n) return null;
+                if (attr === 'role' && n.role !== undefined && n.role !== null && n.role !== '') return String(n.role);
                 if (typeof n.getAttribute === 'function') {
                     const res = n.getAttribute(attr);
                     if (res !== null && res !== undefined) return String(res);
@@ -1241,6 +1419,7 @@ class FeatureExtractor extends PipelineStep {
 
 
 
+
 class IdentityDocumentBuilder extends PipelineStep {
     constructor() {
         super('IdentityDocumentBuilder');
@@ -1256,6 +1435,10 @@ class IdentityDocumentBuilder extends PipelineStep {
         const rawData = {
             version: '1.0.0',
             captureEpoch: context.metadata ? (context.metadata.captureEpoch || context.metadata.startTime || Date.now()) : Date.now(),
+            captureTimestamp: context.metadata ? (context.metadata.captureTimestamp || context.metadata.timestamp || context.metadata.startTime || Date.now()) : Date.now(),
+            sourceEpoch: context.metadata ? (context.metadata.sourceEpoch || context.metadata.epoch || 0) : (typeof window !== 'undefined' && window.__ANTIGRAVITY_EPOCH__ !== undefined ? window.__ANTIGRAVITY_EPOCH__ : 0),
+            anchor: f.anchor || null,
+            cssSelector: f.cssSelector || null,
             url: typeof window !== 'undefined' && window.location ? window.location.href : (context.metadata?.url || ''),
             frameUrl: f.isIframe ? (f.src || null) : null,
             element: {
@@ -1272,7 +1455,7 @@ class IdentityDocumentBuilder extends PipelineStep {
             },
             text: {
                 exact: f.text || '',
-                normalized: (f.text || '').toLowerCase().trim(),
+                normalized: FeatureExtractor.normalizeText(f.text || ''),
                 wordCount: (f.text || '').split(/\s+/).filter(Boolean).length,
                 isNumeric: /^\d+$/.test((f.text || '').trim()),
                 isDynamic: false
@@ -1528,72 +1711,6 @@ class CandidateDeduplicator extends PipelineStep {
         }
         
         context.candidates = Array.from(uniqueMap.values());
-    }
-}
-
-
-
-
-
-class CandidateValidator extends PipelineStep {
-    constructor() {
-        super('CandidateValidator');
-    }
-
-    execute(context) {
-        if (featureFlags.isEnabled('LI_REMOVE_VALIDATOR')) {
-            if (context.candidates) {
-                for (const candidate of context.candidates) {
-                    candidate.validation = { status: 'SKIPPED', matchCount: -1 };
-                }
-            }
-            return;
-        }
-        if (!context.candidates || context.candidates.length === 0) return;
-
-        for (const candidate of context.candidates) {
-            const valStart = Date.now();
-            let method = 'CSS';
-            let status = 'PENDING';
-            let matchCount = 0;
-            let errors = [];
-
-            // Simple syntax check
-            if (!candidate.locator || typeof candidate.locator !== 'string') {
-                status = 'INVALID';
-                errors.push('Empty or invalid locator string');
-            } else if (candidate.locator.startsWith('text=')) {
-                // Pseudo-selector unsupported by native querySelectorAll
-                method = 'Unsupported';
-                status = 'NOT_VERIFIABLE';
-            } else {
-                try {
-                    const matches = typeof document !== 'undefined' ? document.querySelectorAll(candidate.locator) : [];
-                    matchCount = matches.length;
-                    
-                    if (matchCount === 1) {
-                        status = 'UNIQUE';
-                    } else if (matchCount > 1) {
-                        status = 'AMBIGUOUS';
-                    } else {
-                        status = 'MISSING';
-                    }
-                } catch (e) {
-                    method = 'Unsupported'; // fallback if querySelectorAll fails (e.g. xpath/pseudo)
-                    status = 'NOT_VERIFIABLE';
-                    errors.push(e.message);
-                }
-            }
-
-            candidate.validation.status = status;
-            candidate.validation.matchCount = matchCount;
-            candidate.validation.errors = errors;
-            candidate.validation.method = method;
-            candidate.validation.duration = Date.now() - valStart;
-            
-            candidate.telemetry.validatedAt = Date.now();
-            TelemetryCollector.recordValidation(status);
-        }
     }
 }
 
@@ -2646,7 +2763,7 @@ class MetricsRegistry {
             roundTrips: new RollingWindow(128)
         };
 
-        // Phase 7: Disambiguation & Verification
+        // Phase 7: Disambiguation & Verification & Observability Sampling
         this.disambiguation = {
             triggered: 0,
             failed: 0
@@ -2655,6 +2772,10 @@ class MetricsRegistry {
             passed: 0,
             failed: 0,
             similarityScore: new RollingWindow(128)
+        };
+        this.sampling = {
+            sampled: 0,
+            suppressed: 0
         };
 
         // Phase 8: Confidence Gate Metrics
@@ -2717,6 +2838,9 @@ class MetricsRegistry {
             ipcDuplicatesDropped: 0,
             ipcOutOfOrder: 0,
             spaNavigationDetected: 0,
+            syncGap: 0,
+            syncAssertionFailure: 0,
+            syncAckTimeout: 0,
             ipcDeliveryLatency: new RollingWindow(128),
             injectionLatency: new RollingWindow(128),
             epochWaitDuration: new RollingWindow(128),
@@ -2780,6 +2904,7 @@ class MetricsRegistry {
             },
             strategies: Object.fromEntries(this.strategies),
             validation: { ...this.validation },
+            sampling: { ...this.sampling },
             confidence: { ...this.confidence },
             recovery: { ...this.recovery },
             memory: { ...this.memory },
@@ -2807,6 +2932,9 @@ class MetricsRegistry {
                 ipcDuplicatesDropped: this.epochSync.ipcDuplicatesDropped,
                 ipcOutOfOrder: this.epochSync.ipcOutOfOrder,
                 spaNavigationDetected: this.epochSync.spaNavigationDetected,
+                syncGap: this.epochSync.syncGap,
+                syncAssertionFailure: this.epochSync.syncAssertionFailure,
+                syncAckTimeout: this.epochSync.syncAckTimeout,
                 averageIpcDeliveryLatency: this.epochSync.ipcDeliveryLatency.average,
                 averageInjectionLatency: this.epochSync.injectionLatency.average,
                 averageEpochWaitDuration: this.epochSync.epochWaitDuration.average,
@@ -2827,6 +2955,11 @@ class MetricsRegistry {
 class TelemetryCollectorImpl {
     constructor() {
         this.registry = new MetricsRegistry();
+        this.mundaneSamplingRate = 0.01; // 1% by default for mundane commands
+        this._mundaneCounter = 0;
+        this.dispatchQueue = [];
+        this.drainScheduled = false;
+        this.onDispatch = null;
     }
 
     /**
@@ -2834,6 +2967,96 @@ class TelemetryCollectorImpl {
      */
     reset() {
         this.registry.reset();
+        this._mundaneCounter = 0;
+        this.dispatchQueue = [];
+        this.drainScheduled = false;
+    }
+
+    setSamplingRate(rate) {
+        if (typeof rate === 'number' && rate >= 0 && rate <= 1) {
+            this.mundaneSamplingRate = rate;
+        }
+    }
+
+    shouldSample(event) {
+        if (!event) return false;
+        // Always sample errors, failures, recovery, and rejections
+        if (event.validationResult && event.validationResult.startsWith('FAIL')) return true;
+        if (event.errorDetails != null && (typeof event.errorDetails === 'string' || Object.keys(event.errorDetails).length > 0)) return true;
+        if (event.stageName && (event.stageName.includes('RECOVERY') || event.stageName.includes('FAIL') || event.stageName.includes('REJECT') || event.stageName.includes('ERROR'))) return true;
+
+        // Check if mundane interaction type
+        const type = (event.interactionType || '').toLowerCase();
+        const isMundane = ['hover', 'scroll', 'mousemove', 'pointermove'].includes(type);
+        if (isMundane && (event.validationResult === 'PASS' || !event.validationResult)) {
+            if (this.mundaneSamplingRate <= 0) return false;
+            if (this.mundaneSamplingRate >= 1) return true;
+            this._mundaneCounter = (this._mundaneCounter || 0) + 1;
+            const interval = Math.round(1 / this.mundaneSamplingRate);
+            return (this._mundaneCounter % interval) === 1;
+        }
+
+        // Always sample all other commands (click, keypress, fill, navigate, etc.)
+        return true;
+    }
+
+    scrubPII(value, depth = 0) {
+        if (depth > 5 || value === null || value === undefined) return value;
+        if (typeof value === 'string') {
+            let str = value;
+            // Scrub 16-digit credit cards
+            str = str.replace(/\b\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{4}\b/g, '[SCRUBBED_CARD]');
+            // Scrub 9-digit SSNs
+            str = str.replace(/\b\d{3}[ -]\d{2}[ -]\d{4}\b/g, '[SCRUBBED_SSN]');
+            // Scrub Email addresses
+            str = str.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, '[SCRUBBED_EMAIL]');
+            // Scrub tokens and secrets
+            str = str.replace(/\b(?:bearer\s+)[a-zA-Z0-9._~+/-]+=*/gi, 'Bearer [SCRUBBED_TOKEN]');
+            str = str.replace(/(password|passwd|pwd|secret|token)(\s*(?:[=:]|\bis\b)\s*)([^\s,;"]+)/gi, '$1$2[SCRUBBED]');
+            return str;
+        }
+        if (Array.isArray(value)) {
+            return value.map(v => this.scrubPII(v, depth + 1));
+        }
+        if (typeof value === 'object') {
+            const scrubbed = {};
+            for (const [k, v] of Object.entries(value)) {
+                scrubbed[k] = this.scrubPII(v, depth + 1);
+            }
+            return scrubbed;
+        }
+        return value;
+    }
+
+    flush() {
+        if (!this.dispatchQueue || !this.dispatchQueue.length) return;
+        const batch = this.dispatchQueue.splice(0, this.dispatchQueue.length);
+        this.drainScheduled = false;
+        try {
+            const serialized = JSON.stringify(batch);
+            if (typeof this.onDispatch === 'function') {
+                this.onDispatch(serialized, batch);
+            }
+            if (typeof window !== 'undefined' && typeof window.dispatchLifecycleEvent === 'function') {
+                for (const ev of batch) {
+                    window.dispatchLifecycleEvent(ev).catch(() => {});
+                }
+            }
+        } catch (e) {
+            // Passive error handling
+        }
+    }
+
+    _scheduleDrain() {
+        if (this.drainScheduled) return;
+        this.drainScheduled = true;
+        const scheduleFn = (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function')
+            ? window.requestIdleCallback
+            : (cb) => setTimeout(cb, 0);
+        scheduleFn(() => {
+            this.drainScheduled = false;
+            this.flush();
+        });
     }
 
     /**
@@ -3144,6 +3367,23 @@ class TelemetryCollectorImpl {
     }
 
     /**
+     * Records telemetry for epoch barrier stalls.
+     * @param {object} probeData 
+     */
+    recordBarrierProbe(probeData) {
+        try {
+            if (!this.registry.epochSync.barrierProbes) {
+                this.registry.epochSync.barrierProbes = [];
+            }
+            this.registry.epochSync.barrierProbes.push({
+                eventType: 'EPOCH_BARRIER_PROBE',
+                timestamp: Date.now(),
+                ...probeData
+            });
+        } catch (e) {}
+    }
+
+    /**
      * Records telemetry for IPC message delivery.
      * @param {number} [latencyMs]
      */
@@ -3205,8 +3445,15 @@ class TelemetryCollectorImpl {
                 this.registry.shadowMode = { total: 0, matches: 0, mismatches: 0 };
             }
             this.registry.shadowMode.total++;
-            const legacyLoc = legacyResult?.locator || legacyResult?.playwrightLocator || null;
-            const v2Loc = v2Result?.locator || v2Result?.playwrightLocator || null;
+            let legacyLoc = legacyResult?.locator || legacyResult?.playwrightLocator || null;
+            let v2Loc = v2Result?.locator || v2Result?.playwrightLocator || null;
+            
+            // Support passing a single combined object { legacyLocator, newLocator } as second argument
+            if (v2Result === undefined && legacyResult && (legacyResult.legacyLocator !== undefined || legacyResult.newLocator !== undefined)) {
+                legacyLoc = legacyResult.legacyLocator || null;
+                v2Loc = legacyResult.newLocator || null;
+            }
+            
             if (legacyLoc !== v2Loc) {
                 this.registry.shadowMode.mismatches++;
             } else {
@@ -3254,6 +3501,18 @@ class TelemetryCollectorImpl {
     recordLifecycleEvent(event) {
         try {
             if (!event) return;
+
+            // Asymmetrical sampling check
+            if (!this.shouldSample(event)) {
+                if (this.registry && this.registry.sampling) {
+                    this.registry.sampling.suppressed++;
+                }
+                return;
+            }
+            if (this.registry && this.registry.sampling) {
+                this.registry.sampling.sampled++;
+            }
+
             const normalized = {
                 eventId: event.eventId || ('ev-' + Math.random().toString(16).slice(2, 10)),
                 traceId: event.traceId || 'tr-unknown',
@@ -3278,30 +3537,1159 @@ class TelemetryCollectorImpl {
                 errorDetails: event.errorDetails || null
             };
 
+            // PII Scrubbing on string properties
+            const scrubbed = this.scrubPII(normalized);
+
             if (this.registry && Array.isArray(this.registry.lifecycleEvents)) {
-                this.registry.lifecycleEvents.push(normalized);
+                this.registry.lifecycleEvents.push(scrubbed);
                 if (this.registry.lifecycleEvents.length > 500) {
                     this.registry.lifecycleEvents.shift();
                 }
             }
 
-            if (normalized.validationResult && normalized.validationResult.startsWith('FAIL')) {
-                const code = normalized.errorDetails?.errorCode || normalized.validationResult.replace('FAIL_', '');
+            if (scrubbed.validationResult && scrubbed.validationResult.startsWith('FAIL')) {
+                const code = scrubbed.errorDetails?.errorCode || scrubbed.validationResult.replace('FAIL_', '');
                 if (this.registry && typeof this.registry.recordFailureCode === 'function') {
                     this.registry.recordFailureCode(code);
                 }
             }
 
-            // If in browser context, forward to Node.js controller via Playwright exposed binding
-            if (typeof window !== 'undefined' && typeof window.dispatchLifecycleEvent === 'function') {
-                window.dispatchLifecycleEvent(normalized).catch(() => {});
+            // Deferred asynchronous dispatch off the critical path
+            this.dispatchQueue.push(scrubbed);
+            if (scrubbed.validationResult && scrubbed.validationResult.startsWith('FAIL')) {
+                // Synchronous immediate flush on failure/error to prevent loss on crash
+                this.flush();
+            } else {
+                this._scheduleDrain();
             }
         } catch (e) {
             // Passive telemetry
         }
     }
+
+    /**
+     * Records a SYNC-100: MSN Gap Detected event.
+     * @param {string} browserId
+     * @param {number} expectedMsn
+     * @param {number} actualMsn
+     */
+    recordSyncGap(browserId, expectedMsn, actualMsn) {
+        try {
+            this.registry.epochSync.syncGap++;
+            this.recordLifecycleEvent({
+                stageName: 'SYNC_ERROR',
+                component: 'SequenceGate.mjs',
+                method: 'validateMsn',
+                browserId,
+                errorDetails: { errorCode: 'SYNC-100', expectedMsn, actualMsn }
+            });
+        } catch (e) {}
+    }
+
+    /**
+     * Records a SYNC-201: URL Assertion Failure event.
+     * @param {string} browserId
+     * @param {string} expectedUrl
+     * @param {string} actualUrl
+     */
+    recordSyncAssertionFailure(browserId, expectedUrl, actualUrl) {
+        try {
+            this.registry.epochSync.syncAssertionFailure++;
+            this.recordLifecycleEvent({
+                stageName: 'SYNC_ERROR',
+                component: 'SynchronizationBarrier.mjs',
+                method: 'assertUrl',
+                browserId,
+                errorDetails: { errorCode: 'SYNC-201', expectedUrl, actualUrl }
+            });
+        } catch (e) {}
+    }
+
+    /**
+     * Records a SYNC-300: Ingress ACK Timeout event.
+     * @param {string} interactionId
+     */
+    recordSyncAckTimeout(interactionId) {
+        try {
+            this.registry.epochSync.syncAckTimeout++;
+            this.recordLifecycleEvent({
+                stageName: 'SYNC_ERROR',
+                component: 'ActionDispatcher.mjs',
+                method: 'ackTimeout',
+                interactionId,
+                errorDetails: { errorCode: 'SYNC-300', interactionId }
+            });
+        } catch (e) {}
+    }
 }
 const TelemetryCollector = new TelemetryCollectorImpl();
+
+
+class TextIndex {
+    constructor() {
+        this.map = new Map(); // normalizedToken -> Set<Element>
+    }
+
+    static normalize(text) {
+        if (!text || typeof text !== 'string') return '';
+        return text.trim().replace(/\s+/g, ' ').toLowerCase().slice(0, 256);
+    }
+
+    add(element, rawText) {
+        if (!element || !rawText || typeof rawText !== 'string') return;
+        const normalized = TextIndex.normalize(rawText);
+        if (!normalized) return;
+
+        let set = this.map.get(normalized);
+        if (!set) {
+            set = new Set();
+            this.map.set(normalized, set);
+        }
+        set.add(element);
+
+        if (normalized.indexOf(' ') !== -1) {
+            let start = 0;
+            for (let i = 0; i <= normalized.length; i++) {
+                if (i === normalized.length || normalized.charCodeAt(i) === 32) {
+                    if (i - start >= 2) {
+                        const word = normalized.slice(start, i);
+                        if (word !== normalized) {
+                            let wSet = this.map.get(word);
+                            if (!wSet) {
+                                wSet = new Set();
+                                this.map.set(word, wSet);
+                            }
+                            wSet.add(element);
+                        }
+                    }
+                    start = i + 1;
+                }
+            }
+        }
+    }
+
+    remove(element) {
+        if (!element) return;
+        for (const [key, set] of this.map.entries()) {
+            if (set.has(element)) {
+                set.delete(element);
+                if (set.size === 0) {
+                    this.map.delete(key);
+                }
+            }
+        }
+    }
+
+    get(text) {
+        const normalized = TextIndex.normalize(text);
+        if (!normalized) return new Set();
+        return this.map.get(normalized) || new Set();
+    }
+
+    clear() {
+        this.map.clear();
+    }
+
+    get size() {
+        return this.map.size;
+    }
+}
+
+
+
+class MutationRateTracker {
+    constructor() {
+        this.buffer = new Int32Array(60);
+        this.index = 0;
+        this.timer = null;
+        this.isRunning = false;
+    }
+
+    start() {
+        if (this.isRunning) return;
+        this.isRunning = true;
+        this.buffer.fill(0);
+        this.index = 0;
+        const tick = () => {
+            if (!this.isRunning) return;
+            this.index = (this.index + 1) % 60;
+            this.buffer[this.index] = 0;
+            if (typeof window !== 'undefined' && window.requestAnimationFrame) {
+                this.timer = window.requestAnimationFrame(tick);
+            } else {
+                this.timer = setTimeout(tick, 16);
+            }
+        };
+        if (typeof window !== 'undefined' && window.requestAnimationFrame) {
+            this.timer = window.requestAnimationFrame(tick);
+        } else {
+            this.timer = setTimeout(tick, 16);
+        }
+    }
+
+    stop() {
+        this.isRunning = false;
+        if (this.timer !== null) {
+            if (typeof window !== 'undefined' && window.cancelAnimationFrame && typeof this.timer === 'number') {
+                window.cancelAnimationFrame(this.timer);
+            } else {
+                clearTimeout(this.timer);
+            }
+            this.timer = null;
+        }
+    }
+
+    increment(count = 1) {
+        if (this.isRunning) {
+            this.buffer[this.index] += count;
+        }
+    }
+
+    getRate() {
+        let sum = 0;
+        for (let i = 0; i < 60; i++) {
+            sum += this.buffer[i];
+        }
+        return sum;
+    }
+}
+class MutationProcessor {
+    constructor(textIndex, accessibilityIndex = null, spatialCache = null, onUpdateCallback = null) {
+        if (typeof accessibilityIndex === 'function') {
+            onUpdateCallback = accessibilityIndex;
+            accessibilityIndex = null;
+            spatialCache = null;
+        } else if (typeof spatialCache === 'function') {
+            onUpdateCallback = spatialCache;
+            spatialCache = null;
+        }
+        this.textIndex = textIndex;
+        this.accessibilityIndex = accessibilityIndex;
+        this.spatialCache = spatialCache;
+        this.onUpdateCallback = onUpdateCallback;
+        this.rateTracker = new MutationRateTracker();
+        this.observer = null;
+    }
+
+    start(targetNode) {
+        this.rateTracker.start();
+        if (typeof MutationObserver !== 'undefined' && targetNode) {
+            this.observer = new MutationObserver((mutations) => this.processMutations(mutations));
+            const target = targetNode.body || targetNode.documentElement || targetNode;
+            if (target && target.nodeType) {
+                this.observer.observe(target, {
+                    childList: true,
+                    characterData: true,
+                    attributes: true,
+                    subtree: true
+                });
+            }
+        }
+    }
+
+    stop() {
+        if (this.observer) {
+            this.observer.disconnect();
+            this.observer = null;
+        }
+        this.rateTracker.stop();
+    }
+
+    getMutationRate() {
+        return this.rateTracker.getRate();
+    }
+
+    processMutations(mutations) {
+        if (!mutations || !Array.isArray(mutations) || mutations.length === 0) return;
+        this.rateTracker.increment(mutations.length);
+
+        if (typeof this.onUpdateCallback === 'function') {
+            this.onUpdateCallback('UPDATING');
+        }
+
+        for (const mutation of mutations) {
+            if (mutation.type === 'childList') {
+                if (mutation.addedNodes) {
+                    for (let i = 0; i < mutation.addedNodes.length; i++) {
+                        const node = mutation.addedNodes[i];
+                        if (node.nodeType === 3) { // TEXT_NODE
+                            const parent = node.parentElement || node.parentNode;
+                            if (parent && parent.nodeType === 1) {
+                                this._indexElement(parent);
+                            }
+                        } else if (node.nodeType === 1) { // ELEMENT_NODE
+                            this._indexSubtree(node);
+                        }
+                    }
+                }
+                if (mutation.removedNodes) {
+                    for (let i = 0; i < mutation.removedNodes.length; i++) {
+                        const node = mutation.removedNodes[i];
+                        if (node.nodeType === 3) { // TEXT_NODE
+                            const parent = node.parentElement || node.parentNode;
+                            if (parent && parent.nodeType === 1) {
+                                this._indexElement(parent);
+                            }
+                        } else if (node.nodeType === 1) { // ELEMENT_NODE
+                            this._unindexSubtree(node);
+                        }
+                    }
+                }
+            } else if (mutation.type === 'characterData') {
+                const node = mutation.target;
+                if (node && node.nodeType === 3) {
+                    const parent = node.parentElement || node.parentNode;
+                    if (parent && parent.nodeType === 1) {
+                        this._indexElement(parent);
+                    }
+                }
+            } else if (mutation.type === 'attributes') {
+                const node = mutation.target;
+                if (node && node.nodeType === 1) {
+                    if (mutation.attributeName === 'value' || mutation.attributeName === 'placeholder' || mutation.attributeName === 'aria-label' || mutation.attributeName === 'role' || mutation.attributeName === 'type' || mutation.attributeName === 'title' || mutation.attributeName === 'alt') {
+                        this._indexElement(node);
+                    }
+                }
+            }
+        }
+
+        if (typeof this.onUpdateCallback === 'function') {
+            this.onUpdateCallback('READY');
+        }
+    }
+
+    _indexElement(el) {
+        if (!el || el.nodeType !== 1) return;
+        if (this.textIndex) {
+            const text = el.textContent || el.value || el.getAttribute?.('aria-label') || el.getAttribute?.('placeholder') || '';
+            if (text && text.trim().length > 0) {
+                this.textIndex.add(el, text);
+            } else {
+                this.textIndex.remove(el);
+            }
+        }
+        if (this.accessibilityIndex) {
+            this.accessibilityIndex.add(el);
+        }
+        if (this.spatialCache) {
+            this.spatialCache.observe(el);
+        }
+    }
+
+    _indexSubtree(el) {
+        if (!el || el.nodeType !== 1) return;
+        this._indexElement(el);
+        const children = el.children;
+        if (children) {
+            for (let i = 0; i < children.length; i++) {
+                this._indexSubtree(children[i]);
+            }
+        }
+    }
+
+    _unindexSubtree(el) {
+        if (!el || el.nodeType !== 1) return;
+        if (this.textIndex) this.textIndex.remove(el);
+        if (this.accessibilityIndex) this.accessibilityIndex.remove(el);
+        if (this.spatialCache) this.spatialCache.unobserve(el);
+
+        const children = el.children;
+        if (children) {
+            for (let i = 0; i < children.length; i++) {
+                this._unindexSubtree(children[i]);
+            }
+        }
+    }
+}
+
+
+
+class CandidateRecord {
+    constructor(node, textIndex = null, spatialCache = null, accessibilityIndex = null) {
+        this.node = node;
+        this.tagName = (node && node.tagName) ? node.tagName.toUpperCase() : '';
+        this.textContent = (node ? (node.textContent || node.value || '').trim().replace(/\s+/g, ' ').toLowerCase().slice(0, 256) : null);
+        
+        if (accessibilityIndex && accessibilityIndex.elementRoles && accessibilityIndex.elementRoles.has(node)) {
+            this.ariaRole = accessibilityIndex.elementRoles.get(node);
+        } else {
+            this.ariaRole = node ? (node.getAttribute?.('role') || node.role || null) : null;
+        }
+        
+        if (accessibilityIndex && accessibilityIndex.elementLabels && accessibilityIndex.elementLabels.has(node)) {
+            this.ariaLabel = accessibilityIndex.elementLabels.get(node);
+        } else {
+            this.ariaLabel = node ? (node.getAttribute?.('aria-label') || node.getAttribute?.('title') || null) : null;
+        }
+
+        this.dataTestId = node ? (node.getAttribute?.('data-testid') || node.getAttribute?.('data-qa') || node.getAttribute?.('data-cy') || null) : null;
+        this.isDisabled = node ? Boolean(node.disabled || node.getAttribute?.('aria-disabled') === 'true' || node.classList?.contains?.('disabled')) : false;
+        
+        if (spatialCache && typeof spatialCache.getBounds === 'function') {
+            this.isVisible = typeof spatialCache.isVisible === 'function' ? spatialCache.isVisible(node) : true;
+            this.approximateBounds = spatialCache.getBounds(node) || { x: 0, y: 0, w: 0, h: 0 };
+        } else if (spatialCache && typeof spatialCache.get === 'function') {
+            const cached = spatialCache.get(node);
+            this.isVisible = cached ? cached.isVisible : true;
+            this.approximateBounds = cached ? cached.bounds : { x: 0, y: 0, w: 0, h: 0 };
+        } else {
+            this.isVisible = true;
+            this.approximateBounds = (node && typeof node.getBoundingClientRect === 'function')
+                ? (() => { const r = node.getBoundingClientRect(); return { x: r.x || 0, y: r.y || 0, w: r.width || 0, h: r.height || 0 }; })()
+                : { x: 0, y: 0, w: 0, h: 0 };
+        }
+
+        this.locator = this._generateLocator(node);
+        this.isMemoryHit = false;
+        this.memoryConfidence = 0;
+    }
+
+    _generateLocator(node) {
+        if (!node) return '';
+        if (this.dataTestId) {
+            return `[data-testid="${this.dataTestId}"]`;
+        }
+        if (node.id && !/^(mui-|react-|vue-|headlessui-|radix-|id-|\d)/.test(node.id)) {
+            return `#${node.id}`;
+        }
+        if (this.textContent && this.textContent.length > 2 && this.textContent.length < 50 && !/"/.test(this.textContent)) {
+            return `text="${node.textContent.trim()}"`;
+        }
+        return this._buildCssPath(node);
+    }
+
+    _buildCssPath(el) {
+        if (!el || el.nodeType !== 1) return '';
+        const path = [];
+        let current = el;
+        while (current && current.nodeType === 1 && current.tagName !== 'HTML' && current.tagName !== 'BODY') {
+            let selector = current.tagName.toLowerCase();
+            if (current.id && !/^(mui-|react-|vue-|headlessui-|radix-|id-|\d)/.test(current.id)) {
+                path.unshift(`#${current.id}`);
+                break;
+            }
+            let index = 1;
+            let sibling = current.previousElementSibling;
+            while (sibling) {
+                if (sibling.tagName === current.tagName) index++;
+                sibling = sibling.previousElementSibling;
+            }
+            if (index > 1 || (current.nextElementSibling && current.nextElementSibling.tagName === current.tagName)) {
+                selector += `:nth-of-type(${index})`;
+            }
+            path.unshift(selector);
+            current = current.parentElement || current.parentNode;
+        }
+        return path.join(' > ');
+    }
+}
+class QueryPlanner {
+    static query(identityDoc, sceneGraph, docRoot = null) {
+        if (!identityDoc) return [];
+        const doc = docRoot || (typeof document !== 'undefined' ? document : null);
+        if (!doc) return [];
+
+        const results = [];
+        const seenNodes = new Set();
+        const addNode = (node) => {
+            if (node && !seenNodes.has(node)) {
+                seenNodes.add(node);
+                results.push(new CandidateRecord(
+                    node,
+                    sceneGraph ? sceneGraph.textIndex : null,
+                    sceneGraph ? sceneGraph.spatialCache : null,
+                    sceneGraph ? sceneGraph.accessibilityIndex : null
+                ));
+            }
+        };
+
+        const checkAndReturn = () => {
+            if (results.length === 0) return false;
+            if (sceneGraph && typeof sceneGraph.recallResolution === 'function') {
+                const urlPath = identityDoc.urlPath || (typeof window !== 'undefined' && window.location ? window.location.pathname : '');
+                const eidHash = identityDoc.eidHash || identityDoc.hash || identityDoc.id || identityDoc.dataTestId || identityDoc.textContent || identityDoc.cssSelector || '';
+                if (urlPath && eidHash) {
+                    const memoryHit = sceneGraph.recallResolution(urlPath, eidHash);
+                    if (memoryHit && memoryHit.locator) {
+                        let hitFound = false;
+                        for (let i = 0; i < results.length; i++) {
+                            if (results[i].locator === memoryHit.locator) {
+                                results[i].isMemoryHit = true;
+                                results[i].memoryConfidence = memoryHit.confidence || 1.0;
+                                hitFound = true;
+                            }
+                        }
+                        if (!hitFound && typeof doc.querySelector === 'function') {
+                            try {
+                                const el = doc.querySelector(memoryHit.locator);
+                                if (el && !seenNodes.has(el)) {
+                                    seenNodes.add(el);
+                                    const rec = new CandidateRecord(
+                                        el,
+                                        sceneGraph ? sceneGraph.textIndex : null,
+                                        sceneGraph ? sceneGraph.spatialCache : null,
+                                        sceneGraph ? sceneGraph.accessibilityIndex : null
+                                    );
+                                    rec.isMemoryHit = true;
+                                    rec.memoryConfidence = memoryHit.confidence || 1.0;
+                                    results.unshift(rec);
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                }
+            }
+            return true;
+        };
+
+        // Step 1: Read identityDoc.dataTestId
+        const testId = identityDoc.dataTestId || identityDoc.semantic?.dataTestId || identityDoc.element?.dataAttributes?.['data-testid'] || null;
+        if (testId && typeof doc.querySelectorAll === 'function') {
+            try {
+                const matches = doc.querySelectorAll(`[data-testid="${testId}"]`);
+                if (matches && matches.length > 0) {
+                    for (let i = 0; i < matches.length; i++) {
+                        addNode(matches[i]);
+                    }
+                    if (checkAndReturn()) return results;
+                }
+            } catch (e) {}
+        }
+
+        // Step 2: Read identityDoc.textContent (cardinality <= 3)
+        const text = identityDoc.textContent || identityDoc.lexical?.normalizedText || identityDoc.text?.normalized || identityDoc.text?.exact || null;
+        if (text && sceneGraph && sceneGraph.textIndex) {
+            const matchSet = sceneGraph.textIndex.get(text);
+            if (matchSet && matchSet.size > 0 && matchSet.size <= 5) {
+                for (const node of matchSet) {
+                    addNode(node);
+                }
+                if (checkAndReturn()) return results;
+            }
+        }
+
+        // Step 3: Read ARIA label or role
+        const ariaLabel = identityDoc.ariaLabel || identityDoc.semantic?.ariaLabel || null;
+        if (ariaLabel && sceneGraph && sceneGraph.accessibilityIndex) {
+            const matchSet = sceneGraph.accessibilityIndex.getByLabel(ariaLabel);
+            if (matchSet && matchSet.size > 0 && matchSet.size <= 10) {
+                for (const node of matchSet) {
+                    addNode(node);
+                }
+                if (checkAndReturn()) return results;
+            }
+        }
+
+        // Step 4: Fallback cssSelector
+        const cssSelector = identityDoc.cssSelector || null;
+        if (cssSelector && typeof doc.querySelectorAll === 'function') {
+            try {
+                const matches = doc.querySelectorAll(cssSelector);
+                if (matches && matches.length > 0) {
+                    for (let i = 0; i < Math.min(matches.length, 10); i++) {
+                        addNode(matches[i]);
+                    }
+                    if (checkAndReturn()) return results;
+                }
+            } catch (e) {}
+        }
+
+        // Step 5: Final fallback tagName
+        const tagName = identityDoc.tagName || identityDoc.element?.tagName || null;
+        if (tagName && typeof doc.querySelectorAll === 'function') {
+            try {
+                const matches = doc.querySelectorAll(tagName);
+                if (matches && matches.length > 0) {
+                    for (let i = 0; i < Math.min(matches.length, 100); i++) {
+                        addNode(matches[i]);
+                    }
+                }
+            } catch (e) {}
+        }
+
+        checkAndReturn();
+        return results;
+    }
+}
+
+
+
+
+
+
+
+
+
+class SceneGraph {
+    constructor() {
+        this.state = 'UNINITIALIZED';
+        this.textIndex = new TextIndex();
+        this.accessibilityIndex = new AccessibilityIndex();
+        this.spatialCache = new SpatialCache();
+        this.resolutionMemory = new ResolutionMemory(128); // Bounded LRU cache (max 128 entries)
+        this.mutationProcessor = new MutationProcessor(this.textIndex, this.accessibilityIndex, this.spatialCache, (newState) => {
+            if (this.state !== 'DESTROYED' && this.state !== 'UNINITIALIZED') {
+                this.state = newState;
+            }
+        });
+        this.document = null;
+    }
+
+    initialize(doc) {
+        if (!doc) return;
+        this.document = doc;
+        this.state = 'BUILDING';
+        this.textIndex.clear();
+        this.accessibilityIndex.clear();
+        this.spatialCache.clear();
+
+        const root = doc.body || doc.documentElement || doc;
+        if (root) {
+            const walk = (el) => {
+                if (!el || el.nodeType !== 1) return;
+                this._indexElement(el);
+                const children = el.children;
+                if (children) {
+                    for (let i = 0; i < children.length; i++) {
+                        walk(children[i]);
+                    }
+                }
+            };
+            walk(root);
+        }
+
+        this.spatialCache.start(doc);
+        this.mutationProcessor.start(doc);
+        this.state = 'READY';
+    }
+
+    destroy() {
+        this.state = 'DESTROYED';
+        this.mutationProcessor.stop();
+        this.spatialCache.stop();
+        this.textIndex.clear();
+        this.accessibilityIndex.clear();
+        this.spatialCache.clear();
+        this.resolutionMemory.clear();
+        this.document = null;
+    }
+
+    isReady() {
+        return this.state === 'READY' || this.state === 'UPDATING';
+    }
+
+    query(identityDoc) {
+        if (this.state === 'UNINITIALIZED' || this.state === 'DESTROYED') {
+            return [];
+        }
+        return QueryPlanner.query(identityDoc, this, this.document);
+    }
+
+    rememberResolution(urlPath, eidHash, strategyName, locator, confidence) {
+        if (this.resolutionMemory && typeof this.resolutionMemory.remember === 'function') {
+            return this.resolutionMemory.remember(urlPath, eidHash, strategyName, locator, confidence);
+        }
+    }
+
+    recallResolution(urlPath, eidHash) {
+        if (this.resolutionMemory && typeof this.resolutionMemory.recall === 'function') {
+            return this.resolutionMemory.recall(urlPath, eidHash);
+        }
+        return null;
+    }
+
+    getPreciseBoundingBox(node) {
+        if (!node || typeof node.getBoundingClientRect !== 'function') {
+            return { x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 };
+        }
+        return node.getBoundingClientRect();
+    }
+
+    getStabilityState() {
+        if (this.state === 'UNINITIALIZED' || this.state === 'DESTROYED' || this.state === 'BUILDING') {
+            return 'MUTATING';
+        }
+        if (this.getMutationRate() > 50) {
+            return 'MUTATING';
+        }
+        return 'STABLE';
+    }
+
+    getMutationRate() {
+        return this.mutationProcessor.getMutationRate();
+    }
+
+    _indexElement(el) {
+        if (!el || el.nodeType !== 1) return;
+        const text = el.textContent || el.value || el.getAttribute?.('aria-label') || el.getAttribute?.('placeholder') || '';
+        if (text && text.trim().length > 0) {
+            this.textIndex.add(el, text);
+        }
+        this.accessibilityIndex.add(el);
+        this.spatialCache.observe(el);
+    }
+}
+
+
+
+class EvidenceComputer {
+    static computeScore(candidate, identityDoc, customWeights = {}) {
+        const floor = 0.01;
+        const weights = {
+            text: customWeights.text || 1.0,
+            role: customWeights.role || 1.0,
+            testId: customWeights.testId || 1.5, // Stronger weight for data-testid
+            tag: customWeights.tag || 0.8,
+            memory: customWeights.memory || 1.2
+        };
+
+        const dimensions = {
+            text: EvidenceComputer._computeTextScore(candidate, identityDoc, floor),
+            role: EvidenceComputer._computeRoleScore(candidate, identityDoc, floor),
+            testId: EvidenceComputer._computeTestIdScore(candidate, identityDoc, floor),
+            tag: EvidenceComputer._computeTagScore(candidate, identityDoc, floor),
+            memory: candidate.isMemoryHit ? Math.max(candidate.memoryConfidence || 1.0, floor) : 1.0
+        };
+
+        let totalScore = 1.0;
+        for (const [key, rawScore] of Object.entries(dimensions)) {
+            const w = weights[key] || 1.0;
+            const clampedScore = Math.max(rawScore, floor);
+            totalScore *= Math.pow(clampedScore, w);
+        }
+
+        totalScore = Math.max(Math.min(totalScore, 1.0), floor);
+
+        return {
+            totalScore,
+            dimensions,
+            weights
+        };
+    }
+
+    static _computeTextScore(candidate, identityDoc, floor) {
+        const targetText = (identityDoc.textContent || identityDoc.lexical?.normalizedText || identityDoc.text?.normalized || identityDoc.text?.exact || '').trim().toLowerCase();
+        let candText = (candidate.textContent || candidate.features?.text?.normalized || candidate.features?.text?.exact || candidate.node?._text || candidate.node?.textContent || '').trim().toLowerCase();
+
+        if (!candText && candidate.locator) {
+            const match = candidate.locator.match(/(?:has-)?text=['"]?([^'"]+)['"]?/i);
+            if (match) candText = match[1].trim().toLowerCase();
+        }
+
+        if (!targetText && !candText) return 1.0;
+        if (!targetText || !candText) return floor;
+        if (targetText === candText) return 1.0;
+
+        if (candText.includes(targetText) || targetText.includes(candText)) {
+            const ratio = Math.min(targetText.length, candText.length) / Math.max(targetText.length, candText.length);
+            return Math.max(0.5 + 0.5 * ratio, floor);
+        }
+
+        // Token Jaccard similarity
+        const targetTokens = new Set(targetText.split(/\s+/));
+        const candTokens = new Set(candText.split(/\s+/));
+        let intersection = 0;
+        for (const t of targetTokens) {
+            if (candTokens.has(t)) intersection++;
+        }
+        const union = new Set([...targetTokens, ...candTokens]).size;
+        if (union === 0) return 1.0;
+        const jaccard = intersection / union;
+        return jaccard > 0 ? Math.max(jaccard, floor) : floor;
+    }
+
+    static _computeRoleScore(candidate, identityDoc, floor) {
+        const targetRole = (identityDoc.ariaRole || identityDoc.semantic?.ariaRole || '').toLowerCase();
+        let candRole = (candidate.ariaRole || candidate.features?.role || candidate.features?.attributes?.role || candidate.node?.role || candidate.node?._attributes?.get?.('role') || '').toLowerCase();
+
+        if (!candRole && candidate.locator) {
+            const match = candidate.locator.match(/role=['"]?([^'"]+)['"]?/i);
+            if (match) candRole = match[1].trim().toLowerCase();
+        }
+
+        if (!targetRole && !candRole) return 1.0;
+        if (!targetRole || !candRole) return 0.9; // Neutral slight discount if one has role and other doesn't
+        if (targetRole === candRole) return 1.0;
+        return floor;
+    }
+
+    static _computeTestIdScore(candidate, identityDoc, floor) {
+        const targetId = identityDoc.dataTestId || identityDoc.semantic?.dataTestId || identityDoc.element?.dataAttributes?.['data-testid'] || '';
+        let candId = candidate.dataTestId || candidate.features?.attributes?.['data-testid'] || candidate.node?._attributes?.get?.('data-testid') || '';
+
+        if (!candId && candidate.locator) {
+            const match = candidate.locator.match(/data-testid=['"]?([^'"]+)['"]?/i);
+            if (match) candId = match[1].trim();
+        }
+
+        if (!targetId && !candId) return 1.0;
+        if (!targetId || !candId) return 0.8;
+        if (targetId === candId) return 1.0;
+        return floor;
+    }
+
+    static _computeTagScore(candidate, identityDoc, floor) {
+        const targetTag = (identityDoc.tagName || identityDoc.element?.tagName || '').toUpperCase();
+        const candTag = (candidate.tagName || candidate.features?.tagName || candidate.node?.tagName || candidate.node?.nodeName || '').toUpperCase();
+
+        if (!targetTag && !candTag) return 1.0;
+        if (!targetTag || !candTag) return 1.0; // Selector might not specify tag name
+        if (targetTag === candTag) return 1.0;
+        return floor;
+    }
+}
+
+
+
+class HardConstraints {
+    static evaluate(candidate, identityDoc) {
+        if (!candidate) {
+            return { passed: false, reason: 'NULL_CANDIDATE' };
+        }
+        if (!identityDoc) {
+            return { passed: true };
+        }
+
+        // Constraint 1: Visibility
+        // If Master element was explicitly visible, eliminate candidates that are explicitly invisible
+        if (identityDoc.isVisible !== false && candidate.isVisible === false) {
+            return { passed: false, reason: 'INVISIBLE_ELEMENT' };
+        }
+
+        // Constraint 2: Disabled state
+        // If Master element was enabled (isDisabled === false), eliminate disabled candidates
+        if (identityDoc.isDisabled === false && candidate.isDisabled === true) {
+            return { passed: false, reason: 'DISABLED_MISMATCH' };
+        }
+
+        // Constraint 3: Tag Family Mismatch
+        const masterTag = (identityDoc.tagName || identityDoc.element?.tagName || '').toUpperCase();
+        const candTag = (candidate.tagName || candidate.features?.tagName || candidate.node?.tagName || candidate.node?.nodeName || '').toUpperCase();
+        
+        if (masterTag && candTag && masterTag !== candTag) {
+            // Allow compatible families (e.g., BUTTON and INPUT[type=submit], or A and interactive ROLE)
+            const isMasterBtn = masterTag === 'BUTTON' || (masterTag === 'INPUT' && identityDoc.elementType && ['submit', 'button', 'reset'].includes(identityDoc.elementType.toLowerCase()));
+            const isCandBtn = candTag === 'BUTTON' || candidate.ariaRole === 'button' || candidate.features?.role === 'button' || (candTag === 'INPUT' && candidate.node?.getAttribute?.('type') && ['submit', 'button', 'reset'].includes(candidate.node.getAttribute('type').toLowerCase()));
+            
+            const isMasterLink = masterTag === 'A' || identityDoc.ariaRole === 'link';
+            const isCandLink = candTag === 'A' || candidate.ariaRole === 'link' || candidate.features?.role === 'link';
+
+            if ((isMasterBtn && !isCandBtn) && !isCandLink) {
+                return { passed: false, reason: 'TAG_FAMILY_MISMATCH_BUTTON' };
+            }
+            if ((isMasterLink && !isCandLink) && !isCandBtn) {
+                return { passed: false, reason: 'TAG_FAMILY_MISMATCH_LINK' };
+            }
+            if (masterTag === 'SELECT' && candTag !== 'SELECT' && candidate.ariaRole !== 'combobox') {
+                return { passed: false, reason: 'TAG_FAMILY_MISMATCH_SELECT' };
+            }
+        }
+
+        return { passed: true };
+    }
+
+    static filter(candidates, identityDoc) {
+        if (!Array.isArray(candidates)) return { passing: [], eliminated: [] };
+        const passing = [];
+        const eliminated = [];
+
+        for (let i = 0; i < candidates.length; i++) {
+            const cand = candidates[i];
+            const res = HardConstraints.evaluate(cand, identityDoc);
+            if (res.passed) {
+                passing.push(cand);
+            } else {
+                eliminated.push({ candidate: cand, reason: res.reason });
+            }
+        }
+
+        return { passing, eliminated };
+    }
+}
+
+
+
+class AnchorResolver {
+    static resolve(tiedCandidates, identityDoc, spatialCallback = null, docRoot = null) {
+        if (!Array.isArray(tiedCandidates) || tiedCandidates.length < 2) {
+            return { winner: tiedCandidates?.[0]?.candidate || tiedCandidates?.[0] || null, isResolved: false, trace: { reason: 'INSUFFICIENT_CANDIDATES' } };
+        }
+
+        const anchor = identityDoc?.anchor || identityDoc?.relational?.anchor || identityDoc?.anchorDescriptor || null;
+        if (!anchor) {
+            return { winner: null, isResolved: false, trace: { reason: 'NO_MASTER_ANCHOR' } };
+        }
+
+        const doc = docRoot || (typeof document !== 'undefined' ? document : null);
+        let slaveAnchorNodes = [];
+
+        if (doc && typeof doc.querySelectorAll === 'function') {
+            if (anchor.cssSelector) {
+                try {
+                    const matches = doc.querySelectorAll(anchor.cssSelector);
+                    for (let i = 0; i < matches.length; i++) slaveAnchorNodes.push(matches[i]);
+                } catch (e) {}
+            }
+            if (slaveAnchorNodes.length === 0 && anchor.textContent) {
+                try {
+                    const all = doc.querySelectorAll('*');
+                    for (let i = 0; i < all.length; i++) {
+                        if ((all[i].textContent || '').trim() === anchor.textContent.trim()) {
+                            slaveAnchorNodes.push(all[i]);
+                        }
+                    }
+                } catch (e) {}
+            }
+        }
+
+        if (slaveAnchorNodes.length === 0) {
+            return { winner: null, isResolved: false, trace: { reason: 'SLAVE_ANCHOR_NOT_FOUND' } };
+        }
+
+        const slaveAnchor = slaveAnchorNodes[0];
+        const getBox = (node) => {
+            if (spatialCallback && typeof spatialCallback === 'function') {
+                const res = spatialCallback(node);
+                if (res) return res;
+            }
+            if (node && typeof node.getBoundingClientRect === 'function') {
+                return node.getBoundingClientRect();
+            }
+            if (node && node._rect) {
+                return node._rect;
+            }
+            return { x: 0, y: 0, width: 0, height: 0 };
+        };
+
+        const anchorBox = getBox(slaveAnchor);
+        const anchorCenter = { x: anchorBox.x + (anchorBox.width || 0) / 2, y: anchorBox.y + (anchorBox.height || 0) / 2 };
+        const masterVec = anchor.spatialVector || { dx: anchor.dx || 0, dy: anchor.dy || 0 };
+
+        let bestCand = null;
+        let bestScore = -Infinity;
+        let secondBestScore = -Infinity;
+        const candidateScores = [];
+
+        for (const item of tiedCandidates) {
+            const cand = item.candidate || item;
+            const candBox = cand.approximateBounds || getBox(cand.node);
+            const candCenter = { x: (candBox.x || 0) + (candBox.width || candBox.w || 0) / 2, y: (candBox.y || 0) + (candBox.height || candBox.h || 0) / 2 };
+
+            const slaveVec = {
+                dx: candCenter.x - anchorCenter.x,
+                dy: candCenter.y - anchorCenter.y
+            };
+
+            const edgeDistanceDelta = Math.abs((anchor.edgeDistance || 0) - (cand.edgeDistance || cand.node?._edgeDistance || 0));
+            const spatialDelta = Math.sqrt(Math.pow(slaveVec.dx - masterVec.dx, 2) + Math.pow(slaveVec.dy - masterVec.dy, 2));
+            
+            // Formula from §1.3.4: anchorScore = 1.0 / (1.0 + edgeDistanceDelta + spatialDelta/100)
+            const anchorScore = 1.0 / (1.0 + edgeDistanceDelta + spatialDelta / 100);
+            candidateScores.push({ candidate: cand, anchorScore, edgeDistanceDelta, spatialDelta, slaveVec });
+
+            if (anchorScore > bestScore) {
+                secondBestScore = bestScore;
+                bestScore = anchorScore;
+                bestCand = cand;
+            } else if (anchorScore > secondBestScore) {
+                secondBestScore = anchorScore;
+            }
+        }
+
+        const isResolved = bestCand !== null && (bestScore > secondBestScore || tiedCandidates.length === 2);
+
+        return {
+            winner: isResolved ? bestCand : null,
+            isResolved,
+            trace: {
+                reason: isResolved ? 'ANCHOR_RESOLVED_TIE' : 'ANCHOR_RESOLUTION_AMBIGUOUS',
+                bestScore,
+                secondBestScore,
+                candidateScores
+            }
+        };
+    }
+}
+
+
+
+class EntropyScaler {
+    static computeEntropy(identityDoc) {
+        if (!identityDoc) return 0.1;
+
+        let entropy = 0.2; // Base entropy for existing
+
+        // Check dataTestId
+        const testId = identityDoc.dataTestId || identityDoc.semantic?.dataTestId || identityDoc.element?.dataAttributes?.['data-testid'];
+        if (testId && testId.trim().length > 0) {
+            entropy += 0.4;
+        }
+
+        // Check text content
+        const text = identityDoc.textContent || identityDoc.lexical?.normalizedText || identityDoc.text?.normalized || identityDoc.text?.exact || '';
+        if (text && text.trim().length >= 3) {
+            entropy += 0.3;
+        } else if (text && text.trim().length > 0) {
+            entropy += 0.1;
+        }
+
+        // Check ARIA role
+        const role = identityDoc.ariaRole || identityDoc.semantic?.ariaRole || '';
+        if (role && ['button', 'link', 'combobox', 'checkbox', 'radio', 'textbox', 'searchbox', 'menuitem', 'tab'].includes(role.toLowerCase())) {
+            entropy += 0.2;
+        } else if (role) {
+            entropy += 0.1;
+        }
+
+        // Check anchor
+        const anchor = identityDoc.anchor || identityDoc.relational?.anchor || identityDoc.anchorDescriptor;
+        if (anchor) {
+            entropy += 0.15;
+        }
+
+        // Check CSS Selector specificity
+        const sel = identityDoc.cssSelector || '';
+        if (sel.includes('#') || sel.split(' ').length > 2) {
+            entropy += 0.1;
+        }
+
+        return Math.max(0.1, Math.min(entropy, 1.0));
+    }
+
+    static scale(rawConfidence, identityDoc) {
+        if (typeof rawConfidence !== 'number' || isNaN(rawConfidence)) return 0;
+        const entropy = EntropyScaler.computeEntropy(identityDoc);
+        const scaled = rawConfidence * entropy;
+        return Math.max(0.0, Math.min(scaled, 1.0));
+    }
+}
+
+
+
+
+
+
+
+class InferenceEngine {
+    constructor(customWeights = {}) {
+        this.weights = customWeights;
+    }
+
+    infer(identityDoc, candidates, spatialCallback = null, docRoot = null) {
+        if (!identityDoc || !Array.isArray(candidates) || candidates.length === 0) {
+            return {
+                outcome: 'NO_MATCH',
+                candidate: null,
+                confidence: 0,
+                trace: { reason: 'EMPTY_INPUTS', identityDoc, candidateCount: candidates?.length || 0 }
+            };
+        }
+
+        // Step 1: Hard Constraint Elimination
+        const { passing, eliminated } = HardConstraints.filter(candidates, identityDoc);
+        if (passing.length === 0) {
+            return {
+                outcome: 'NO_MATCH',
+                candidate: null,
+                confidence: 0,
+                trace: { reason: 'ALL_CANDIDATES_ELIMINATED', eliminated }
+            };
+        }
+
+        // Step 2: Soft Scoring
+        const scoredCandidates = [];
+        for (let i = 0; i < passing.length; i++) {
+            const cand = passing[i];
+            const scoreObj = EvidenceComputer.computeScore(cand, identityDoc, this.weights);
+            scoredCandidates.push({
+                candidate: cand,
+                score: scoreObj.totalScore,
+                dimensions: scoreObj.dimensions
+            });
+        }
+
+        // Sort descending by score
+        scoredCandidates.sort((a, b) => b.score - a.score);
+
+        // Attach scores to candidate objects for pipeline interoperability
+        for (const item of scoredCandidates) {
+            item.candidate.ranking = item.candidate.ranking || {};
+            item.candidate.ranking.finalScore = item.score;
+            item.candidate.ranking.scoreBreakdown = item.dimensions;
+            item.candidate.scoringVector = item.dimensions;
+        }
+        candidates.sort((a, b) => (b.ranking?.finalScore || 0) - (a.ranking?.finalScore || 0));
+
+        const top = scoredCandidates[0];
+        if (!top || top.score < 0.05) {
+            return {
+                outcome: 'NO_MATCH',
+                candidate: null,
+                confidence: 0,
+                trace: { reason: 'LOW_TOP_SCORE', topScore: top ? top.score : 0, eliminated, scoredCandidates }
+            };
+        }
+
+        // Step 3: Ambiguity Check
+        if (scoredCandidates.length > 1) {
+            const second = scoredCandidates[1];
+            const ratio = top.score / Math.max(second.score, 0.0001);
+            if (ratio < 1.5 && (top.score - second.score) < 0.15) {
+                // Ambiguous! Attempt Anchor Resolution
+                const tied = scoredCandidates.filter(item => (top.score / Math.max(item.score, 0.0001)) < 1.5 && (top.score - item.score) < 0.15);
+                const anchorRes = AnchorResolver.resolve(tied, identityDoc, spatialCallback, docRoot);
+                if (anchorRes.isResolved && anchorRes.winner) {
+                    const winItem = scoredCandidates.find(item => item.candidate === anchorRes.winner) || { candidate: anchorRes.winner, score: top.score };
+                    const finalConfidence = EntropyScaler.scale(winItem.score, identityDoc);
+                    return {
+                        outcome: 'MATCH',
+                        candidate: winItem.candidate,
+                        confidence: finalConfidence,
+                        trace: {
+                            reason: 'MATCH_VIA_ANCHOR_RESOLUTION',
+                            rawScore: winItem.score,
+                            entropyScale: EntropyScaler.computeEntropy(identityDoc),
+                            anchorTrace: anchorRes.trace,
+                            eliminated,
+                            scoredCandidates
+                        }
+                    };
+                } else {
+                    return {
+                        outcome: 'AMBIGUOUS',
+                        candidates: tied.map(t => t.candidate),
+                        confidence: EntropyScaler.scale(top.score, identityDoc),
+                        trace: {
+                            reason: 'AMBIGUOUS_TIE_UNRESOLVED',
+                            topScore: top.score,
+                            secondScore: second.score,
+                            ratio,
+                            anchorTrace: anchorRes.trace,
+                            eliminated,
+                            scoredCandidates
+                        }
+                    };
+                }
+            }
+        }
+
+        // Unambiguous Match
+        const finalConfidence = EntropyScaler.scale(top.score, identityDoc);
+        return {
+            outcome: 'MATCH',
+            candidate: top.candidate,
+            confidence: finalConfidence,
+            trace: {
+                reason: 'UNAMBIGUOUS_MATCH',
+                rawScore: top.score,
+                entropyScale: EntropyScaler.computeEntropy(identityDoc),
+                eliminated,
+                scoredCandidates
+            }
+        };
+    }
+}
+
 
 
 
@@ -3320,12 +4708,13 @@ class LocatorIntelligenceEngine {
         this.config = config;
         this.rankingEngine = new RankingEngine();
         this.additiveRankingEngine = new AdditiveRankingEngine();
+        this.inferenceEngine = new InferenceEngine();
         this.pipeline = [
             new FeatureExtractor(),
             new IdentityDocumentBuilder(),
             new CandidateGenerator(),
             new CandidateDeduplicator(),
-            new CandidateValidator(),
+
             new StructuralAnalyzer(),
             this.rankingEngine,
             new LocatorSerializer()
@@ -3341,18 +4730,21 @@ class LocatorIntelligenceEngine {
         
         for (const step of this.pipeline) {
             const stepStart = Date.now();
-            if (step.name === 'CandidateValidator' && featureFlags.isEnabled('LI_REMOVE_VALIDATOR')) {
-                if (context.candidates) {
-                    for (const candidate of context.candidates) {
-                        candidate.validation = { status: 'SKIPPED', matchCount: -1 };
-                    }
-                }
-                continue;
-            }
+
 
             let currentStep = step;
-            if (step.name === 'RankingEngine' && featureFlags.isEnabled('LI_ADDITIVE_SCORING')) {
-                currentStep = this.additiveRankingEngine;
+            if (step.name === 'RankingEngine') {
+                if (featureFlags.isEnabled('INFERENCE_ENGINE_V2') || featureFlags.isEnabled('LI_INFERENCE_ENGINE_V2')) {
+                    try {
+                        this.inferenceEngine.infer(context.identityDocument || context.metadata?.identityDocument, context.candidates);
+                    } catch (e) {
+                        console.warn(`[LocatorIntelligence] Pipeline step InferenceEngine failed:`, e);
+                    }
+                    context.telemetry.stages['InferenceEngine'] = Date.now() - stepStart;
+                    continue;
+                } else if (featureFlags.isEnabled('LI_ADDITIVE_SCORING')) {
+                    currentStep = this.additiveRankingEngine;
+                }
             }
             
             try {
@@ -3375,16 +4767,63 @@ class LocatorIntelligenceEngine {
 
             // --------------------------------------------------------
 
+            if (typeof featureFlags !== 'undefined' && featureFlags.isEnabled('SCENE_GRAPH_ENABLED')) {
+                if (!window.__sceneGraph && typeof SceneGraph !== 'undefined') {
+                    window.SceneGraph = SceneGraph;
+                    window.__sceneGraph = new SceneGraph();
+                    window.__sceneGraph.initialize(document);
+                }
+            }
+
+            class ClientRingBuffer {
+                constructor(capacity = 128) {
+                    this.capacity = capacity;
+                    this.buffer = new Array(capacity);
+                    this.head = 0;
+                    this.tail = 0;
+                    this.pendingCount = 0;
+                }
+                
+                enqueue(interactionId, payload) {
+                    if (this.pendingCount >= this.capacity) {
+                        return false;
+                    }
+                    this.buffer[this.tail] = { interactionId, payload, state: 'PENDING', timestamp: Date.now() };
+                    this.tail = (this.tail + 1) % this.capacity;
+                    this.pendingCount++;
+                    return true;
+                }
+                
+                ack(interactionId) {
+                    for (let i = 0; i < this.pendingCount; i++) {
+                        const idx = (this.head + i) % this.capacity;
+                        if (this.buffer[idx] && this.buffer[idx].interactionId === interactionId) {
+                            this.buffer[idx].state = 'ACKED';
+                            while (this.pendingCount > 0 && this.buffer[this.head].state === 'ACKED') {
+                                this.buffer[this.head] = null;
+                                this.head = (this.head + 1) % this.capacity;
+                                this.pendingCount--;
+                            }
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+            }
+            window.__clientRingBuffer = new ClientRingBuffer();
+
             function sendExecution(type, payload) {
                 if (window.dispatchExecutionEvent) {
                     payload.timestamp = Date.now();
                     payload.captureTime = Date.now();
                     payload.monotonicUs = Math.round(performance.now() * 1000);
-                    payload.captureEpoch = window.__ANTIGRAVITY_EPOCH__ || 0;
-                    payload.captureEpochUrl = window.__ANTIGRAVITY_EPOCH_URL__ || '';
                     payload.capturePerformanceTime = performance.now();
                     payload.payloadVersion = 3;
                     
+                    if (!window.__clientRingBuffer.enqueue(payload.interactionId, payload)) {
+                        return; // Buffer overflow, drop it
+                    }
+
                     TelemetryCollector.recordLifecycleEvent({
                         traceId: payload.traceId || 'tr-unknown',
                         spanId: 'sp-06',

@@ -56,7 +56,6 @@ export class ActionDispatcher extends EventEmitter {
             'generation/strategies/StructuralStrategy.mjs',
             'generation/CandidateGenerator.mjs',
             'generation/CandidateDeduplicator.mjs',
-            'validation/CandidateValidator.mjs',
             'validation/StructuralAnalyzer.mjs',
             'ranking/RankingRule.mjs',
             'ranking/RankingRules/BaseScoreRule.mjs',
@@ -81,6 +80,15 @@ export class ActionDispatcher extends EventEmitter {
             'telemetry/RollingWindow.mjs',
             'telemetry/MetricsRegistry.mjs',
             'telemetry/TelemetryCollector.mjs',
+            'scenegraph/TextIndex.mjs',
+            'scenegraph/MutationProcessor.mjs',
+            'scenegraph/QueryPlanner.mjs',
+            'scenegraph/SceneGraph.mjs',
+            'inference/EvidenceComputer.mjs',
+            'inference/HardConstraints.mjs',
+            'inference/AnchorResolver.mjs',
+            'inference/EntropyScaler.mjs',
+            'inference/InferenceEngine.mjs',
             'engine/LocatorIntelligenceEngine.mjs'
         ];
 
@@ -100,9 +108,6 @@ export class ActionDispatcher extends EventEmitter {
             if (window.__locatorIntelligenceInjected) return;
             window.__locatorIntelligenceInjected = true;
             window.__ANTIGRAVITY_SEQ__ = 0;
-            window.__ANTIGRAVITY_EPOCH__ = window.__ANTIGRAVITY_EPOCH__ || 0;
-            window.__ANTIGRAVITY_EPOCH_URL__ = window.__ANTIGRAVITY_EPOCH_URL__ || location.href;
-            window.__ANTIGRAVITY_EPOCH_TS__ = window.__ANTIGRAVITY_EPOCH_TS__ || Date.now();
 
             (function() {
                 const _origPush = history.pushState;
@@ -114,7 +119,6 @@ export class ActionDispatcher extends EventEmitter {
                         window.__notifyNavigation({ 
                             type: 'pushState', 
                             url: location.href, 
-                            epoch: window.__ANTIGRAVITY_EPOCH__,
                             timestamp: Date.now(),
                             monotonicUs: Math.round(performance.now() * 1000)
                         });
@@ -127,7 +131,6 @@ export class ActionDispatcher extends EventEmitter {
                         window.__notifyNavigation({ 
                             type: 'replaceState', 
                             url: location.href, 
-                            epoch: window.__ANTIGRAVITY_EPOCH__,
                             timestamp: Date.now(),
                             monotonicUs: Math.round(performance.now() * 1000)
                         });
@@ -139,7 +142,6 @@ export class ActionDispatcher extends EventEmitter {
                         window.__notifyNavigation({ 
                             type: 'popstate', 
                             url: location.href, 
-                            epoch: window.__ANTIGRAVITY_EPOCH__,
                             timestamp: Date.now(),
                             monotonicUs: Math.round(performance.now() * 1000)
                         });
@@ -161,16 +163,63 @@ export class ActionDispatcher extends EventEmitter {
             ${locatorIntelligenceCode}
             // --------------------------------------------------------
 
+            if (typeof featureFlags !== 'undefined' && featureFlags.isEnabled('SCENE_GRAPH_ENABLED')) {
+                if (!window.__sceneGraph && typeof SceneGraph !== 'undefined') {
+                    window.SceneGraph = SceneGraph;
+                    window.__sceneGraph = new SceneGraph();
+                    window.__sceneGraph.initialize(document);
+                }
+            }
+
+            class ClientRingBuffer {
+                constructor(capacity = 128) {
+                    this.capacity = capacity;
+                    this.buffer = new Array(capacity);
+                    this.head = 0;
+                    this.tail = 0;
+                    this.pendingCount = 0;
+                }
+                
+                enqueue(interactionId, payload) {
+                    if (this.pendingCount >= this.capacity) {
+                        return false;
+                    }
+                    this.buffer[this.tail] = { interactionId, payload, state: 'PENDING', timestamp: Date.now() };
+                    this.tail = (this.tail + 1) % this.capacity;
+                    this.pendingCount++;
+                    return true;
+                }
+                
+                ack(interactionId) {
+                    for (let i = 0; i < this.pendingCount; i++) {
+                        const idx = (this.head + i) % this.capacity;
+                        if (this.buffer[idx] && this.buffer[idx].interactionId === interactionId) {
+                            this.buffer[idx].state = 'ACKED';
+                            while (this.pendingCount > 0 && this.buffer[this.head].state === 'ACKED') {
+                                this.buffer[this.head] = null;
+                                this.head = (this.head + 1) % this.capacity;
+                                this.pendingCount--;
+                            }
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+            }
+            window.__clientRingBuffer = new ClientRingBuffer();
+
             function sendExecution(type, payload) {
                 if (window.dispatchExecutionEvent) {
                     payload.timestamp = Date.now();
                     payload.captureTime = Date.now();
                     payload.monotonicUs = Math.round(performance.now() * 1000);
-                    payload.captureEpoch = window.__ANTIGRAVITY_EPOCH__ || 0;
-                    payload.captureEpochUrl = window.__ANTIGRAVITY_EPOCH_URL__ || '';
                     payload.capturePerformanceTime = performance.now();
                     payload.payloadVersion = 3;
                     
+                    if (!window.__clientRingBuffer.enqueue(payload.interactionId, payload)) {
+                        return; // Buffer overflow, drop it
+                    }
+
                     TelemetryCollector.recordLifecycleEvent({
                         traceId: payload.traceId || 'tr-unknown',
                         spanId: 'sp-06',
@@ -603,52 +652,56 @@ export class ActionDispatcher extends EventEmitter {
             const traceId = p.traceId || ('tr-' + crypto.randomUUID());
             const eid = p.identityDocument || p.probabilisticEID || null;
             const eidHash = p.eidHash || TelemetryCollector.computeEIDHash(eid);
+            const interactionId = p.interactionId || ('ia-' + crypto.randomUUID());
 
-            TelemetryCollector.recordLifecycleEvent({
-                traceId,
-                spanId: 'sp-07',
-                parentSpanId: 'sp-06',
-                stageSequence: 7,
-                stageName: 'IPC_RECEIVED',
-                component: 'CommandReceiver.mjs',
-                method: 'onMessage',
-                timestamp: Date.now(),
-                interactionId: p.interactionId || 'ia-unknown',
-                interactionType: eventData.type,
-                eidPresent: !!eid,
-                eidHash
-            });
+            try {
+                const framePathRaw = FramePathBuilder.build(frame);
+                const framePath = JSON.stringify(framePathRaw);
+                const appendResult = this.registry.appendSequence(interactionId, framePath, eventData.type, p);
 
-            logger.info(`[Master Dispatch] ${eventData.type}`);
+                if (appendResult.duplicated) {
+                    logger.warn(`Dropped duplicate interaction: ${interactionId}`);
+                    return;
+                }
+
+                TelemetryCollector.recordLifecycleEvent({
+                    traceId,
+                    spanId: 'sp-07',
+                    parentSpanId: 'sp-06',
+                    stageSequence: 7,
+                    stageName: 'IPC_RECEIVED',
+                    component: 'CommandReceiver.mjs',
+                    method: 'onMessage',
+                    timestamp: Date.now(),
+                    interactionId: interactionId,
+                    interactionType: eventData.type,
+                    eidPresent: !!eid,
+                    eidHash
+                });
+
+                logger.info(`[Master Dispatch] ${eventData.type}`);
+                
+                if (this.memorySettings.record_action_sequence === 'true') {
+                    this.recordAction(eventData);
+                }
+
+                const masterState = this.registry.getState('master');
+                const navCtx = masterState.navigationContext;
+                const viewCtx = masterState.viewportContext;
+                const scrollCtx = masterState.scrollContext;
+                const execCtx = masterState.executionContext;
             
-            if (this.memorySettings.record_action_sequence === 'true') {
-                this.recordAction(eventData);
-            }
-
-            const masterState = this.registry.getState('master');
-            const navCtx = masterState.navigationContext;
-            const viewCtx = masterState.viewportContext;
-            const scrollCtx = masterState.scrollContext;
-            const execCtx = masterState.executionContext;
-            
-            const framePath = FramePathBuilder.build(frame);
-
-            const resolvedEpoch = eventData.payload?.captureEpoch ?? 0;
-
             const metadata = {
-                captureEpoch: resolvedEpoch,
                 navigation: navCtx ? {
                     url: navCtx.currentURL,
                     navigationId: navCtx.navigationId,
                     timestamp: navCtx.startedAt,
-                    navigationType: navCtx.navigationType,
-                    epoch: resolvedEpoch
+                    navigationType: navCtx.navigationType
                 } : {
                     url: masterPage.url(),
                     navigationId: 'master-nav-fallback',
                     timestamp: Date.now(),
-                    navigationType: 'fallback',
-                    epoch: resolvedEpoch
+                    navigationType: 'fallback'
                 },
                 viewport: viewCtx ? {
                     viewportId: viewCtx.viewportId,
@@ -676,7 +729,8 @@ export class ActionDispatcher extends EventEmitter {
                     shadowPath: eventData.payload && eventData.payload.shadowPath ? eventData.payload.shadowPath : [],
                     contextVersion: execCtx ? execCtx.version : 0,
                     capturedAt: Date.now()
-                }
+                },
+                msn: appendResult.msn
             };
 
             const command = new Command({
@@ -725,6 +779,32 @@ export class ActionDispatcher extends EventEmitter {
             });
 
             this.emit('Command', command);
+            } catch (error) {
+                logger.error(`[SYNC-500] [IPC Ingress Crash] Interaction ${interactionId} failed to process: ${error.message}\n${error.stack}`);
+                TelemetryCollector.recordLifecycleEvent({
+                    traceId,
+                    spanId: 'sp-error',
+                    parentSpanId: null,
+                    stageSequence: 999,
+                    stageName: 'IPC_CRASH',
+                    component: 'ActionDispatcher.mjs',
+                    method: 'dispatchExecutionEvent',
+                    timestamp: Date.now(),
+                    interactionId,
+                    errorDetails: { errorCode: 'SYNC-500', errorMessage: error.message }
+                });
+            } finally {
+                // ACK back to the page
+                try {
+                    await masterPage.evaluate((id) => {
+                        if (window.__clientRingBuffer) {
+                            window.__clientRingBuffer.ack(id);
+                        }
+                    }, interactionId);
+                } catch(e) {
+                    logger.warn(`Failed to send ACK for ${interactionId} to Master page: ${e.message}`);
+                }
+            }
         });
 
         await masterPage.exposeBinding('__notifyNavigation', async ({ frame }, navEvent) => {
@@ -733,7 +813,7 @@ export class ActionDispatcher extends EventEmitter {
 
         masterPage.on('framenavigated', async (frame) => {
             if (typeof frame.parentFrame === 'function' ? !frame.parentFrame() : true) {
-                await this._advanceEpoch(typeof frame.url === 'function' ? frame.url() : frame.url, 'framenavigated');
+                this.registry.updateUrl('master', typeof frame.url === 'function' ? frame.url() : frame.url, true);
             }
         });
     }
@@ -741,41 +821,7 @@ export class ActionDispatcher extends EventEmitter {
     async handleSpaNavigation(frame, navEvent) {
         if (!navEvent || !navEvent.type || !frame) return;
         if (typeof frame.parentFrame === 'function' && frame.parentFrame()) return; // ignore subframes
-        await this._advanceEpoch(navEvent.url, navEvent.type);
-    }
-
-    async _advanceEpoch(url, trigger) {
-        if (!this.masterPage || (typeof this.masterPage.isClosed === 'function' && this.masterPage.isClosed())) return;
-
-        let currentEpoch = 0;
-        if (this.registry && typeof this.registry.getState === 'function') {
-            const state = this.registry.getState('master');
-            if (state.url !== url && url !== 'about:blank') {
-                this.registry.updateUrl('master', url);
-            } else {
-                state.navigationEpoch++;
-                state.url = url;
-                if (typeof this.registry.emit === 'function') {
-                    this.registry.emit('StateUpdated', { browserId: 'master', state });
-                }
-            }
-            currentEpoch = state.navigationEpoch;
-        } else {
-            this.masterEpoch = (this.masterEpoch || 0) + 1;
-            currentEpoch = this.masterEpoch;
-        }
-
-        await this.masterPage.evaluate(({ epoch, url, ts }) => {
-            window.__ANTIGRAVITY_EPOCH__ = epoch;
-            window.__ANTIGRAVITY_EPOCH_URL__ = url;
-            window.__ANTIGRAVITY_EPOCH_TS__ = ts;
-        }, { epoch: currentEpoch, url, ts: Date.now() }).catch(err => {
-            logger.warn(`[ActionDispatcher] Failed to inject epoch ${currentEpoch} into master page: ${err.message}`);
-        });
-
-        try {
-            TelemetryCollector.recordSpaNavigation(trigger);
-        } catch (e) {}
+        this.registry.updateUrl('master', navEvent.url, true);
     }
 
     recordAction(action) {
