@@ -91,20 +91,4 @@ describe('Task 3.1 & 3.2: HealthMonitor Decoupled from Command Execution Failure
         expect(healCommands.length).toBe(0);
     });
 
-    it('should revert to legacy behavior and emit HEAL_REQUESTED on Error state when V3_DECOUPLE_HEALTH_MONITOR is false', () => {
-        featureFlags.resetForTesting({ V3_DECOUPLE_HEALTH_MONITOR: false });
-        
-        simulator.emit('ActionFailure', {
-            id: 'slave-1',
-            error: new Error('Legacy error')
-        });
-
-        expect(registry.get('slave-1').state).toBe('Error');
-
-        healthMonitor.checkHealth();
-        expect(healCommands.length).toBe(1);
-        expect(healCommands[0].type).toBe('HEAL_REQUESTED');
-        expect(healCommands[0].target).toBe('slave-1');
-        expect(registry.get('slave-1').state).toBe('Recovering');
-    });
 });

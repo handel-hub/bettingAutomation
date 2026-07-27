@@ -75,10 +75,13 @@ export class NavigationSynchronizer extends EventEmitter {
         this.lastQueuedUrl = url;
         this.lastQueuedAt = now;
 
+        const master = this.registry.getMaster();
+        const epoch = master ? this.registry.getState(master.id)?.navigationEpoch : undefined;
+
         this.emit('Command', new Command({
             category: 'Navigation',
             type: 'navigate',
-            payload: { url, captureTime: now },
+            payload: { url, captureTime: now, epoch },
             source: 'NavigationSynchronizer'
         }));
     }
