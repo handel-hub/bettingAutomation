@@ -6,6 +6,7 @@ import { SynchronizationBarrier } from '../synchronization/SynchronizationBarrie
 import { SequenceGate } from '../synchronization/SequenceGate.mjs';
 import { DeadlineBudget } from './time/DeadlineBudget.mjs';
 import { QueueDeadlineExceededError } from './errors.mjs';
+import { SequenceGapError, StaleCommandError } from '../../common/errors/ProtocolErrors.mjs';
 import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCollector.mjs';
 
 
@@ -367,40 +368,39 @@ export class ExecutionScheduler {
                     });
 
                     // Sequence Gate Evaluation (Phase 7 Integration)
-                    const msn = finalCommand.metadata?.msn ?? finalCommand.payload?.msn;
-                    if (msn !== undefined && msn !== null) {
-                        const initialDecision = this.sequenceGate.evaluate(browserId, msn);
+                    const ges = finalCommand.ges ?? finalCommand.metadata?.ges ?? finalCommand.payload?.ges;
+                    if (ges !== undefined && ges !== null) {
+                        const initialDecision = this.sequenceGate.evaluate(browserId, ges);
                         if (initialDecision === 'STALE') {
-                            const errorMsg = `[LF-604] Stale command ${finalCommand.id || 'unknown'} on [${browserId}]: MSN ${msn} is less than or equal to current Slave MSN`;
+                            const errorMsg = `[LF-604] Stale command ${finalCommand.id || 'unknown'} on [${browserId}]: GES ${ges} is less than or equal to current Slave GES`;
                             logger.warn(`[ExecutionScheduler] ${errorMsg}`);
                             if (TelemetryCollector && TelemetryCollector.registry && typeof TelemetryCollector.registry.recordFailureCode === 'function') {
                                 TelemetryCollector.registry.recordFailureCode('LF-604');
                             }
-                            // Using QueueDeadlineExceededError as a generic terminal error for now since StaleEpochError is deleted
-                            this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new QueueDeadlineExceededError(errorMsg) });
+                            this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new StaleCommandError(currentState.currentGes + 1, ges) });
                             continue;
                         }
                         
                         if (initialDecision === 'WAITING') {
-                            logger.info(`[ExecutionScheduler] Command ${finalCommand.id} on [${browserId}] buffered waiting for MSN alignment (target MSN: ${msn})`);
-                            // Wait up to 5s for MSN to align
-                            const decisionObj = await this.sequenceGate.evaluateAsync(browserId, msn, 5000);
+                            logger.info(`[ExecutionScheduler] Command ${finalCommand.id} on [${browserId}] buffered waiting for GES alignment (target GES: ${ges})`);
+                            // Wait up to 5s for GES to align
+                            const decisionObj = await this.sequenceGate.evaluateAsync(browserId, ges, 5000);
                             
                             if (decisionObj.status === 'STALE') {
-                                const errorMsg = `[LF-604] Stale command ${finalCommand.id || 'unknown'} on [${browserId}] after barrier wait: MSN ${msn} is now STALE`;
+                                const errorMsg = `[LF-604] Stale command ${finalCommand.id || 'unknown'} on [${browserId}] after barrier wait: GES ${ges} is now STALE`;
                                 logger.warn(`[ExecutionScheduler] ${errorMsg}`);
                                 if (TelemetryCollector && TelemetryCollector.registry && typeof TelemetryCollector.registry.recordFailureCode === 'function') {
                                     TelemetryCollector.registry.recordFailureCode('LF-604');
                                 }
-                                this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new QueueDeadlineExceededError(errorMsg) });
+                                this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new StaleCommandError(currentState.currentGes + 1, ges) });
                                 continue;
                             } else if (decisionObj.status === 'TIMEOUT') {
-                                const errorMsg = `[SYNC-100] Command ${finalCommand.id || 'unknown'} on [${browserId}] timed out waiting for MSN alignment. Expected MSN: ${msn}`;
+                                const errorMsg = `[SYNC-100] Command ${finalCommand.id || 'unknown'} on [${browserId}] timed out waiting for GES alignment. Expected GES: ${ges}`;
                                 logger.error(`[ExecutionScheduler] ${errorMsg}`);
                                 if (TelemetryCollector && TelemetryCollector.registry && typeof TelemetryCollector.registry.recordFailureCode === 'function') {
                                     TelemetryCollector.registry.recordFailureCode('SYNC-100');
                                 }
-                                this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new QueueDeadlineExceededError(errorMsg) });
+                                this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new SequenceGapError(currentState.currentGes + 1, ges) });
                                 continue;
                             }
                         }
