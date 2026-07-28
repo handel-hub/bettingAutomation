@@ -76,13 +76,13 @@ export class NavigationSynchronizer extends EventEmitter {
         this.lastQueuedAt = now;
 
         const master = this.registry.getMaster();
-        const epoch = master ? this.registry.getState(master.id)?.navigationEpoch : undefined;
 
         this.emit('Command', new Command({
             category: 'Navigation',
             type: 'navigate',
-            payload: { url, captureTime: now, epoch },
-            source: 'NavigationSynchronizer'
+            payload: { url, captureTime: now },
+            source: 'NavigationSynchronizer',
+            ges: null // Navigations bypass GES validation and execute immediately, but stall SequenceGate implicitly via DOM state
         }));
     }
 }

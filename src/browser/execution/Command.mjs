@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { HybridLogicalClock } from '../../common/models/HybridLogicalClock.mjs';
 
 function deepFreeze(object) {
     const propNames = Object.getOwnPropertyNames(object);
@@ -15,8 +16,9 @@ export class Command {
     constructor({ 
         category = 'Execution', type, target = null, payload = {}, 
         source, executionMode = 'ALL', metadata = {},
-        version = 2, lifecycle = 'CREATED',
-        id, captureTime, creationTime, traceId, eidHash, timestamp
+        version = 3, lifecycle = 'CREATED',
+        id, captureTime, creationTime, traceId, eidHash, timestamp,
+        ges = null, framePath = null, hlc = null
     }) {
         this.version = version;
         this.lifecycle = lifecycle;
@@ -27,6 +29,14 @@ export class Command {
         this.payload = payload;
         this.source = source;
         this.executionMode = executionMode;
+
+        this.ges = ges;
+        this.framePath = framePath;
+        this.hlc = hlc;
+
+        if (hlc && !(hlc instanceof HybridLogicalClock)) {
+            this.hlc = HybridLogicalClock.fromJSON(hlc);
+        }
 
         const nowMs = Date.now();
         let ts = timestamp ?? captureTime ?? payload.timestamp ?? payload.captureTime ?? nowMs;
@@ -58,8 +68,16 @@ export class Command {
     withLifecycle(lifecycle) {
         return new Command({
             ...this,
-            payload: this.payload, // Ensures nested fields are passed if unpacking doesn't deep copy correctly, but spreading `this` is sufficient.
+            payload: this.payload,
             lifecycle
+        });
+    }
+
+    withGes(ges) {
+        return new Command({
+            ...this,
+            payload: this.payload,
+            ges
         });
     }
 }

@@ -9,6 +9,8 @@ import { Command } from './Command.mjs';
 import { FramePathBuilder } from '../synchronization/providers/frame/FramePathBuilder.mjs';
 import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCollector.mjs';
 import featureFlags from './locatorIntelligence/FeatureFlags.mjs';
+import { TemporalSequencer } from '../../master/TemporalSequencer.mjs';
+import { HybridLogicalClock } from '../../common/models/HybridLogicalClock.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,6 +26,12 @@ export class ActionDispatcher extends EventEmitter {
         this.saveTimeout = null;
         this.isSaving = false;
         this.savePending = false;
+        
+        this.sequencer = new TemporalSequencer(50);
+        this.sequencer.on('sequenced', this.handleSequencedEvent.bind(this));
+        this.sequencer.on('error', (err) => {
+            logger.error(`[SYNC-FATAL] TemporalSequencer Error: ${err.message}`);
+        });
 
         process.on('SIGINT', () => this.flushSync());
         process.on('beforeExit', () => this.flushSync());
@@ -34,6 +42,7 @@ export class ActionDispatcher extends EventEmitter {
             try { this.actions = JSON.parse(await fsPromises.readFile(this.sequenceFile, 'utf-8')); } catch(e) {}
         }
         await this.buildInjectedScript();
+        this.sequencer.start();
     }
 
     async buildInjectedScript() {
@@ -108,6 +117,24 @@ export class ActionDispatcher extends EventEmitter {
             if (window.__locatorIntelligenceInjected) return;
             window.__locatorIntelligenceInjected = true;
             window.__ANTIGRAVITY_SEQ__ = 0;
+
+            class HybridLogicalClock {
+                constructor(physical, logical) {
+                    this.physical = physical;
+                    this.logical = logical;
+                }
+                static generate(lastHlc = null) {
+                    let physical = performance.timeOrigin + performance.now();
+                    physical = Math.floor(physical * 1000) / 1000;
+                    if (lastHlc) {
+                        if (physical === lastHlc.physical) return new HybridLogicalClock(physical, lastHlc.logical + 1);
+                        if (physical < lastHlc.physical) return new HybridLogicalClock(lastHlc.physical, lastHlc.logical + 1);
+                    }
+                    return new HybridLogicalClock(physical, 0);
+                }
+            }
+            window.__lastHlc = null;
+
 
             (function() {
                 const _origPush = history.pushState;
@@ -210,6 +237,8 @@ export class ActionDispatcher extends EventEmitter {
 
             function sendExecution(type, payload) {
                 if (window.dispatchExecutionEvent) {
+                    window.__lastHlc = HybridLogicalClock.generate(window.__lastHlc);
+                    payload.hlc = window.__lastHlc;
                     payload.timestamp = Date.now();
                     payload.captureTime = Date.now();
                     payload.monotonicUs = Math.round(performance.now() * 1000);
@@ -657,12 +686,19 @@ export class ActionDispatcher extends EventEmitter {
             try {
                 const framePathRaw = FramePathBuilder.build(frame);
                 const framePath = JSON.stringify(framePathRaw);
-                const appendResult = this.registry.appendSequence(interactionId, framePath, eventData.type, p);
 
-                if (appendResult.duplicated) {
-                    logger.warn(`Dropped duplicate interaction: ${interactionId}`);
-                    return;
-                }
+                // Pass to TemporalSequencer instead of registry
+                this.sequencer.receive({
+                    interactionId,
+                    framePath,
+                    type: eventData.type,
+                    payload: p,
+                    hlc: p.hlc,
+                    masterPage: masterPage,
+                    traceId,
+                    eid,
+                    eidHash
+                });
 
                 TelemetryCollector.recordLifecycleEvent({
                     traceId,
@@ -679,106 +715,6 @@ export class ActionDispatcher extends EventEmitter {
                     eidHash
                 });
 
-                logger.info(`[Master Dispatch] ${eventData.type}`);
-                
-                if (this.memorySettings.record_action_sequence === 'true') {
-                    this.recordAction(eventData);
-                }
-
-                const masterState = this.registry.getState('master');
-                const navCtx = masterState.navigationContext;
-                const viewCtx = masterState.viewportContext;
-                const scrollCtx = masterState.scrollContext;
-                const execCtx = masterState.executionContext;
-            
-            const metadata = {
-                navigation: navCtx ? {
-                    url: navCtx.currentURL,
-                    navigationId: navCtx.navigationId,
-                    timestamp: navCtx.startedAt,
-                    navigationType: navCtx.navigationType
-                } : {
-                    url: masterPage.url(),
-                    navigationId: 'master-nav-fallback',
-                    timestamp: Date.now(),
-                    navigationType: 'fallback'
-                },
-                viewport: viewCtx ? {
-                    viewportId: viewCtx.viewportId,
-                    width: viewCtx.layoutViewportWidth,
-                    height: viewCtx.layoutViewportHeight,
-                    dpr: viewCtx.dpr,
-                    orientation: viewCtx.orientation,
-                    visualScale: viewCtx.visualViewportScale,
-                    capturedAt: Date.now()
-                } : null,
-                scroll: scrollCtx ? {
-                    scrollId: scrollCtx.scrollId,
-                    source: scrollCtx.source,
-                    pageX: scrollCtx.pageScrollX,
-                    pageY: scrollCtx.pageScrollY,
-                    containerId: scrollCtx.activeContainerId,
-                    containerX: scrollCtx.containerScrollX,
-                    containerY: scrollCtx.containerScrollY,
-                    direction: scrollCtx.direction,
-                    velocity: scrollCtx.velocity,
-                    capturedAt: Date.now()
-                } : null,
-                executionContext: {
-                    framePath,
-                    shadowPath: eventData.payload && eventData.payload.shadowPath ? eventData.payload.shadowPath : [],
-                    contextVersion: execCtx ? execCtx.version : 0,
-                    capturedAt: Date.now()
-                },
-                msn: appendResult.msn
-            };
-
-            const command = new Command({
-                version: 2,
-                lifecycle: 'CAPTURED',
-                category: 'Execution',
-                type: eventData.type,
-                payload: eventData.payload,
-                source: 'Master Browser',
-                executionMode: 'SLAVES_ONLY',
-                metadata,
-                timestamp: p.timestamp ?? p.captureTime ?? Date.now(),
-                captureTime: p.captureTime ?? p.timestamp ?? Date.now(),
-                traceId,
-                eidHash
-            });
-
-            let valRes3 = 'PASS';
-            let err3 = null;
-            const isEidValid = eid && (eid.confidenceScore === undefined || eid.confidenceScore > 0) && (eid.identityHash || eid.fingerprint);
-            if (!isEidValid) {
-                valRes3 = 'FAIL_LF602';
-                err3 = { errorCode: 'LF-602', errorMessage: 'Command Construction missing or invalid identityDocument at Stage 3' };
-            }
-            if (p.timestamp !== undefined && (typeof p.timestamp !== 'number' || p.timestamp < 1700000000000 || isNaN(p.timestamp))) {
-                valRes3 = 'FAIL_LF701';
-                err3 = { errorCode: 'LF-701', errorMessage: `Command Construction malformed timestamp ${p.timestamp}` };
-            }
-
-            TelemetryCollector.recordLifecycleEvent({
-                traceId,
-                spanId: 'sp-03',
-                parentSpanId: 'sp-07',
-                stageSequence: 3,
-                stageName: 'COMMAND_CONSTRUCTED',
-                component: 'Command.mjs',
-                method: 'Command.create',
-                timestamp: Date.now(),
-                interactionId: p.interactionId || 'ia-unknown',
-                commandId: command.id,
-                interactionType: eventData.type,
-                eidPresent: !!(command.payload && (command.payload.identityDocument || command.payload.probabilisticEID)),
-                eidHash: TelemetryCollector.computeEIDHash(command.payload && (command.payload.identityDocument || command.payload.probabilisticEID)),
-                validationResult: valRes3,
-                errorDetails: err3
-            });
-
-            this.emit('Command', command);
             } catch (error) {
                 logger.error(`[SYNC-500] [IPC Ingress Crash] Interaction ${interactionId} failed to process: ${error.message}\n${error.stack}`);
                 TelemetryCollector.recordLifecycleEvent({
@@ -816,6 +752,98 @@ export class ActionDispatcher extends EventEmitter {
                 this.registry.updateUrl('master', typeof frame.url === 'function' ? frame.url() : frame.url, true);
             }
         });
+    }
+
+    handleSequencedEvent({ ges, event }) {
+        const p = event.payload;
+        const masterState = this.registry.getState('master');
+        const navCtx = masterState.navigationContext;
+        const viewCtx = masterState.viewportContext;
+        const scrollCtx = masterState.scrollContext;
+        const execCtx = masterState.executionContext;
+    
+        const metadata = {
+            navigation: navCtx ? {
+                url: navCtx.currentURL,
+                navigationId: navCtx.navigationId,
+                timestamp: navCtx.startedAt,
+                navigationType: navCtx.navigationType
+            } : {
+                url: event.masterPage.url(),
+                navigationId: 'master-nav-fallback',
+                timestamp: Date.now(),
+                navigationType: 'fallback'
+            },
+            viewport: viewCtx ? {
+                viewportId: viewCtx.viewportId,
+                width: viewCtx.layoutViewportWidth,
+                height: viewCtx.layoutViewportHeight,
+                dpr: viewCtx.dpr,
+                orientation: viewCtx.orientation,
+                visualScale: viewCtx.visualViewportScale,
+                capturedAt: Date.now()
+            } : null,
+            scroll: scrollCtx ? {
+                scrollId: scrollCtx.scrollId,
+                source: scrollCtx.source,
+                pageX: scrollCtx.pageScrollX,
+                pageY: scrollCtx.pageScrollY,
+                containerId: scrollCtx.activeContainerId,
+                containerX: scrollCtx.containerScrollX,
+                containerY: scrollCtx.containerScrollY,
+                direction: scrollCtx.direction,
+                velocity: scrollCtx.velocity,
+                capturedAt: Date.now()
+            } : null,
+            executionContext: {
+                framePath: event.framePath,
+                shadowPath: p && p.shadowPath ? p.shadowPath : [],
+                contextVersion: execCtx ? execCtx.version : 0,
+                capturedAt: Date.now()
+            }
+        };
+
+        const command = new Command({
+            version: 3,
+            lifecycle: 'CAPTURED',
+            category: 'Execution',
+            type: event.type,
+            payload: event.payload,
+            source: 'Master Browser',
+            executionMode: 'SLAVES_ONLY',
+            metadata,
+            timestamp: p.timestamp ?? p.captureTime ?? Date.now(),
+            captureTime: p.captureTime ?? p.timestamp ?? Date.now(),
+            traceId: event.traceId,
+            eidHash: event.eidHash,
+            ges: ges,
+            framePath: event.framePath,
+            hlc: event.hlc
+        });
+
+        TelemetryCollector.recordLifecycleEvent({
+            traceId: event.traceId,
+            spanId: 'sp-03',
+            parentSpanId: 'sp-07',
+            stageSequence: 3,
+            stageName: 'COMMAND_CONSTRUCTED',
+            component: 'Command.mjs',
+            method: 'Command.create',
+            timestamp: Date.now(),
+            interactionId: event.interactionId || 'ia-unknown',
+            commandId: command.id,
+            interactionType: event.type,
+            eidPresent: !!(event.eid),
+            eidHash: event.eidHash,
+            validationResult: 'PASS'
+        });
+
+        if (this.memorySettings.record_action_sequence === 'true') {
+            this.recordAction({ type: event.type, payload: event.payload, ges });
+        }
+
+        logger.info(`[Master Dispatch] ${event.type} | GES: ${ges}`);
+        this.emit('Command', command);
     }
 
     async handleSpaNavigation(frame, navEvent) {

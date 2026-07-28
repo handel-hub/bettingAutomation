@@ -4,6 +4,24 @@
             window.__locatorIntelligenceInjected = true;
             window.__ANTIGRAVITY_SEQ__ = 0;
 
+            class HybridLogicalClock {
+                constructor(physical, logical) {
+                    this.physical = physical;
+                    this.logical = logical;
+                }
+                static generate(lastHlc = null) {
+                    let physical = performance.timeOrigin + performance.now();
+                    physical = Math.floor(physical * 1000) / 1000;
+                    if (lastHlc) {
+                        if (physical === lastHlc.physical) return new HybridLogicalClock(physical, lastHlc.logical + 1);
+                        if (physical < lastHlc.physical) return new HybridLogicalClock(lastHlc.physical, lastHlc.logical + 1);
+                    }
+                    return new HybridLogicalClock(physical, 0);
+                }
+            }
+            window.__lastHlc = null;
+
+
             (function() {
                 const _origPush = history.pushState;
                 const _origReplace = history.replaceState;
@@ -4814,6 +4832,8 @@ class LocatorIntelligenceEngine {
 
             function sendExecution(type, payload) {
                 if (window.dispatchExecutionEvent) {
+                    window.__lastHlc = HybridLogicalClock.generate(window.__lastHlc);
+                    payload.hlc = window.__lastHlc;
                     payload.timestamp = Date.now();
                     payload.captureTime = Date.now();
                     payload.monotonicUs = Math.round(performance.now() * 1000);
