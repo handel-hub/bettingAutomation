@@ -6,23 +6,23 @@ export class SequenceGate {
     }
 
     /**
-     * Evaluates if a command can be executed based on MSN.
+     * Evaluates if a command can be executed based on GES.
      * @param {string} browserId 
-     * @param {number} commandMsn 
+     * @param {number} commandGes 
      * @returns {string} ALIGNED | WAITING | STALE
      */
-    evaluate(browserId, commandMsn) {
-        if (commandMsn === undefined || commandMsn === null) {
-            // For commands without MSN, allow them
+    evaluate(browserId, commandGes) {
+        if (commandGes === undefined || commandGes === null) {
+            // Commands without GES bypass sequencing (e.g. out of band control)
             return 'ALIGNED';
         }
 
         const state = this.registry.getState(browserId);
-        const slaveMsn = state ? (state.currentMsn || 0) : 0;
+        const slaveGes = state ? (state.currentGes || 0) : 0;
         
-        if (commandMsn === slaveMsn + 1) {
+        if (commandGes === slaveGes + 1) {
             return 'ALIGNED';
-        } else if (commandMsn > slaveMsn + 1) {
+        } else if (commandGes > slaveGes + 1) {
             return 'WAITING';
         } else {
             return 'STALE';
@@ -32,29 +32,29 @@ export class SequenceGate {
     /**
      * Asynchronously waits for a command to become ALIGNED.
      * @param {string} browserId 
-     * @param {number} commandMsn 
+     * @param {number} commandGes 
      * @param {number} timeoutMs 
      * @returns {Promise<object>} { status: 'ALIGNED' | 'STALE' | 'TIMEOUT' }
      */
-    async evaluateAsync(browserId, commandMsn, timeoutMs) {
-        if (commandMsn === undefined || commandMsn === null) {
+    async evaluateAsync(browserId, commandGes, timeoutMs) {
+        if (commandGes === undefined || commandGes === null) {
             return { status: 'ALIGNED' };
         }
 
         const start = Date.now();
         while (Date.now() - start < timeoutMs) {
-            const status = this.evaluate(browserId, commandMsn);
+            const status = this.evaluate(browserId, commandGes);
             if (status === 'ALIGNED' || status === 'STALE') {
                 return { status };
             }
             await new Promise(r => setTimeout(r, 50));
         }
         
-        const finalStatus = this.evaluate(browserId, commandMsn);
+        const finalStatus = this.evaluate(browserId, commandGes);
         if (finalStatus === 'WAITING') {
             const state = this.registry.getState(browserId);
-            const slaveMsn = state ? (state.currentMsn || 0) : 0;
-            TelemetryCollector.recordSyncGap(browserId, slaveMsn + 1, commandMsn);
+            const slaveGes = state ? (state.currentGes || 0) : 0;
+            TelemetryCollector.recordSyncGap(browserId, slaveGes + 1, commandGes);
             return { status: 'TIMEOUT' };
         }
         

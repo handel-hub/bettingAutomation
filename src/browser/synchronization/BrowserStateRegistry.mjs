@@ -2,7 +2,6 @@ import { BrowserStateModel, LifecycleState } from './models/BrowserStateModel.mj
 import { StandbyPoolManager } from './pool/StandbyPoolManager.mjs';
 import { NTPClockSync } from '../execution/time/NTPClockSync.mjs';
 import { logger } from '../../config.mjs';
-import { ReplicatedLog } from './ReplicatedLog.mjs';
 import EventEmitter from 'node:events';
 
 /**
@@ -14,7 +13,6 @@ export class BrowserStateRegistry extends EventEmitter {
         super();
         this.states = new Map();
         this.standbyPool = options.standbyPool ?? new StandbyPoolManager(options.standbyOptions);
-        this.replicatedLog = new ReplicatedLog();
     }
 
     /**
@@ -30,31 +28,12 @@ export class BrowserStateRegistry extends EventEmitter {
     }
 
     /**
-     * Appends an event to the ReplicatedLog, assigning it an MSN.
-     * @returns {Object} { msn, duplicated, entry }
-     */
-    appendSequence(interactionId, framePath, type, payload) {
-        const result = this.replicatedLog.appendSequence(interactionId, framePath, type, payload);
-        if (!result.duplicated) {
-            this.emit('SequenceAppended', result.entry);
-        }
-        return result;
-    }
-    
-    /**
-     * Gets the ReplicatedLog instance.
-     */
-    getReplicatedLog() {
-        return this.replicatedLog;
-    }
-
-    /**
-     * Increments the Slave MSN.
+     * Increments the Slave GES.
      * Must only be called when Slave successfully executes the sequence.
      */
-    incrementSlaveMsn(browserId) {
+    incrementSlaveGes(browserId) {
         const state = this.getState(browserId);
-        state.currentMsn++;
+        state.currentGes++;
         this.emit('StateUpdated', { browserId, state });
     }
 
