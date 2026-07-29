@@ -50,6 +50,8 @@ export class LocatorSerializer extends PipelineStep {
             })),
             metadata: {
                 ...context.metadata,
+                platform: context.platform || context.metadata?.platform || null,
+                schedulingDirective: context.schedulingDirective || context.metadata?.schedulingDirective || null,
                 captureEpoch: context.navigationEpoch ?? context.metadata?.captureEpoch ?? 0,
                 generationMetrics: {
                     durationMs: context.telemetry.pipelineDurationMs,

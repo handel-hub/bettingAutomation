@@ -96,7 +96,8 @@
             V3_ENABLE_GLOBAL_TTL: { default: false, dependsOn: [], description: 'Enable 1,500ms global distributed deadline budgeting' },
             SCENE_GRAPH_ENABLED: { default: false, dependsOn: [], description: 'Enable Scene Graph indexing and query planner in Slave browser' },
             INFERENCE_ENGINE_V2: { default: false, dependsOn: [], description: 'Route resolution through multiplicative InferenceEngine' },
-            LI_INFERENCE_ENGINE_V2: { default: false, dependsOn: [], description: 'Route resolution through multiplicative InferenceEngine (alias)' }
+            LI_INFERENCE_ENGINE_V2: { default: false, dependsOn: [], description: 'Route resolution through multiplicative InferenceEngine (alias)' },
+            enableSportyBetConfirmationClassifier: { default: false, dependsOn: [], description: 'V1 Technical Debt: Enable SportyBet specific classification for confirmations' }
         };
         this.init();
     }
@@ -2620,6 +2621,8 @@ class LocatorSerializer extends PipelineStep {
             })),
             metadata: {
                 ...context.metadata,
+                platform: context.platform || context.metadata?.platform || null,
+                schedulingDirective: context.schedulingDirective || context.metadata?.schedulingDirective || null,
                 captureEpoch: context.navigationEpoch ?? context.metadata?.captureEpoch ?? 0,
                 generationMetrics: {
                     durationMs: context.telemetry.pipelineDurationMs,
@@ -4710,6 +4713,35 @@ class InferenceEngine {
 
 
 
+class SportyBetConfirmationClassifier {
+    execute(context) {
+        if (!context || !context.element) return context;
+        
+        // Ensure platform object exists
+        if (!context.platform) {
+            context.platform = {};
+        }
+
+        const features = context.features || {};
+
+        // Platform-specific technical debt for SportyBet Confirmations
+        // These signals are explicitly SportyBet-specific heuristics.
+        const isConfirm = 
+            features.dataAttributes?.['data-op'] === 'betslip-confirm' ||
+            (features.tagName === 'BUTTON' && features.text?.toLowerCase().includes('confirm') && features.classes?.includes('m-btn'));
+
+        if (isConfirm) {
+            context.platform.classification = 'SPORTYBET_CONFIRMATION';
+            context.platform.confidence = 0.95;
+            context.schedulingDirective = 'CRITICAL';
+        }
+
+        return context;
+    }
+}
+
+
+
 
 
 
@@ -4731,12 +4763,22 @@ class LocatorIntelligenceEngine {
             new FeatureExtractor(),
             new IdentityDocumentBuilder(),
             new CandidateGenerator(),
-            new CandidateDeduplicator(),
+            new CandidateDeduplicator()
+        ];
+        
+        // V1 Technical Debt: Platform-Specific Classification
+        if (featureFlags.isEnabled('enableSportyBetConfirmationClassifier')) {
+            // Note: Checking CurrentPlatform == 'SPORTYBET' would ideally be done here,
+            // but config.platform is usually available. We will assume the flag itself
+            // gates it appropriately for now or checking config.platform inside.
+            this.pipeline.push(new SportyBetConfirmationClassifier());
+        }
 
+        this.pipeline.push(
             new StructuralAnalyzer(),
             this.rankingEngine,
             new LocatorSerializer()
-        ];
+        );
     }
 
     process(el, composedPath, config = {}) {

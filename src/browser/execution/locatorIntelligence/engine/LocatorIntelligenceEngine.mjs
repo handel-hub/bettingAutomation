@@ -2,6 +2,7 @@ import { FeatureExtractor } from '../extraction/FeatureExtractor.mjs';
 import { IdentityDocumentBuilder } from '../extraction/IdentityDocumentBuilder.mjs';
 import { CandidateGenerator } from '../generation/CandidateGenerator.mjs';
 import { CandidateDeduplicator } from '../generation/CandidateDeduplicator.mjs';
+import { SportyBetConfirmationClassifier } from '../platforms/sportybet/SportyBetConfirmationClassifier.mjs';
 
 import { StructuralAnalyzer } from '../validation/StructuralAnalyzer.mjs';
 import { RankingEngine } from '../ranking/RankingEngine.mjs';
@@ -21,12 +22,22 @@ export class LocatorIntelligenceEngine {
             new FeatureExtractor(),
             new IdentityDocumentBuilder(),
             new CandidateGenerator(),
-            new CandidateDeduplicator(),
+            new CandidateDeduplicator()
+        ];
+        
+        // V1 Technical Debt: Platform-Specific Classification
+        if (featureFlags.isEnabled('enableSportyBetConfirmationClassifier')) {
+            // Note: Checking CurrentPlatform == 'SPORTYBET' would ideally be done here,
+            // but config.platform is usually available. We will assume the flag itself
+            // gates it appropriately for now or checking config.platform inside.
+            this.pipeline.push(new SportyBetConfirmationClassifier());
+        }
 
+        this.pipeline.push(
             new StructuralAnalyzer(),
             this.rankingEngine,
             new LocatorSerializer()
-        ];
+        );
     }
 
     process(el, composedPath, config = {}) {

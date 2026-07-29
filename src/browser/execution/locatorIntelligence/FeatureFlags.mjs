@@ -21,7 +21,8 @@ export class FeatureFlagsRegistry {
             V3_ENABLE_GLOBAL_TTL: { default: false, dependsOn: [], description: 'Enable 1,500ms global distributed deadline budgeting' },
             SCENE_GRAPH_ENABLED: { default: false, dependsOn: [], description: 'Enable Scene Graph indexing and query planner in Slave browser' },
             INFERENCE_ENGINE_V2: { default: false, dependsOn: [], description: 'Route resolution through multiplicative InferenceEngine' },
-            LI_INFERENCE_ENGINE_V2: { default: false, dependsOn: [], description: 'Route resolution through multiplicative InferenceEngine (alias)' }
+            LI_INFERENCE_ENGINE_V2: { default: false, dependsOn: [], description: 'Route resolution through multiplicative InferenceEngine (alias)' },
+            enableSportyBetConfirmationClassifier: { default: false, dependsOn: [], description: 'V1 Technical Debt: Enable SportyBet specific classification for confirmations' }
         };
         this.init();
     }
