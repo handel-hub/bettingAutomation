@@ -7,6 +7,7 @@ import pino from 'pino';
 import dotenv from 'dotenv';
 import { encrypt, decrypt } from './utils/crypto.mjs';
 import { redactUsername } from './utils/redact.mjs';
+import { globalRecorder } from './rkp/RuntimeKnowledgePlatform.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,6 +19,46 @@ export const logger = pino({
         target: 'pino-pretty',
         options: {
             colorize: true
+        }
+    },
+    hooks: {
+        logMethod(inputArgs, method, level) {
+            if (process.env.RKP_PINO_DUAL_WRITE === 'true') {
+                try {
+                    let msg = '';
+                    let meta = {};
+                    
+                    if (inputArgs.length > 0) {
+                        if (typeof inputArgs[0] === 'string') {
+                            msg = inputArgs[0];
+                        } else if (typeof inputArgs[0] === 'object') {
+                            meta = inputArgs[0];
+                            if (typeof inputArgs[1] === 'string') {
+                                msg = inputArgs[1];
+                            }
+                        }
+                    }
+
+                    let levelStr = 'info';
+                    if (level === 20) levelStr = 'debug';
+                    else if (level === 40) levelStr = 'warn';
+                    else if (level >= 50) levelStr = 'error'; // includes fatal
+
+                    globalRecorder.record({
+                        domain: 'Diagnostics',
+                        type: 'LogFact',
+                        level: levelStr,
+                        message: msg,
+                        metadata: meta,
+                        traceId: meta?.traceId || '',
+                        spanId: meta?.spanId || ''
+                    });
+                } catch (err) {
+                    console.error('[RKP Pino Hook] Error:', err);
+                    // Swallow errors to guarantee legacy logging stability
+                }
+            }
+            return method.apply(this, inputArgs);
         }
     }
 });
