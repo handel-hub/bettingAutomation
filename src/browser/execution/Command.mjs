@@ -18,7 +18,7 @@ export class Command {
         source, executionMode = 'ALL', metadata = {},
         version = 3, lifecycle = 'CREATED',
         id, captureTime, creationTime, traceId, eidHash, timestamp,
-        ges = null, framePath = null, hlc = null
+        ges = null, framePath = null, hlc = null, priority
     }) {
         this.version = version;
         this.lifecycle = lifecycle;
@@ -29,6 +29,7 @@ export class Command {
         this.payload = payload;
         this.source = source;
         this.executionMode = executionMode;
+        this.priority = priority;
 
         this.ges = ges;
         this.framePath = framePath;

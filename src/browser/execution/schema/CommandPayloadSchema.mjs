@@ -157,7 +157,7 @@ export class CommandPayloadSchema {
         }
 
         if (command.priority !== undefined) {
-            const validPriorities = ['CRITICAL', 'DISCRETE', 'CONTINUOUS'];
+            const validPriorities = ['CRITICAL', 'DISCRETE', 'CONTINUOUS', 'AGGREGATED'];
             if (!validPriorities.includes(command.priority)) {
                 errors.push(`Command priority must be one of: ${validPriorities.join(', ')}.`);
             }

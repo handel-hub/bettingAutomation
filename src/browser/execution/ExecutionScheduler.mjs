@@ -13,9 +13,26 @@ import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCol
 export class ClassificationPolicy {
     static classify(command) {
         if (!command || !command.type) return { class: 'Discrete', priority: 'High' };
+        
+        // Immutable Priority Enforcement:
+        // The scheduler strictly honors the pre-assigned priority class.
+        // It does not infer or inspect metadata.intent.
+        if (command.priority === 'CRITICAL') {
+            return { class: 'Critical', priority: 'Critical' };
+        }
+        if (command.priority === 'DISCRETE') {
+            return { class: 'Discrete', priority: 'High' };
+        }
+        if (command.priority === 'CONTINUOUS') {
+            return { class: 'Continuous', priority: 'Low' };
+        }
+        if (command.priority === 'AGGREGATED') {
+            return { class: 'Aggregated', priority: 'Medium' };
+        }
+
         const t = command.type.toLowerCase();
         
-        // Critical overrides
+        // Critical overrides (fallback for improperly wrapped commands)
         if (command.category === 'Recovery' || command.category === 'Navigation') {
              return { class: 'Critical', priority: 'Critical' };
         }

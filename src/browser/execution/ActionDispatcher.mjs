@@ -98,6 +98,7 @@ export class ActionDispatcher extends EventEmitter {
             'inference/AnchorResolver.mjs',
             'inference/EntropyScaler.mjs',
             'inference/InferenceEngine.mjs',
+            'platforms/sportybet/SportyBetConfirmationClassifier.mjs',
             'engine/LocatorIntelligenceEngine.mjs'
         ];
 
@@ -803,6 +804,17 @@ export class ActionDispatcher extends EventEmitter {
             }
         };
 
+        // Determine immutable scheduling priority based on abstract infrastructure directive
+        let priority = 'DISCRETE';
+        const directive = metadata.locator?.schedulingDirective;
+        if (directive === 'CRITICAL') {
+            priority = 'CRITICAL';
+        } else if (event.type === 'hover' || event.type === 'mousemove' || event.type === 'pointermove') {
+            priority = 'CONTINUOUS';
+        } else if (event.type === 'scroll' || event.type === 'wheel') {
+            priority = 'AGGREGATED';
+        }
+
         const command = new Command({
             version: 3,
             lifecycle: 'CAPTURED',
@@ -811,6 +823,7 @@ export class ActionDispatcher extends EventEmitter {
             payload: event.payload,
             source: 'Master Browser',
             executionMode: 'SLAVES_ONLY',
+            priority: priority,
             metadata,
             timestamp: p.timestamp ?? p.captureTime ?? Date.now(),
             captureTime: p.captureTime ?? p.timestamp ?? Date.now(),

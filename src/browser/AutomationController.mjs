@@ -32,6 +32,8 @@ import { SynchronizationTelemetry } from './synchronization/telemetry/Synchroniz
 import { SynchronizationTimeline } from './synchronization/telemetry/SynchronizationTimeline.mjs';
 import { BrowserStateRegistry } from './synchronization/BrowserStateRegistry.mjs';
 import { CapabilityRegistry } from './synchronization/CapabilityRegistry.mjs';
+import { attachSyncTelemetryAdapter } from '../rkp/integration/SyncTelemetryAdapter.mjs';
+import { attachBrowserLifecycleAdapter } from '../rkp/integration/BrowserLifecycleAdapter.mjs';
 
 export class AutomationController {
     constructor(settings, accounts, proxyManager, stealthEngine) {
@@ -41,6 +43,9 @@ export class AutomationController {
 
         // --- Initialize Coordination Subsystem ---
         this.registry = new BrowserStateRegistry();
+        
+        attachBrowserLifecycleAdapter(this.registry);
+        
         this.capabilityRegistry = new CapabilityRegistry();
         this.syncManager = new SynchronizationManager(this.registry, this.capabilityRegistry);
 
@@ -82,6 +87,8 @@ export class AutomationController {
         this.syncManager.setRecoveryActionExecutor(this.syncRecoveryActionExecutor);
         this.syncManager.setTelemetry(this.syncTelemetry);
         this.syncManager.setTimeline(this.syncTimeline);
+
+        attachSyncTelemetryAdapter(this.syncManager);
 
         this.eventBusRegistrar = new EventBusRegistrar({
             commandRouter: this.commandRouter,

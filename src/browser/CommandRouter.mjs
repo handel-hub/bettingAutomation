@@ -4,14 +4,17 @@ import featureFlagManager from './coordination/FeatureFlagManager.mjs';
 import { CommandPayloadSchema } from './execution/schema/CommandPayloadSchema.mjs';
 import { TelemetryCollector } from './execution/locatorIntelligence/telemetry/TelemetryCollector.mjs';
 import { ContractViolationError } from './execution/errors.mjs';
+import { EventEmitter } from 'node:events';
+import { attachCommandRouterAdapter } from '../rkp/integration/CommandRouterAdapter.mjs';
 
 /**
  * Authoritative Ingress Gateway for routing IPC/WebSocket command payloads.
  * Enforces CommandPayloadSchema contracts, governs STRICT/SHADOW/DISABLED enforcement modes,
  * and tracks ingress telemetry metrics.
  */
-export class CommandRouter {
+export class CommandRouter extends EventEmitter {
     constructor(scheduler = null, flagManager = null, telemetryCollector = null) {
+        super();
         this.handlers = new Map();
         this._mode = null; // Can override feature flag if explicitly set via setEnforcementMode
         this._metrics = {
@@ -33,6 +36,8 @@ export class CommandRouter {
                 logger.warn(`[CommandRouter] Emergency rollback triggered via BROADCAST_ROLLBACK command.`);
             }
         });
+
+        attachCommandRouterAdapter(this);
     }
 
     /**
@@ -146,6 +151,7 @@ export class CommandRouter {
         if (!command.category && !command.type) {
             this._metrics.rejected++;
             logger.warn('Received invalid command object without category or type');
+            this.emit('rejected', { command, reason: 'Missing category and type', headers });
             return false;
         }
 
@@ -159,6 +165,7 @@ export class CommandRouter {
                 if (enforcementMode === 'STRICT') {
                     this._metrics.rejected++;
                     logger.error(`[CommandRouter] STRICT mode rejecting command: ${errorMsg}`);
+                    this.emit('rejected', { command, reason: 'Schema Validation Failed (STRICT)', headers });
                     throw new ContractViolationError(errorMsg);
                 } else if (enforcementMode === 'SHADOW') {
                     logger.warn(`[CommandRouter] SHADOW mode violation logged (proceeding with route): ${errorMsg}`);
@@ -183,6 +190,14 @@ export class CommandRouter {
         }
 
         logger.info(`[CommandRouter] Routing [${category}:${command.type}] (${command.id || command.commandId}) [Protocol v${protocolVersion}]`);
+        
+        this.emit('routed', {
+            command,
+            category,
+            protocolVersion,
+            handlers: allHandlers.length,
+            headers
+        });
 
         const promises = allHandlers.map(async (handler) => {
             try {
