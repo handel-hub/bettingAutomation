@@ -9,3 +9,5 @@ error_*.png
 *.enc
 /sessions
 scratch/
+/rkp-wal
+/mini-wal
