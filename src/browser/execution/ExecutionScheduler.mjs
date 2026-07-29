@@ -454,6 +454,17 @@ export class ExecutionScheduler {
                     await this.simulator.execute(currentState, finalCommand, { deadlineBudget, executionContext: context });
                 } catch(e) {
                     logger.error(`[Scheduler] Failed to process entry for ${nextEntry?.command?.id ?? 'unknown'}: ${e.message}`);
+                    if (this.syncManager && this.syncManager.recoveryCoordinator) {
+                        try {
+                            const snapshot = this.registry.getSnapshot(browserId);
+                            const plan = await this.syncManager.recoveryCoordinator.recover(snapshot, 'PHYSICAL_EXECUTION_FAILURE');
+                            if (this.syncManager.recoveryActionExecutor) {
+                                await this.syncManager.recoveryActionExecutor.execute(plan);
+                            }
+                        } catch (recoveryErr) {
+                            logger.error(`[Scheduler] Recovery cascade failed for ${browserId}: ${recoveryErr.message}`);
+                        }
+                    }
                 }
             }
         } finally {

@@ -163,6 +163,25 @@ export class ActionSimulator extends EventEmitter {
 
                 logger.warn(`[ActionSimulator] ${automationError.code} Execution failed on attempt ${attempts}: ${automationError.message}. Triggering re-resolution.`);
                 
+                TelemetryCollector.recordLifecycleEvent({
+                    traceId: command.traceId || command.payload?.traceId || 'tr-unknown',
+                    spanId: 'sp-retry-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
+                    parentSpanId: 'sp-14-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
+                    stageSequence: 14.5,
+                    stageName: 'PHYSICAL_PLAYWRIGHT_RETRY',
+                    component: 'ActionSimulator.mjs',
+                    method: '_executeWithRecovery',
+                    timestamp: Date.now(),
+                    browserId: browserObj?.id || command.target || 'slave',
+                    commandId: command.id,
+                    interactionType,
+                    attempt: attempts,
+                    remainingRetries: this.MAX_EXECUTION_RETRIES - attempts,
+                    timeRemaining: deadlineBudget ? deadlineBudget.timeRemaining() : null,
+                    mappedError: automationError ? automationError.code : 'UNKNOWN'
+                });
+
+
                 if (attempts >= this.MAX_EXECUTION_RETRIES) {
                     automationError.addChain(`[LF-505] Max execution retries (${this.MAX_EXECUTION_RETRIES}) reached for Action: ${interactionType}`);
                     throw automationError;
@@ -205,15 +224,18 @@ export class ActionSimulator extends EventEmitter {
             const locators = payload.locators || [];
 
             // Perform actions using the new decoupled recovery loop
+            const getTimeout = (budget) => budget ? Math.max(10, budget.timeRemaining()) : 30000;
+            const tOpts = { timeout: getTimeout(deadlineBudget) };
+
             if (type === 'CLICK' || type === 'click') {
-                usedLocatorInfo = await this._executeWithRecovery(command, page, 'click', async (loc) => await loc.click(), browserObj, deadlineBudget, options.executionContext);
+                usedLocatorInfo = await this._executeWithRecovery(command, page, 'click', async (loc) => await loc.click(tOpts), browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'DOUBLE_CLICK' || type === 'dblclick') {
-                usedLocatorInfo = await this._executeWithRecovery(command, page, 'dblclick', async (loc) => await loc.dblclick(), browserObj, deadlineBudget, options.executionContext);
+                usedLocatorInfo = await this._executeWithRecovery(command, page, 'dblclick', async (loc) => await loc.dblclick(tOpts), browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'DRAG') {
                 const path = payload.path || [];
                 if (path.length > 0) {
                     if (locators.length > 0) {
-                        usedLocatorInfo = await this._executeWithRecovery(command, page, 'drag start', async (loc) => await loc.hover(), browserObj, deadlineBudget, options.executionContext);
+                        usedLocatorInfo = await this._executeWithRecovery(command, page, 'drag start', async (loc) => await loc.hover(tOpts), browserObj, deadlineBudget, options.executionContext);
                     }
                     await page.mouse.move(path[0].x, path[0].y);
                     await page.mouse.down();
@@ -228,17 +250,17 @@ export class ActionSimulator extends EventEmitter {
                 await page.mouse.wheel(dx, dy);
             } else if (type === 'INPUT' || type === 'input') {
                 usedLocatorInfo = await this._executeWithRecovery(command, page, 'input', async (loc) => {
-                    await loc.fill('');
+                    await loc.fill('', tOpts);
                     if (payload.delay) {
-                        await loc.pressSequentially(payload.value, { delay: payload.delay });
+                        await loc.pressSequentially(payload.value, { delay: payload.delay, ...tOpts });
                     } else {
-                        await loc.fill(payload.value);
+                        await loc.fill(payload.value, tOpts);
                     }
                 }, browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'KEYBOARD' || type === 'keyboard') {
                 if (locators.length > 0) {
                     usedLocatorInfo = await this._executeWithRecovery(command, page, 'keyboard', async (loc) => {
-                        await loc.focus();
+                        await loc.focus(tOpts);
                         await page.keyboard.press(payload.key);
                     }, browserObj, deadlineBudget, options.executionContext);
                 } else {
@@ -252,7 +274,7 @@ export class ActionSimulator extends EventEmitter {
                 await page.mouse.move(payload.x, payload.y);
             } else if (type === 'pointerdown') {
                 if (locators.length > 0) {
-                    usedLocatorInfo = await this._executeWithRecovery(command, page, 'pointerdown', async (loc) => await loc.hover(), browserObj, deadlineBudget, options.executionContext);
+                    usedLocatorInfo = await this._executeWithRecovery(command, page, 'pointerdown', async (loc) => await loc.hover(tOpts), browserObj, deadlineBudget, options.executionContext);
                 }
                 await page.mouse.move(payload.x, payload.y);
                 await page.mouse.down();
@@ -260,9 +282,9 @@ export class ActionSimulator extends EventEmitter {
                 await page.mouse.move(payload.x, payload.y);
                 await page.mouse.up();
             } else if (type === 'focus') {
-                usedLocatorInfo = await this._executeWithRecovery(command, page, 'focus', async (loc) => await loc.focus(), browserObj, deadlineBudget, options.executionContext);
+                usedLocatorInfo = await this._executeWithRecovery(command, page, 'focus', async (loc) => await loc.focus(tOpts), browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'blur') {
-                usedLocatorInfo = await this._executeWithRecovery(command, page, 'blur', async (loc) => await loc.blur(), browserObj, deadlineBudget, options.executionContext);
+                usedLocatorInfo = await this._executeWithRecovery(command, page, 'blur', async (loc) => await loc.blur(tOpts), browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'window_scroll') {
                 await page.evaluate(({x, y}) => window.scrollTo(x, y), { x: payload.scrollX, y: payload.scrollY });
             } else if (type === 'element_scroll') {
@@ -273,7 +295,7 @@ export class ActionSimulator extends EventEmitter {
                     }, { scrollTop: payload.scrollTop, scrollLeft: payload.scrollLeft });
                 }, browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'navigate') {
-                await page.goto(payload.url, { waitUntil: 'domcontentloaded' });
+                await page.goto(payload.url, { waitUntil: 'domcontentloaded', ...tOpts });
                 // SynchronizationBarrier will assert URL correctness in SequenceGate
             } else if (type === 'add_style') {
                 await page.addStyleTag({ content: payload.content });

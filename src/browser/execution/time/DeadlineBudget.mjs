@@ -34,6 +34,14 @@ export class DeadlineBudget {
     }
 
     /**
+     * Alias for getRemainingMs to satisfy the remediation implementation requirement.
+     * @returns {number} Remaining milliseconds
+     */
+    timeRemaining() {
+        return this.getRemainingMs();
+    }
+
+    /**
      * Check whether the deadline budget has expired.
      * Only enforces expiration if V3_ENABLE_GLOBAL_TTL feature flag is active.
      * @returns {boolean} True if expired under V3_ENABLE_GLOBAL_TTL
