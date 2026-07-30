@@ -11,3 +11,11 @@ error_*.png
 scratch/
 /rkp-wal
 /mini-wal
+/Fault Tolerance Verification Framework
+/fault_tolerance_audit
+/implementation_packages
+/production_readiness
+/integration_validation
+/verification_output
+/validation_program
+*.log
