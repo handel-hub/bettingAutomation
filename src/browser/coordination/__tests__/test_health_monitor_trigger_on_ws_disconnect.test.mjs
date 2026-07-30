@@ -62,13 +62,13 @@ describe('Task 3.2: Watchdog Reboots Strictly Restricted to Physical Crashes & H
         expect(healCommands[0].payload.reason).toContain('OOM fault detected');
     });
 
-    it('should trigger HEAL_REQUESTED on WebSocket heartbeat silence (> 5,000ms)', () => {
+    it('should trigger HEAL_REQUESTED on WebSocket heartbeat silence', () => {
         const stateObj = registry.get('slave-1');
         stateObj.healthMetrics.lastHeartbeat = Date.now() - 6000; // 6 seconds silent
 
         healthMonitor.checkHealth();
         expect(healCommands.length).toBe(1);
-        expect(healCommands[0].payload.reason).toContain('WebSocket heartbeat silence exceeded 5,000ms');
+        expect(healCommands[0].payload.reason).toContain('WebSocket heartbeat silence exceeded 5000ms');
     });
 
     it('should NOT trigger HEAL_REQUESTED when heartbeat silence is under 5,000ms', () => {

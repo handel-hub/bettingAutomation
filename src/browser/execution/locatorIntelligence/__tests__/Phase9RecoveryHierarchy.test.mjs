@@ -77,24 +77,20 @@ describe('Phase 9: RecoveryOrchestrator Unit Tests', () => {
         expect(mockPage.reload).not.toHaveBeenCalled();
     });
 
-    it('should escalate to L4 (reload) if command is NOT skippable and L1/L2 fail', async () => {
-        const resolveFn = vi.fn().mockImplementation(async () => {
-            if (mockPage.reload.mock.calls.length === 0) throw new Error('L1/L2 failure'); // Fails during L1 and L2
-            // Succeeds after L4 reload
-            return { success: true };
-        });
-        
+    it('should NOT escalate to L4 (reload) if command is NOT skippable and L1/L2 fail, it should abort', async () => {
+        const resolveFn = vi.fn().mockRejectedValue(new Error('Persistent error'));
+
         // Mock getStabilityState to always return STABLE so L2 finishes fast (just 1 attempt)
         orchestrator.pageStateMonitor.getStabilityState.mockResolvedValue('STABLE');
 
         const outcome = await orchestrator.orchestrate(resolveFn, 'click', mockPage, { maxRecoveryMs: 5000 });
-        
-        expect(outcome.status).toBe('RESOLVED');
-        expect(outcome.level).toBe('L4');
-        expect(mockPage.reload).toHaveBeenCalledTimes(1);
+
+        expect(outcome.status).toBe('ABORTED');
+        expect(outcome.level).toBe('EXHAUSTED');
+        expect(mockPage.reload).not.toHaveBeenCalled();
     });
-    
-    it('should return ABORTED if even L4 fails', async () => {
+
+    it('should return ABORTED with EXHAUSTED if all layers fail', async () => {
         const resolveFn = vi.fn().mockRejectedValue(new Error('Persistent error'));
         
         // STABLE so L2 doesn't wait 2000ms
@@ -103,8 +99,8 @@ describe('Phase 9: RecoveryOrchestrator Unit Tests', () => {
         const outcome = await orchestrator.orchestrate(resolveFn, 'click', mockPage, { maxRecoveryMs: 5000 });
         
         expect(outcome.status).toBe('ABORTED');
-        expect(outcome.level).toBe('L4');
-        expect(mockPage.reload).toHaveBeenCalledTimes(1);
+        expect(outcome.level).toBe('EXHAUSTED');
+        expect(mockPage.reload).not.toHaveBeenCalled();
     });
 
     it('should abort immediately without retrying if resolveFn throws a terminal error (e.g. ConfidenceGateRejectionError)', async () => {

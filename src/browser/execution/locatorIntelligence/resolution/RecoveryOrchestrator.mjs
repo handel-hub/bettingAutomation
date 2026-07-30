@@ -126,22 +126,13 @@ export class RecoveryOrchestrator {
         if (l35Result.terminalError) return this._abortOutcome(state, startTime, 'L3.5', l35Result.terminalError);
         if (Date.now() >= hardDeadline) return this._abortOutcome(state, startTime, 'L3.5');
 
-        // L4: Reload
-        const l4Result = await this._executeL4(resolveFn, page, state, hardDeadline, options);
-        if (l4Result.success) {
-            TelemetryCollector.recordRecovery(4);
-            return new RecoveryOutcome({
-                status: 'RESOLVED',
-                result: l4Result.result,
-                level: 'L4',
-                attempts: state.attempts,
-                duration: Date.now() - startTime,
-                history: state.history
-            });
-        }
-        if (l4Result.terminalError) return this._abortOutcome(state, startTime, 'L4', l4Result.terminalError, l4Result.circuitBreakerTripped);
+        // L4 Reload (Removed in Audit Phase 8 to prevent CascadingRecoveryFailure)
+        // If we reach here, non-destructive recovery has been exhausted.
+        const exhaustionError = new Error('[LF-505] Locator intelligence recovery exhausted all non-destructive strategies.');
+        exhaustionError.name = 'UnrecoverableError';
+        exhaustionError.code = 'LF-505';
 
-        return this._abortOutcome(state, startTime, 'L4', null, l4Result.circuitBreakerTripped);
+        return this._abortOutcome(state, startTime, 'EXHAUSTED', exhaustionError, false);
     }
 
     _isTerminalError(err) {
@@ -308,31 +299,4 @@ export class RecoveryOrchestrator {
         return { success: false };
     }
 
-    async _executeL4(resolveFn, page, state, hardDeadline = Infinity, options = {}) {
-        const levelStart = Date.now();
-        try {
-            const remainingMs = Math.max(100, hardDeadline - Date.now());
-            await page.reload({ waitUntil: 'domcontentloaded', timeout: remainingMs });
-            await new Promise(r => setTimeout(r, Math.min(500, Math.max(50, hardDeadline - Date.now())))); // DOM settlement
-
-            if (Date.now() < hardDeadline) {
-                state.attempts++;
-                const result = await resolveFn();
-                if (result && result.success) {
-                    return { success: true, result };
-                }
-            }
-        } catch (err) {
-            if (typeof console !== 'undefined' && process.env.DEBUG_RECOVERY) console.warn('[Recovery L4 Error]', err.stack || err.message);
-            if (this._isTerminalError(err)) return { success: false, terminalError: err };
-            state.history.push({ level: 'L4', error: err.message, duration: Date.now() - levelStart });
-        }
-        if (options.healthMonitor && typeof options.healthMonitor.recordRecoveryFailure === 'function' && options.browserId) {
-            options.healthMonitor.recordRecoveryFailure(options.browserId);
-        } else if (options.circuitBreaker && typeof options.circuitBreaker.recordFailure === 'function') {
-            options.circuitBreaker.recordFailure();
-        }
-        const circuitBreakerTripped = (options.healthMonitor?.getCircuitBreaker?.(options.browserId)?.isTripped() || options.circuitBreaker?.isTripped() || false);
-        return { success: false, circuitBreakerTripped };
-    }
 }

@@ -12,20 +12,23 @@ export class DOMCapabilityProvider extends CapabilityProvider {
         // Instant check
         const { browserId, page } = syncContext;
         try {
-            const isReady = await page.evaluate(() => {
-                return document.readyState === 'complete';
-            });
+            const frames = page.frames();
+            const results = await Promise.all(frames.map(frame => 
+                frame.evaluate(() => document.readyState === 'complete').catch(() => true)
+            ));
+            const isReady = results.every(res => res === true);
+            
             if (isReady) {
                 return new CapabilityResult({
                     status: 'SATISFIED',
                     capability: Capabilities.DOM_READY,
-                    reason: 'DOM instantly ready'
+                    reason: 'All frames instantly ready'
                 });
             }
             return new CapabilityResult({
                 status: 'WAITING',
                 capability: Capabilities.DOM_READY,
-                reason: 'document.readyState not complete'
+                reason: 'One or more frames not complete'
             });
         } catch (e) {
             return new CapabilityResult({
@@ -52,66 +55,73 @@ export class DOMCapabilityProvider extends CapabilityProvider {
         }
 
         try {
-            logger.debug(`[DOMProvider] [${browserId}] Waiting for DOM stabilization (quiet period: ${quietPeriod}ms)`);
+            logger.debug(`[DOMProvider] [${browserId}] Waiting for DOM stabilization across all frames (quiet period: ${quietPeriod}ms)`);
             
-            // Wait for DOM to stabilize using page.evaluate
-            const isStable = await page.evaluate(async ({ maxWait, quietPeriod }) => {
-                return new Promise((resolve) => {
-                    let timeoutId;
-                    let failsafeId;
-                    let observer;
+            const frames = page.frames();
+            const stablePromises = frames.map(frame => 
+                frame.evaluate(async ({ maxWait, quietPeriod }) => {
+                    return new Promise((resolve) => {
+                        let timeoutId;
+                        let failsafeId;
+                        let observer;
 
-                    const clearAll = () => {
-                        if (timeoutId) clearTimeout(timeoutId);
-                        if (failsafeId) clearTimeout(failsafeId);
-                        if (observer) observer.disconnect();
-                    };
+                        const clearAll = () => {
+                            if (timeoutId) clearTimeout(timeoutId);
+                            if (failsafeId) clearTimeout(failsafeId);
+                            if (observer) observer.disconnect();
+                        };
 
-                    const onStable = () => {
-                        clearAll();
-                        // Final step: requestAnimationFrame to guarantee layout calculations
-                        requestAnimationFrame(() => {
-                            resolve(true);
-                        });
-                    };
-
-                    const restartTimer = () => {
-                        if (timeoutId) clearTimeout(timeoutId);
-                        if (quietPeriod > 0) {
-                            timeoutId = setTimeout(onStable, quietPeriod);
-                        } else {
-                            onStable();
-                        }
-                    };
-
-                    const checkReadyState = () => {
-                        if (document.readyState === 'complete') {
-                            restartTimer();
-                            
-                            // Also observe mutations to catch hydration
-                            if (quietPeriod > 0) {
-                                observer = new MutationObserver(() => {
-                                    // DOM mutated! Reset the quiet period.
-                                    restartTimer();
-                                });
-                                observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+                        const onStable = () => {
+                            clearAll();
+                            // Final step: requestAnimationFrame to guarantee layout calculations
+                            if (typeof requestAnimationFrame !== 'undefined') {
+                                requestAnimationFrame(() => resolve(true));
+                            } else {
+                                resolve(true);
                             }
-                        } else {
-                            window.addEventListener('load', () => {
-                                checkReadyState();
-                            }, { once: true });
-                        }
-                    };
+                        };
 
-                    // Failsafe if the stabilization takes longer than the barrier's maxWait
-                    failsafeId = setTimeout(() => {
-                        clearAll();
-                        resolve(false);
-                    }, maxWait);
+                        const restartTimer = () => {
+                            if (timeoutId) clearTimeout(timeoutId);
+                            if (quietPeriod > 0) {
+                                timeoutId = setTimeout(onStable, quietPeriod);
+                            } else {
+                                onStable();
+                            }
+                        };
 
-                    checkReadyState();
-                });
-            }, { maxWait, quietPeriod });
+                        const checkReadyState = () => {
+                            if (document.readyState === 'complete') {
+                                restartTimer();
+                                
+                                // Also observe mutations to catch hydration
+                                if (quietPeriod > 0 && document.body) {
+                                    observer = new MutationObserver(() => {
+                                        // DOM mutated! Reset the quiet period.
+                                        restartTimer();
+                                    });
+                                    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+                                }
+                            } else {
+                                window.addEventListener('load', () => {
+                                    checkReadyState();
+                                }, { once: true });
+                            }
+                        };
+
+                        // Failsafe if the stabilization takes longer than the barrier's maxWait
+                        failsafeId = setTimeout(() => {
+                            clearAll();
+                            resolve(false);
+                        }, maxWait);
+
+                        checkReadyState();
+                    });
+                }, { maxWait, quietPeriod }).catch(() => true) // Detached or cross-origin-destroyed frames are treated as stable
+            );
+
+            const results = await Promise.all(stablePromises);
+            const isStable = results.every(r => r === true);
 
             const latency = Date.now() - startTime;
 
@@ -121,14 +131,14 @@ export class DOMCapabilityProvider extends CapabilityProvider {
                     capability: Capabilities.DOM_READY,
                     latency,
                     telemetry: { domQuietPeriod: quietPeriod },
-                    reason: 'DOM stabilized and quiet window elapsed'
+                    reason: 'All frames stabilized and quiet window elapsed'
                 });
             } else {
                 return new CapabilityResult({
                     status: 'TIMEOUT',
                     capability: Capabilities.DOM_READY,
                     latency,
-                    reason: 'DOM never stabilized within deadline'
+                    reason: 'One or more frames never stabilized within deadline'
                 });
             }
         } catch (e) {
@@ -146,7 +156,11 @@ export class DOMCapabilityProvider extends CapabilityProvider {
         const { browserId, page } = syncContext;
         try {
             // Force a fresh measurement to repair reality
-            const isReady = await page.evaluate(() => document.readyState === 'complete');
+            const frames = page.frames();
+            const results = await Promise.all(frames.map(frame => 
+                frame.evaluate(() => document.readyState === 'complete').catch(() => true)
+            ));
+            const isReady = results.every(res => res === true);
             
             // We publish this new state to the registry, which acts as our Soft Reset
             const currentEpoch = this.registry.getState(browserId).navigationEpoch;

@@ -104,11 +104,12 @@ export class HealthMonitor extends EventEmitter {
         // Only trigger on genuine physical infrastructure crashes:
         // Only trigger on genuine physical infrastructure crashes:
         
-        // 1. WebSocket heartbeat silence (> 5,000ms)
+        // 1. WebSocket heartbeat silence (> 5,000ms normal, > 30,000ms if Busy executing complex extraction)
         if (browser.healthMetrics && browser.healthMetrics.lastHeartbeat > 0) {
             const silentDuration = Date.now() - browser.healthMetrics.lastHeartbeat;
-            if (silentDuration > 5000 && browser.state !== 'Initializing') {
-                return { isPhysicalCrash: true, reason: `WebSocket heartbeat silence exceeded 5,000ms (${silentDuration}ms)` };
+            const gracePeriod = browser.state === 'Busy' ? 30000 : 5000;
+            if (silentDuration > gracePeriod && browser.state !== 'Initializing') {
+                return { isPhysicalCrash: true, reason: `WebSocket heartbeat silence exceeded ${gracePeriod}ms (${silentDuration}ms) [State: ${browser.state}]` };
             }
         }
 

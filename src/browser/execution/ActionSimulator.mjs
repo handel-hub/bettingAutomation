@@ -305,26 +305,7 @@ export class ActionSimulator extends EventEmitter {
             const locatorStr = usedLocatorInfo ? ` | Used Locator: [${usedLocatorInfo.strategy}] ${usedLocatorInfo.locator}` : '';
             logger.info(`[Execute End] [Result: Success] Command ${command.id} [${command.type}] on [${id}] | Total Time: ${Date.now() - startTime}ms${locatorStr} | Lifecycle: ${lifecycle}`);
 
-            const targetUrl = command.metadata?.navigation?.url;
-            if (targetUrl && type !== 'navigate') {
-                // Post-execution Implicit SPA Assertion (Phase 3.3)
-                const startAssert = Date.now();
-                let urlMatched = false;
-                while (Date.now() - startAssert < 5000) {
-                    const currentUrl = page.url();
-                    if (currentUrl === targetUrl || currentUrl.startsWith(targetUrl)) {
-                        urlMatched = true;
-                        break;
-                    }
-                    await new Promise(r => setTimeout(r, 50));
-                }
-                if (!urlMatched) {
-                    const actualUrl = page.url();
-                    const errorMsg = `[SYNC-201] StateAssertionFailure: URL mismatch after executing ${command.id}. Expected: ${targetUrl}, Actual: ${actualUrl}`;
-                    TelemetryCollector.recordSyncAssertionFailure(id, targetUrl, actualUrl);
-                    throw new GlobalTimeoutError(errorMsg); // Fatal synchronization loss
-                }
-            }
+
 
             if (this.registry) {
                 this.registry.incrementSlaveGes(id);

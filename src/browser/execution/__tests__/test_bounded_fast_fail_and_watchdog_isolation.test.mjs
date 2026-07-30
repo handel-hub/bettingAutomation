@@ -78,7 +78,7 @@ describe('Milestone 5: Bounded Fast-Fail Resolution & Watchdog State Isolation',
         expect(evalResult.isPhysicalCrash).toBe(false);
     });
 
-    it('test_heartbeat_silence_triggers_physical_reboot: heartbeat silence > 5000ms triggers watchdog', () => {
+    it('test_heartbeat_silence_triggers_physical_reboot: heartbeat silence triggers watchdog', () => {
         const registry = new BrowserStateRegistry();
         const monitor = new HealthMonitor(registry);
         const mockBrowser = { isConnected: () => true };
@@ -90,6 +90,6 @@ describe('Milestone 5: Bounded Fast-Fail Resolution & Watchdog State Isolation',
 
         const evalResult = monitor.evaluateErrorState(stateObj);
         expect(evalResult.isPhysicalCrash).toBe(true);
-        expect(evalResult.reason).toContain('WebSocket heartbeat silence exceeded 5,000ms');
+        expect(evalResult.reason).toContain('WebSocket heartbeat silence exceeded 5000ms');
     });
 });
