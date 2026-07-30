@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { logger } from '../../config.mjs';
 import { Command } from '../execution/Command.mjs';
+import { CDPMutex } from '../synchronization/coordination/CDPMutex.mjs';
 
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_BASE_DELAY_MS = 2000;
@@ -14,23 +15,23 @@ export class RecoveryManager extends EventEmitter {
         this.credentialsMap = credentialsMap;
         this.maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
         this.baseDelayMs = options.baseDelayMs ?? DEFAULT_BASE_DELAY_MS;
-        this.healingIds = new Set();
+        this.cdpMutex = options.cdpMutex ?? new CDPMutex();
     }
 
     async heal(browserId) {
-        if (this.healingIds.has(browserId)) {
-            logger.info(`Heal already in progress for [${browserId}], ignoring duplicate trigger.`);
-            return;
-        }
-
         const target = this.registry.get(browserId);
         if (!target) {
             logger.warn(`Heal requested for unknown browser [${browserId}]`);
             return;
         }
 
+        const lockAcquired = await this.cdpMutex.acquireRecoveryLock(browserId, target.context);
+        if (!lockAcquired) {
+            logger.info(`Heal already in progress for [${browserId}], ignoring duplicate trigger.`);
+            return;
+        }
+
         const { role, username, proxyUrl } = target;
-        this.healingIds.add(browserId);
         logger.warn(`Attempting to heal browser [${browserId}] (role=${role})...`);
 
         try {
@@ -67,7 +68,7 @@ export class RecoveryManager extends EventEmitter {
                 source: 'RecoveryManager'
             }));
         } finally {
-            this.healingIds.delete(browserId);
+            this.cdpMutex.releaseRecoveryLock(browserId);
         }
     }
 

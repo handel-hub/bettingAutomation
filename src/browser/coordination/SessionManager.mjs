@@ -30,17 +30,58 @@ export class SessionManager {
         const sessionFile = path.join(this.sessionsDir, `${username}.json`);
         try {
             const fileData = JSON.parse(await fsPromises.readFile(sessionFile, 'utf-8'));
-            let cookies;
+            let fullState;
             let wasLegacy = false;
+            
             if (fileData && fileData.iv && fileData.authTag) {
-                cookies = JSON.parse(decrypt(fileData, username));
+                const decryptedStr = decrypt(fileData, username);
+                const parsed = JSON.parse(decryptedStr);
+                if (Array.isArray(parsed)) {
+                    fullState = { cookies: parsed, localStorage: [], sessionStorage: [] };
+                    wasLegacy = true;
+                } else {
+                    fullState = parsed;
+                }
             } else {
-                cookies = fileData;
+                fullState = { cookies: fileData, localStorage: [], sessionStorage: [] };
                 wasLegacy = true;
                 logger.info(`Loaded legacy plaintext session for ${redactUsername(username)}; it will be re-saved encrypted.`);
             }
-            await browserObj.context.addCookies(cookies);
-            logger.info(`Loaded session for ${redactUsername(username)} on [${id}]`);
+
+            await browserObj.context.addCookies(fullState.cookies || []);
+            
+            try {
+                const page = browserObj.page;
+                const cdpClient = await browserObj.context.newCDPSession(page);
+                await cdpClient.send('DOMStorage.enable');
+                
+                const origin = 'https://www.sportybet.com';
+                
+                if (fullState.localStorage && fullState.localStorage.length > 0) {
+                    for (const [key, value] of fullState.localStorage) {
+                        await cdpClient.send('DOMStorage.setDOMStorageItem', {
+                            storageId: { securityOrigin: origin, isLocalStorage: true },
+                            key,
+                            value
+                        }).catch(() => {});
+                    }
+                }
+                
+                if (fullState.sessionStorage && fullState.sessionStorage.length > 0) {
+                    for (const [key, value] of fullState.sessionStorage) {
+                        await cdpClient.send('DOMStorage.setDOMStorageItem', {
+                            storageId: { securityOrigin: origin, isLocalStorage: false },
+                            key,
+                            value
+                        }).catch(() => {});
+                    }
+                }
+                await cdpClient.detach();
+            } catch (cdpErr) {
+                logger.warn(`Failed to inject DOMStorage via CDP for ${redactUsername(username)} on [${id}]: ${cdpErr.message}`);
+            }
+
+            logger.info(`Loaded session (Cookies + DOMStorage) for ${redactUsername(username)} on [${id}]`);
             return { loaded: true, wasLegacy };
         } catch (err) {
             if (err.code !== 'ENOENT') {
@@ -56,10 +97,41 @@ export class SessionManager {
 
         try {
             const cookies = await browserObj.context.cookies();
+            let localEntries = [];
+            let sessionEntries = [];
+            
+            try {
+                const page = browserObj.page;
+                const cdpClient = await browserObj.context.newCDPSession(page);
+                await cdpClient.send('DOMStorage.enable');
+                
+                const origin = 'https://www.sportybet.com';
+                
+                const localRes = await cdpClient.send('DOMStorage.getDOMStorageItems', {
+                    storageId: { securityOrigin: origin, isLocalStorage: true }
+                });
+                localEntries = localRes.entries || [];
+                
+                const sessionRes = await cdpClient.send('DOMStorage.getDOMStorageItems', {
+                    storageId: { securityOrigin: origin, isLocalStorage: false }
+                });
+                sessionEntries = sessionRes.entries || [];
+                
+                await cdpClient.detach();
+            } catch (cdpErr) {
+                logger.warn(`Failed to extract DOMStorage via CDP for ${redactUsername(username)} on [${id}]: ${cdpErr.message}`);
+            }
+
+            const fullState = {
+                cookies,
+                localStorage: localEntries,
+                sessionStorage: sessionEntries
+            };
+
             const sessionFile = path.join(this.sessionsDir, `${username}.json`);
-            const encrypted = encrypt(JSON.stringify(cookies), username);
+            const encrypted = encrypt(JSON.stringify(fullState), username);
             await fsPromises.writeFile(sessionFile, JSON.stringify(encrypted, null, 2), { mode: 0o600 });
-            logger.info(`Saved encrypted session for ${redactUsername(username)} from [${id}]`);
+            logger.info(`Saved encrypted session (Cookies + DOMStorage) for ${redactUsername(username)} from [${id}]`);
         } catch (err) {
             logger.error(`Failed to save session for ${redactUsername(username)}:`, err);
         }

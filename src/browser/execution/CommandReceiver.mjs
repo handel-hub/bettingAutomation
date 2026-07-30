@@ -77,7 +77,8 @@ export class CommandReceiver extends EventEmitter {
 
         process.stdin.on('keypress', (str, key) => {
             if (key && key.ctrl && key.name === 'c') {
-                process.exit();
+                process.kill(process.pid, 'SIGINT');
+                return;
             }
             
             const input = key && key.name ? key.name.toLowerCase() : String(str).toLowerCase();

@@ -52,7 +52,7 @@ export class ClusterOrchestrator {
 
         if (activeAccounts.length === 0) {
             logger.warn('No accounts configured. Exiting.');
-            process.exit(0);
+            throw new Error('No accounts configured');
         }
 
         const masterAccount = activeAccounts[0];
@@ -64,7 +64,7 @@ export class ClusterOrchestrator {
             masterProxyUrl = this.proxyManager.allocateProxy();
             if (!masterProxyUrl && this.settings.Proxy.proxy_failure_mode === 'strict') {
                 logger.error('master_use_proxy=true but no proxy is available (strict mode). Refusing to launch master unprotected.');
-                process.exit(1);
+                throw new Error('No proxy available in strict mode');
             }
         }
         await this.lifecycleManager.spawnBrowser('master', 'master', masterProxyUrl, masterAccount.username);
