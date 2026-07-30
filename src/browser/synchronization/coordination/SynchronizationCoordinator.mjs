@@ -1,13 +1,15 @@
 import { CapabilityDependencyGraph } from './CapabilityDependencyGraph.mjs';
 import { SynchronizationSnapshot } from './SynchronizationSnapshot.mjs';
 import { CapabilityRegistry } from '../CapabilityRegistry.mjs';
+import { logger } from '../../../config.mjs';
 import EventEmitter from 'node:events';
 
 export class SynchronizationCoordinator extends EventEmitter {
-    constructor(consistencyEvaluator, registry) {
+    constructor(consistencyEvaluator, registry, cdpMutex = null) {
         super();
         this.evaluator = consistencyEvaluator;
         this.registry = registry;
+        this.cdpMutex = cdpMutex;
         this.capabilityStates = new Map(); // browserId -> { [capability]: boolean }
     }
 
@@ -18,6 +20,11 @@ export class SynchronizationCoordinator extends EventEmitter {
     }
 
     handleCapabilityUpdate(browserId, capability, isReady) {
+        if (this.cdpMutex && this.cdpMutex.locks.has(browserId)) {
+            logger.debug(`[SynchronizationCoordinator] Suppressing capability update for [${browserId}] (${capability}=${isReady}) due to active CDP Mutex lock`);
+            return;
+        }
+
         this.initializeBrowser(browserId);
         const states = this.capabilityStates.get(browserId);
         

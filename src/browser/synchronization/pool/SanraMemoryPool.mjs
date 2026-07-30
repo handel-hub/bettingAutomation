@@ -60,7 +60,13 @@ export class SanraMemoryPool {
         } catch (err) {
             // Enforce MIG-003: Fallback to standard ArrayBuffer if SharedArrayBuffer allocation fails
             this.isShared = false;
-            this.buffer = new ArrayBuffer(this.totalBufferSize);
+            
+            // ENG-010: Silent fallback to Buffer.alloc if available (standard IPC optimization in Node)
+            if (typeof Buffer !== 'undefined' && typeof Buffer.alloc === 'function') {
+                this.buffer = Buffer.alloc(this.totalBufferSize).buffer;
+            } else {
+                this.buffer = new ArrayBuffer(this.totalBufferSize);
+            }
 
             if (this.telemetrySink && typeof this.telemetrySink.emitEvent === 'function') {
                 this.telemetrySink.emitEvent('SharedMemoryPoolAllocationFailed', {

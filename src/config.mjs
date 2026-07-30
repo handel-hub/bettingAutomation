@@ -54,8 +54,11 @@ export const logger = pino({
                         spanId: meta?.spanId || ''
                     });
                 } catch (err) {
+                    try {
+                        const logPath = path.join(__dirname, '..', 'fatal.log');
+                        fs.appendFileSync(logPath, `[${new Date().toISOString()}] FATAL [RKP_Serialization_Fault]: ${err.stack || err.message || err}\n`);
+                    } catch (e) {}
                     console.error('[RKP Pino Hook] Error:', err);
-                    // Swallow errors to guarantee legacy logging stability
                 }
             }
             return method.apply(this, inputArgs);

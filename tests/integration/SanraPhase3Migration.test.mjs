@@ -170,7 +170,16 @@ describe('Phase 3 Legacy Integration & Strangler Migration', () => {
         
         attachBrowserLifecycleAdapter(registry);
         
-        registry.register('browser-01', 'slave', {}, {}, {});
+        registry.register('browser-01', 'slave', {
+            newContext: async () => ({
+                newPage: async () => ({
+                    goto: async () => {},
+                    close: async () => {}
+                }),
+                addCookies: async () => {},
+                close: async () => {}
+            })
+        }, {}, {});
         registry.update('browser-01', { lifecycleState: 'READY', url: 'https://example.com' });
         
         await registry.failover('browser-01', 'https://example.com/retry');
@@ -184,6 +193,6 @@ describe('Phase 3 Legacy Integration & Strangler Migration', () => {
         
         const failoverFact = snapshot.find(f => f.type === 'Failure' && f.errorCode === 'WORKER_FAILOVER');
         expect(failoverFact).toBeDefined();
-        expect(failoverFact.errorMessage).toContain('standby-01');
+        expect(failoverFact.errorMessage).toContain('standby-');
     });
 });

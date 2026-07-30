@@ -575,7 +575,7 @@ export class LocatorResolver {
                 throw new Error("All Candidates Exhausted");
             }
             
-            for (const ctx of activeContexts) {
+            const evaluateContext = async (ctx) => {
                 ctx.transitionTo(ResolutionState.VALIDATING);
                 ctx.recordAttempt();
                 
@@ -682,6 +682,38 @@ export class LocatorResolver {
                         logger.debug(`[LocatorResolver] Cycle ${resolutionCycles} Attempt ${ctx.attempts}: [${ctx.candidate.strategy}] ${ctx.candidate.locator} | Error: ${err.message}`);
                     }
                     ctx.recordFailure(err, isTerminal);
+                    throw err; // throw so the chunk runner knows this candidate failed
+                }
+            };
+
+            const CHUNK_SIZE = 3;
+            for (let i = 0; i < activeContexts.length; i += CHUNK_SIZE) {
+                const chunk = activeContexts.slice(i, i + CHUNK_SIZE);
+                try {
+                    const result = await new Promise((resolve, reject) => {
+                        let rejections = 0;
+                        const errors = [];
+                        chunk.forEach(ctx => {
+                            evaluateContext(ctx).then(resolve).catch(err => {
+                                const isFatal = (err instanceof ConfidenceGateRejectionError || err.name === 'ConfidenceBelowThresholdError' || err.code === 'LF-602' || err instanceof GlobalTimeoutError || err instanceof QueueDeadlineExceededError || err.code === 'LF-504' || err.code === 'LF-702' || err instanceof ContractViolationError || err.code === 'LF-701' || err instanceof MaxAttemptsReachedError || err.code === 'LF-505' || err instanceof RecoveryExhaustedError || err.code === 'LF-605' || err instanceof AmbiguousResolutionError || err.code === 'LF-603' || err instanceof VerificationMismatchError || err.code === 'LF-601');
+                                if (isFatal) {
+                                    reject(err);
+                                } else {
+                                    errors.push(err);
+                                    rejections++;
+                                    if (rejections === chunk.length) {
+                                        reject(new AggregateError(errors, 'All candidates in chunk failed'));
+                                    }
+                                }
+                            });
+                        });
+                    });
+                    if (result && result.success) return result;
+                } catch (err) {
+                    if (err instanceof AggregateError) {
+                        continue; // try next chunk
+                    }
+                    throw err; // fatal error, abort resolution pass
                 }
             }
             
