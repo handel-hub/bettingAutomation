@@ -32,6 +32,7 @@ import { SynchronizationTelemetry } from './synchronization/telemetry/Synchroniz
 import { SynchronizationTimeline } from './synchronization/telemetry/SynchronizationTimeline.mjs';
 import { BrowserStateRegistry } from './synchronization/BrowserStateRegistry.mjs';
 import { CapabilityRegistry } from './synchronization/CapabilityRegistry.mjs';
+import { CDPMutex } from './synchronization/coordination/CDPMutex.mjs';
 import { attachSyncTelemetryAdapter } from '../rkp/integration/SyncTelemetryAdapter.mjs';
 import { attachBrowserLifecycleAdapter } from '../rkp/integration/BrowserLifecycleAdapter.mjs';
 
@@ -64,11 +65,14 @@ export class AutomationController {
         this.workflowEngine = new WorkflowEngine(this.lockManager, this.registry);
 
         const credentialsMap = new Map(accounts.map(a => [a.username, a.password]));
+        this.cdpMutex = new CDPMutex();
+        
         this.recoveryManager = new RecoveryManager(
             this.registry,
             this.lifecycleManager,
             this.sessionManager,
-            credentialsMap
+            credentialsMap,
+            { cdpMutex: this.cdpMutex }
         );
 
         this.commandRouter = new CommandRouter();
@@ -76,7 +80,7 @@ export class AutomationController {
 
         // --- Initialize Synchronization Orchestration ---
         this.consistencyEvaluator = new ConsistencyEvaluator(ConsistencyPolicy.DEFAULT);
-        this.syncCoordinator = new SynchronizationCoordinator(this.consistencyEvaluator, this.registry);
+        this.syncCoordinator = new SynchronizationCoordinator(this.consistencyEvaluator, this.registry, this.cdpMutex);
         this.syncRecoveryCoordinator = new RecoveryCoordinator(this.registry);
         this.syncTelemetry = new SynchronizationTelemetry();
         this.syncTimeline = new SynchronizationTimeline();

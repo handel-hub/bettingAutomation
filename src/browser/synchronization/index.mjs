@@ -27,4 +27,4 @@ export { SynchronizationEvents } from './SynchronizationEvents.mjs';
 export { Capabilities } from './capabilities.mjs';
 export { SynchronizationTelemetry } from './telemetry/SynchronizationTelemetry.mjs';
 export { SynchronizationTimeline } from './telemetry/SynchronizationTimeline.mjs';
-export { StandbyPoolManager } from './pool/StandbyPoolManager.mjs';
+
