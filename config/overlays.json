@@ -1,0 +1,23 @@
+{
+    "overlays": [
+        {
+            "name": "Sporty Challenge Loyalty Sheet",
+            "locator": ".bottom-sheet-container.bottom-sheet-loyalty .close",
+            "action": "click"
+        },
+        {
+            "name": "You Won Dialog",
+            "locator": "#esDialog1 .m-icon-close"
+        },
+        {
+            "name": "Winning Popup",
+            "locator": "[data-op=\"winning_popup__close\"]",
+            "action": "click"
+        },
+        {
+            "name": "Lantern Slide Modal",
+            "locator": "div#lantern-slide > i",
+            "action": "click"
+        }
+    ]
+}

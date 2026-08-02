@@ -5,6 +5,12 @@ import { pageStateMonitor } from './locatorIntelligence/resolution/PageStateMoni
 import featureFlags from './locatorIntelligence/FeatureFlags.mjs';
 import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCollector.mjs';
 import { DeadlineBudget } from './time/DeadlineBudget.mjs';
+import { promises as fsPromises } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import {
     LocatorResolutionError, 
     OverlayInterceptionError, 
@@ -214,8 +220,63 @@ export class ActionSimulator extends EventEmitter {
         // Ensure PageStateMonitor is attached to this page to track DOM mutations
         await pageStateMonitor.attach(page).catch(() => {});
         
+        if (!this.attachedPages.has(page)) {
+            this.attachedPages.add(page);
+            try {
+                const overlayConfigPath = path.join(__dirname, '..', '..', '..', 'config', 'overlays.json');
+                const overlayData = JSON.parse(await fsPromises.readFile(overlayConfigPath, 'utf8'));
+                
+                const overlayScript = `
+                    (function() {
+                        const overlays = ${JSON.stringify(overlayData.overlays)};
+                        
+                        function checkAndDismiss(root) {
+                            for (const overlay of overlays) {
+                                const elements = root.querySelectorAll ? root.querySelectorAll(overlay.locator) : [];
+                                for (const el of elements) {
+                                    if (el && el.offsetParent !== null && !el.dataset.aoisClicked) {
+                                        console.log('[AOIS-NATIVE] Slave sub-millisecond interception of overlay:', overlay.name);
+                                        el.dataset.aoisClicked = "true";
+                                        el.click();
+                                        setTimeout(() => { if (el) delete el.dataset.aoisClicked; }, 1000);
+                                    }
+                                }
+                            }
+                        }
 
+                        // Initial check
+                        checkAndDismiss(document);
 
+                        // Native sub-millisecond DOM mutation observation
+                        const observer = new MutationObserver((mutations) => {
+                            let shouldCheck = false;
+                            for (const m of mutations) {
+                                if (m.addedNodes.length > 0 || m.attributeName === 'class' || m.attributeName === 'style') {
+                                    shouldCheck = true;
+                                    break;
+                                }
+                            }
+                            if (shouldCheck) {
+                                checkAndDismiss(document);
+                            }
+                        });
+                        
+                        const targetNode = document.documentElement || document;
+                        observer.observe(targetNode, {
+                            childList: true,
+                            subtree: true,
+                            attributes: true,
+                            attributeFilter: ['class', 'style', 'display']
+                        });
+                    })();
+                `;
+                await page.addInitScript(overlayScript);
+                await page.evaluate(overlayScript).catch(() => {});
+                logger.info(`[AOIS] Slave natively intercepting ${overlayData.overlays.length} overlays via MutationObserver.`);
+            } catch (e) {
+                logger.warn(`[AOIS] Failed to load overlays.json on Slave: ${e.message}`);
+            }
+        }
         const lifecycle = 'EXECUTING';
         logger.info(`[Execute Start] Command ${command.id} on [${id}] | Latency (Receive->Start): ${startTime - command.creationTime}ms | Lifecycle: ${lifecycle}`);
         try {

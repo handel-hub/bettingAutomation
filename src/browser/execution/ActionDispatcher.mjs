@@ -666,6 +666,61 @@ export class ActionDispatcher extends EventEmitter {
         await masterPage.addInitScript(this.cachedScriptContent);
         await masterPage.evaluate(this.cachedScriptContent).catch(err => logger.warn('Failed to immediately evaluate ActionDispatcher script: ' + err.message));
 
+        try {
+            const overlayConfigPath = path.join(__dirname, '..', '..', '..', 'config', 'overlays.json');
+            const overlayData = JSON.parse(await fsPromises.readFile(overlayConfigPath, 'utf8'));
+            
+            const overlayScript = `
+                (function() {
+                    const overlays = ${JSON.stringify(overlayData.overlays)};
+                    
+                    function checkAndDismiss(root) {
+                        for (const overlay of overlays) {
+                            const elements = root.querySelectorAll ? root.querySelectorAll(overlay.locator) : [];
+                            for (const el of elements) {
+                                if (el && el.offsetParent !== null && !el.dataset.aoisClicked) {
+                                    console.log('[AOIS-NATIVE] Sub-millisecond interception of overlay:', overlay.name);
+                                    el.dataset.aoisClicked = "true";
+                                    el.click();
+                                    setTimeout(() => { if (el) delete el.dataset.aoisClicked; }, 1000);
+                                }
+                            }
+                        }
+                    }
+
+                    // Initial check
+                    checkAndDismiss(document);
+
+                    // Native sub-millisecond DOM mutation observation
+                    const observer = new MutationObserver((mutations) => {
+                        let shouldCheck = false;
+                        for (const m of mutations) {
+                            if (m.addedNodes.length > 0 || m.attributeName === 'class' || m.attributeName === 'style') {
+                                shouldCheck = true;
+                                break;
+                            }
+                        }
+                        if (shouldCheck) {
+                            checkAndDismiss(document);
+                        }
+                    });
+                    
+                    const targetNode = document.documentElement || document;
+                    observer.observe(targetNode, {
+                        childList: true,
+                        subtree: true,
+                        attributes: true,
+                        attributeFilter: ['class', 'style', 'display']
+                    });
+                })();
+            `;
+            await masterPage.addInitScript(overlayScript);
+            await masterPage.evaluate(overlayScript).catch(() => {});
+            logger.info(`[AOIS] Master natively intercepting ${overlayData.overlays.length} overlays via MutationObserver.`);
+        } catch (e) {
+            logger.warn(`[AOIS] Failed to load overlays.json on Master: ${e.message}`);
+        }
+
         await masterPage.exposeFunction('dispatchInstrumentationEvent', async (eventData) => {
             logger.info(`[INSTRUMENTATION] [${eventData.captureTime}] Type: ${eventData.type} | Target: ${eventData.tag}#${eventData.id}.${eventData.class} | Selector: ${eventData.selector} | Extra: ${eventData.extra} | Error: ${eventData.error}`);
         });

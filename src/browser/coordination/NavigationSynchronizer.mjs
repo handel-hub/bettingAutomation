@@ -20,6 +20,11 @@ export class NavigationSynchronizer extends EventEmitter {
         this.dedupeWindowMs = options.dedupeWindowMs ?? 250;
         this.lastQueuedUrl = null;
         this.lastQueuedAt = 0;
+        this.lastClickAt = 0;
+    }
+
+    recordClickTime(timestamp) {
+        this.lastClickAt = timestamp || Date.now();
     }
 
     async setupMasterSync() {
@@ -35,10 +40,14 @@ export class NavigationSynchronizer extends EventEmitter {
             }
         });
 
-        await master.page.exposeFunction('reportHistorySync', (url) => {
-            logger.info(`[Master History Push] ${url}`);
-            this.registry.updateUrl(master.id, url);
-            this.scheduleSync(url);
+        await master.page.exposeBinding('reportHistorySync', ({ source }, url) => {
+            if (source.frame === master.page.mainFrame()) {
+                logger.info(`[Master History Push] ${url}`);
+                this.registry.updateUrl(master.id, url);
+                this.scheduleSync(url);
+            } else {
+                logger.warn(`[Security] Rejected reportHistorySync from cross-origin or child iframe: ${url}`);
+            }
         });
 
         const syncScript = `
@@ -69,6 +78,13 @@ export class NavigationSynchronizer extends EventEmitter {
      */
     scheduleSync(url) {
         const now = Date.now();
+        // Causal Deduplication: If a click happened very recently, the Slave's 
+        // simulated click will natively trigger the navigation. Drop this redundant command.
+        if (now - this.lastClickAt < 500) {
+            logger.info(`[Causal Deduplication] Dropping navigation command for ${url} because a click occurred ${now - this.lastClickAt}ms ago.`);
+            return;
+        }
+
         if (url === this.lastQueuedUrl && (now - this.lastQueuedAt) < this.dedupeWindowMs) {
             return;
         }

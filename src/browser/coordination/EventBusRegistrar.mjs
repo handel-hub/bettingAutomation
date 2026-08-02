@@ -31,6 +31,10 @@ export class EventBusRegistrar {
             
             logger.info(`[Broadcast] Command ${command.id} [${command.type}] | Latency (Capture->Broadcast): ${Date.now() - command.captureTime}ms | Lifecycle: ${lifecycle}${interactionLog}`);
             
+            if (command.type === 'CLICK' || command.type === 'click') {
+                this.navSync.recordClickTime(command.captureTime);
+            }
+            
             const targetBrowsers = this.targetResolver.resolve(command, logger);
 
             if (targetBrowsers.length === 0) {

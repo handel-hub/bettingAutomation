@@ -18,6 +18,10 @@ export class KnowledgeGraph {
      * @returns {KnowledgeGraph}
      */
     static project(timeline, causalLinks) {
+        if (timeline.length > 100000) {
+            throw new Error(`GraphSizeLimitExceeded: Refusing to project ${timeline.length} facts to prevent OOM crash. Limit is 100,000.`);
+        }
+
         const graph = new KnowledgeGraph();
 
         // 1. Add all nodes

@@ -53,10 +53,9 @@ export class DiagnosticsAPI {
      * @returns {DiagnosticReport}
      */
     diagnoseTrace(traceId) {
-        // We could scope the engines down to a specific trace by building
-        // a filtered query engine, but for this iteration, we will just explain failures within the trace.
-        const stats = StatisticsEngine.aggregate(this.queryEngine);
-        const health = HealthEngine.evaluate(this.queryEngine, stats);
+        // Scoped statistics and health evaluations
+        const stats = StatisticsEngine.aggregate(this.queryEngine, traceId);
+        const health = HealthEngine.evaluate(this.queryEngine, stats, traceId);
         const violations = InvariantChecker.verify(this.queryEngine).filter(v => v.includes(traceId));
 
         const explanations = [];

@@ -12,12 +12,19 @@
 export class StatisticsEngine {
     /**
      * @param {import('../query/RuntimeQueryEngine.mjs').RuntimeQueryEngine} queryEngine 
+     * @param {string|null} filterTraceId 
      * @returns {Statistics}
      */
-    static aggregate(queryEngine) {
-        const measurements = queryEngine.findByType('Measurement');
-        const decisions = queryEngine.findByType('Decision');
-        const failures = queryEngine.findByType('Failure');
+    static aggregate(queryEngine, filterTraceId = null) {
+        let measurements = queryEngine.findByType('Measurement');
+        let decisions = queryEngine.findByType('Decision');
+        let failures = queryEngine.findByType('Failure');
+
+        if (filterTraceId) {
+            measurements = measurements.filter(f => f.traceId === filterTraceId);
+            decisions = decisions.filter(f => f.traceId === filterTraceId);
+            failures = failures.filter(f => f.traceId === filterTraceId);
+        }
 
         // Latency
         let totalLatency = 0;

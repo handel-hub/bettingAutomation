@@ -1,0 +1,26 @@
+[
+  {
+    "type": "wait",
+    "selector": ".stake-input",
+    "state": "visible"
+  },
+  {
+    "type": "input",
+    "selector": ".stake-input",
+    "value": "{STAKE}",
+    "delay": 50
+  },
+  {
+    "type": "wait",
+    "timeout": 500
+  },
+  {
+    "type": "click",
+    "selector": ".place-bet-btn"
+  },
+  {
+    "type": "wait",
+    "selector": ".m-toast--success",
+    "state": "visible"
+  }
+]

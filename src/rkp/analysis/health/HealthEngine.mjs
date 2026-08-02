@@ -12,9 +12,10 @@ export class HealthEngine {
     /**
      * @param {import('../query/RuntimeQueryEngine.mjs').RuntimeQueryEngine} queryEngine 
      * @param {import('../explainability/StatisticsEngine.mjs').Statistics} stats 
+     * @param {string|null} filterTraceId 
      * @returns {HealthMetrics}
      */
-    static evaluate(queryEngine, stats) {
+    static evaluate(queryEngine, stats, filterTraceId = null) {
         let browserHealth = 'HEALTHY';
         let locatorHealth = 'HEALTHY';
         let synchronizationHealth = 'HEALTHY';
@@ -27,7 +28,10 @@ export class HealthEngine {
         }
 
         // 2. Browser Health
-        const browserFailures = queryEngine.findByType('Failure').filter(f => f.domain === 'Browser');
+        let browserFailures = queryEngine.findByType('Failure').filter(f => f.domain === 'Browser');
+        if (filterTraceId) {
+            browserFailures = browserFailures.filter(f => f.traceId === filterTraceId);
+        }
         if (browserFailures.length > 5) {
             browserHealth = 'CRITICAL';
         } else if (browserFailures.length > 0) {
