@@ -239,6 +239,19 @@ export class ExecutionScheduler {
         const { class: queueClass, priority } = ClassificationPolicy.classify(command);
         if (this.isBackpressureActive(browserId) && (queueClass === 'Continuous' || queueClass === 'Aggregated')) {
             logger.debug(`[ExecutionScheduler] Backpressure active on [${browserId}]: dropping ${queueClass} command ${command.type}`);
+            import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                observabilityCollector.emitTransition({
+                    commandId: command.id || command.commandId,
+                    traceId: command.traceId || null,
+                    interactionId: command.interactionId || null,
+                    prevState: 'ROUTED',
+                    newState: 'EVICTED',
+                    eventName: 'COMMAND_EVICTED',
+                    owner: 'ExecutionScheduler',
+                    browserId: browserId,
+                    metadata: { reason: 'Backpressure enqueue drop' }
+                });
+            }).catch(() => {});
             return;
         }
         
@@ -253,7 +266,7 @@ export class ExecutionScheduler {
         };
 
         if (command.type === 'navigate' || command.category === 'Navigation') {
-            qManager.handleNavigation();
+            this.handleNavigation(browserId, command);
         }
 
         try {
@@ -276,6 +289,21 @@ export class ExecutionScheduler {
                 eidPresent: !!eid,
                 eidHash: command.eidHash || TelemetryCollector.computeEIDHash(eid)
             });
+
+            import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                observabilityCollector.emitTransition({
+                    commandId: command.id || command.commandId,
+                    traceId: command.traceId || null,
+                    interactionId: command.interactionId || null,
+                    prevState: 'ROUTED',
+                    newState: 'ENQUEUED',
+                    eventName: 'COMMAND_ENQUEUED',
+                    owner: 'ExecutionScheduler',
+                    browserId: browserId,
+                    metadata: { queueClass, priority, ges: command.ges }
+                });
+            }).catch(() => {});
+
         } catch (err) {
             logger.fatal(`[ExecutionScheduler] ${err.message} on slave [${browserId}]`);
             this.simulator.emit('ActionFailure', { id: browserId, command, error: err });
@@ -285,6 +313,27 @@ export class ExecutionScheduler {
         this._drain(browserObj).catch(err => {
             logger.error(`[ExecutionScheduler] Unhandled drain error on [${browserId}]: ${err.message}`);
         });
+    }
+
+    handleNavigation(browserId, command) {
+        // SPEC-01b: Safe Queue Clearing
+        // Do not clear the queue if there is a Sequence Gap.
+        const currentState = this.registry.get(browserId);
+        const commandGes = command?.ges ?? command?.metadata?.ges ?? command?.payload?.ges;
+        
+        if (currentState && commandGes !== undefined && commandGes !== null) {
+            const expectedGes = currentState.currentGes + 1;
+            if (commandGes > expectedGes) {
+                logger.warn(`[ExecutionScheduler] Refusing to clear queue on navigation for [${browserId}] due to Sequence Gap. Expected GES: ${expectedGes}, Navigation GES: ${commandGes}. Deferring clearing to SequenceGate.`);
+                return;
+            }
+        }
+
+        logger.info(`[ExecutionScheduler] Clearing Continuous/Aggregated queues on navigation for [${browserId}]`);
+        const qManager = this.browserQueues.get(browserId);
+        if (qManager) {
+            qManager.handleNavigation();
+        }
     }
 
     async _drain(browserObj) {
@@ -304,6 +353,22 @@ export class ExecutionScheduler {
                 }
                 if (this.isBackpressureActive(browserId) && (nextEntry.queueClass === 'Continuous' || nextEntry.queueClass === 'Aggregated')) {
                     logger.debug(`[ExecutionScheduler] Backpressure active on [${browserId}] during drain: dropping ${nextEntry.queueClass} command ${nextEntry.command.type}`);
+                    import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                        observabilityCollector.emitTransition({
+                            commandId: nextEntry.command.id || nextEntry.command.commandId,
+                            traceId: nextEntry.command.traceId || null,
+                            interactionId: nextEntry.command.interactionId || null,
+                            prevState: 'ENQUEUED',
+                            newState: 'EVICTED',
+                            eventName: 'COMMAND_EVICTED',
+                            owner: 'ExecutionScheduler',
+                            browserId: browserId,
+                            metadata: { reason: 'Backpressure dequeue drop' }
+                        });
+                    }).catch(() => {});
+                    if (nextEntry.command.ges !== undefined && nextEntry.command.ges !== null) {
+                        this.registry.incrementSlaveGes(browserId, true);
+                    }
                     continue;
                 }
 
@@ -337,6 +402,20 @@ export class ExecutionScheduler {
                         eidHash
                     });
 
+                    import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                        observabilityCollector.emitTransition({
+                            commandId: nextEntry.command.id || nextEntry.command.commandId,
+                            traceId: nextEntry.command.traceId || null,
+                            interactionId: nextEntry.command.interactionId || null,
+                            prevState: 'ENQUEUED',
+                            newState: 'DEQUEUED',
+                            eventName: 'COMMAND_DEQUEUED',
+                            owner: 'ExecutionScheduler',
+                            browserId: browserId,
+                            metadata: { queueDelay: nextEntry.queueDelay, ges: nextEntry.command.ges }
+                        });
+                    }).catch(() => {});
+
                     // Task 2.3: Enforce Queue TTL using DeadlineBudget before processing
                     const deadlineBudget = DeadlineBudget.fromCommand(nextEntry.command, 1500);
                     if (deadlineBudget.isExpired()) {
@@ -346,6 +425,24 @@ export class ExecutionScheduler {
                             TelemetryCollector.registry.recordFailureCode('LF-702');
                         }
                         this.simulator.emit('ActionFailure', { id: browserId, command: nextEntry.command, error: new QueueDeadlineExceededError(errorMsg) });
+                        
+                        import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                            observabilityCollector.emitTransition({
+                                commandId: nextEntry.command.id || nextEntry.command.commandId,
+                                traceId: nextEntry.command.traceId || null,
+                                interactionId: nextEntry.command.interactionId || null,
+                                prevState: 'DEQUEUED',
+                                newState: 'EVICTED',
+                                eventName: 'COMMAND_EVICTED',
+                                owner: 'ExecutionScheduler',
+                                browserId: browserId,
+                                metadata: { reason: 'Queue TTL exceeded' }
+                            });
+                        }).catch(() => {});
+                        
+                        if (nextEntry.command.ges !== undefined && nextEntry.command.ges !== null) {
+                            this.registry.incrementSlaveGes(browserId, true);
+                        }
                         continue;
                     }
 
@@ -369,6 +466,7 @@ export class ExecutionScheduler {
                         captureTime: nextEntry.command.captureTime,
                         creationTime: nextEntry.command.creationTime,
                         payload: nextEntry.command.payload,
+                        ges: nextEntry.command.ges, // SPEC-01: Explicitly preserve GES across reconstruction boundary
                         metadata: {
                             ...nextEntry.command.metadata,
                             scheduler: {
@@ -401,7 +499,10 @@ export class ExecutionScheduler {
                         if (initialDecision === 'WAITING') {
                             logger.info(`[ExecutionScheduler] Command ${finalCommand.id} on [${browserId}] buffered waiting for GES alignment (target GES: ${ges})`);
                             // Wait up to 5s for GES to align
-                            const decisionObj = await this.sequenceGate.evaluateAsync(browserId, ges, 5000);
+                            const decisionObj = await this.sequenceGate.evaluateAsync(browserId, ges, 5000, {
+                                commandId: finalCommand.id || finalCommand.commandId,
+                                traceId: finalCommand.traceId
+                            });
                             
                             if (decisionObj.status === 'STALE') {
                                 const errorMsg = `[LF-604] Stale command ${finalCommand.id || 'unknown'} on [${browserId}] after barrier wait: GES ${ges} is now STALE`;
@@ -414,10 +515,17 @@ export class ExecutionScheduler {
                             } else if (decisionObj.status === 'TIMEOUT') {
                                 const errorMsg = `[SYNC-100] Command ${finalCommand.id || 'unknown'} on [${browserId}] timed out waiting for GES alignment. Expected GES: ${ges}`;
                                 logger.error(`[ExecutionScheduler] ${errorMsg}`);
+                                logger.error(`[Telemetry] {"event":"SEQUENCE_GATE_TIMEOUT","commandId":"${finalCommand.id}","browserId":"${browserId}","expectedGes":${ges},"traceId":"${finalCommand.traceId}"}`);
                                 if (TelemetryCollector && TelemetryCollector.registry && typeof TelemetryCollector.registry.recordFailureCode === 'function') {
                                     TelemetryCollector.registry.recordFailureCode('SYNC-100');
                                 }
                                 this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new SequenceGapError(currentState.currentGes + 1, ges) });
+                                // SPEC-01b: Gap skip on timeout
+                                if (ges !== undefined && ges !== null) {
+                                    this.registry.incrementSlaveGes(browserId, true);
+                                }
+                                // Task 4.8: Alert on TIMEOUT
+                                this.simulator.emit('SYSTEM_ALERT', { type: 'SEQUENCE_TIMEOUT', browserId, expectedGes: ges, commandId: finalCommand.id });
                                 continue;
                             }
                         }
@@ -444,16 +552,57 @@ export class ExecutionScheduler {
 
                     if (barrierResult.status === 'RECOVERING') {
                         logger.warn(`[Scheduler] Command ${finalCommand.id} on [${browserId}] dropped because a hard recovery (Reload/Restart) was initiated.`);
+                        if (ges !== undefined && ges !== null) {
+                            this.registry.incrementSlaveGes(browserId, true);
+                        }
                         continue;
                     } else if (barrierResult.status !== 'PASSED') {
                         logger.error(`[Scheduler] Barrier failed for Command ${finalCommand.id} on [${browserId}]. Status: ${barrierResult.status}, Blocking: ${barrierResult.blockingCapability}`);
                         // Handle barrier failure explicitly (drop command, or recovery coordinator)
+                        if (ges !== undefined && ges !== null) {
+                            this.registry.incrementSlaveGes(browserId, true);
+                        }
                         continue;
                     }
 
-                    await this.simulator.execute(currentState, finalCommand, { deadlineBudget, executionContext: context });
+                    import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                        observabilityCollector.emitTransition({
+                            commandId: finalCommand.id || finalCommand.commandId,
+                            traceId: finalCommand.traceId || null,
+                            interactionId: finalCommand.interactionId || null,
+                            prevState: 'DEQUEUED',
+                            newState: 'EXECUTING',
+                            eventName: 'WORKER_ASSIGNED',
+                            owner: 'ExecutionScheduler',
+                            browserId: browserId
+                        });
+                    }).catch(() => {});
+
+                    try {
+                        await this.simulator.execute(currentState, finalCommand, { deadlineBudget, executionContext: context });
+                    } finally {
+                        import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                            observabilityCollector.emitTransition({
+                                commandId: finalCommand.id || finalCommand.commandId,
+                                traceId: finalCommand.traceId || null,
+                                interactionId: finalCommand.interactionId || null,
+                                prevState: 'EXECUTING',
+                                newState: 'RETURNED',
+                                eventName: 'WORKER_RELEASED',
+                                owner: 'ExecutionScheduler',
+                                browserId: browserId
+                            });
+                        }).catch(() => {});
+                    }
                 } catch(e) {
-                    logger.error(`[Scheduler] Failed to process entry for ${nextEntry?.command?.id ?? 'unknown'}: ${e.message}`);
+                    const cId = nextEntry?.command?.id || 'unknown';
+                    logger.error(`[Scheduler] Failed to process entry for ${cId}: ${e.message}`);
+                    import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                        if (cId !== 'unknown') {
+                            const traceDump = observabilityCollector.dumpTimeline(cId);
+                            logger.error(`[Scheduler] Terminal Failure Trace for [${cId}]: ${traceDump}`);
+                        }
+                    }).catch(() => {});
                     if (this.syncManager && this.syncManager.recoveryCoordinator) {
                         try {
                             const snapshot = this.registry.getSnapshot(browserId);
@@ -464,6 +613,9 @@ export class ExecutionScheduler {
                         } catch (recoveryErr) {
                             logger.error(`[Scheduler] Recovery cascade failed for ${browserId}: ${recoveryErr.message}`);
                         }
+                    }
+                    if (nextEntry?.command?.ges !== undefined && nextEntry?.command?.ges !== null) {
+                        this.registry.incrementSlaveGes(browserId, true);
                     }
                 }
             }

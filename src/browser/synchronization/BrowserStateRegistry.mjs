@@ -29,10 +29,36 @@ export class BrowserStateRegistry extends EventEmitter {
      * Increments the Slave GES.
      * Must only be called when Slave successfully executes the sequence.
      */
-    incrementSlaveGes(browserId) {
+    incrementSlaveGes(browserId, isGapSkip = false) {
         const state = this.getState(browserId);
         state.currentGes++;
+        
+        if (isGapSkip) {
+            // SPEC-01b: Bounded Gap Recovery
+            state.consecutiveGaps = (state.consecutiveGaps || 0) + 1;
+            if (state.consecutiveGaps > 10) {
+                logger.warn(`[BrowserStateRegistry] Browser ${browserId} exceeded max consecutive GES gaps (${state.consecutiveGaps}). Triggering hard reset.`);
+                state.consecutiveGaps = 0; // reset to prevent infinite loops of emitting
+                this.emit('WORKER_BROKEN', { id: browserId, error: new Error('MAX_GES_GAPS_EXCEEDED') });
+            }
+        } else {
+            // Successful execution, reset gap counter
+            if (state.consecutiveGaps > 0) {
+                state.consecutiveGaps = 0;
+            }
+        }
+        
         this.emit('StateUpdated', { browserId, state });
+    }
+
+    /**
+     * Resets the consecutive gap counter upon successful command execution.
+     */
+    resetConsecutiveGaps(browserId) {
+        const state = this.getState(browserId);
+        if (state.consecutiveGaps > 0) {
+            state.consecutiveGaps = 0;
+        }
     }
 
     /**
@@ -131,6 +157,7 @@ export class BrowserStateRegistry extends EventEmitter {
 
         if (destinationUrl && destinationUrl !== 'about:blank') {
             try {
+                logger.info(`[Telemetry] {"event":"FAILOVER_NAVIGATION_INVOKED","browserId":"${brokenId}","url":"${destinationUrl}"}`);
                 await standbyPage.goto(destinationUrl, { timeout: 10000 });
             } catch (err) {
                 logger.warn(`[BrowserStateRegistry] Pre-navigation of standby [${standbyId}] to ${destinationUrl} failed: ${err.message}`);
