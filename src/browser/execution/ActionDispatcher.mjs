@@ -26,6 +26,7 @@ export class ActionDispatcher extends EventEmitter {
         this.saveTimeout = null;
         this.isSaving = false;
         this.savePending = false;
+        this.lastClickEmitTime = 0;
         
         this.sequencer = new TemporalSequencer(50);
         this.sequencer.on('sequenced', this.handleSequencedEvent.bind(this));
@@ -911,6 +912,9 @@ export class ActionDispatcher extends EventEmitter {
         }
 
         logger.info(`[Master Dispatch] ${event.type} | GES: ${ges}`);
+        if (event.type === 'CLICK' || event.type === 'DOUBLE_CLICK') {
+            this.lastClickEmitTime = Date.now();
+        }
         this.emit('Command', command);
     }
 
@@ -982,8 +986,12 @@ export class ActionDispatcher extends EventEmitter {
                 fs.writeFileSync(tmpFile, JSON.stringify(this.actions, null, 2));
                 fs.renameSync(tmpFile, this.sequenceFile);
             } catch (e) {
-                console.error(`ActionDispatcher: Failed to flush sequence sync on exit: ${e.message}`);
+                logger.error({ err: e }, `ActionDispatcher: Failed to flush sequence sync on exit: ${e.message}`);
             }
         }
+    }
+
+    getLastClickEmitTime() {
+        return this.lastClickEmitTime;
     }
 }

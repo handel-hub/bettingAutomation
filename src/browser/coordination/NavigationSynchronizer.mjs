@@ -3,28 +3,18 @@ import EventEmitter from 'node:events';
 import { Command } from '../execution/Command.mjs';
 
 export class NavigationSynchronizer extends EventEmitter {
-    /**
-     * @param {BrowserStateRegistry} registry
-     * @param {{ dedupeWindowMs?: number }} options
-     */
-    constructor(registry, options = {}) {
+    constructor(registry, actionDispatcher) {
         super();
         this.registry = registry;
-        // A single logical navigation can report twice - Playwright's own
-        // 'framenavigated' fires for same-document (SPA) navigations too,
-        // and the patched pushState/popstate handler reports the same URL
-        // independently. This window only suppresses an exact-URL repeat
-        // arriving right after the first; it does not merge or drop
-        // genuinely different URLs - every distinct navigation is emitted
-        // as its own Command, in the order it happened.
-        this.dedupeWindowMs = options.dedupeWindowMs ?? 250;
-        this.lastQueuedUrl = null;
-        this.lastQueuedAt = 0;
-        this.lastClickAt = 0;
-    }
-
-    recordClickTime(timestamp) {
-        this.lastClickAt = timestamp || Date.now();
+        this.actionDispatcher = actionDispatcher;
+        this.lastPageInitiatedUrl = null;
+        this.lastPageInitiatedTime = 0;
+        
+        // SPEC-02: Suppressed navigation metrics
+        this.suppressionMetrics = {
+            count: 0,
+            windowStart: Date.now()
+        };
     }
 
     async setupMasterSync() {
@@ -36,69 +26,71 @@ export class NavigationSynchronizer extends EventEmitter {
                 const newUrl = frame.url();
                 logger.info(`[Master Navigated] ${newUrl}`);
                 this.registry.updateUrl(master.id, newUrl);
-                this.scheduleSync(newUrl);
+                
+                // If we just saw a page_initiated navigation for this exact URL, don't emit it again as browser_initiated
+                if (newUrl === this.lastPageInitiatedUrl && (Date.now() - this.lastPageInitiatedTime) < 500) {
+                    return; // Already captured by window.navigation
+                }
+                
+                this.emitNavigation(newUrl, 'browser_initiated', 'external');
             }
         });
 
-        await master.page.exposeBinding('reportHistorySync', ({ source }, url) => {
+        await master.page.exposeBinding('reportNavigationSync', ({ source }, payload) => {
             if (source.frame === master.page.mainFrame()) {
-                logger.info(`[Master History Push] ${url}`);
-                this.registry.updateUrl(master.id, url);
-                this.scheduleSync(url);
+                logger.info(`[NavigationSynchronizer] Captured page_initiated navigation to ${payload.url} via ${payload.navType}`);
+                this.registry.updateUrl(master.id, payload.url);
+                this.lastPageInitiatedUrl = payload.url;
+                this.lastPageInitiatedTime = Date.now();
+                this.emitNavigation(payload.url, 'page_initiated', payload.navType);
             } else {
-                logger.warn(`[Security] Rejected reportHistorySync from cross-origin or child iframe: ${url}`);
+                logger.warn(`[Security] Rejected reportNavigationSync from cross-origin or child iframe: ${payload.url}`);
             }
         });
 
         const syncScript = `
-            const originalPushState = history.pushState;
-            history.pushState = function() {
-                originalPushState.apply(this, arguments);
-                if (window.reportHistorySync) window.reportHistorySync(location.href);
-            };
-            const originalReplaceState = history.replaceState;
-            history.replaceState = function() {
-                originalReplaceState.apply(this, arguments);
-                if (window.reportHistorySync) window.reportHistorySync(location.href);
-            };
-            window.addEventListener('popstate', () => {
-                if (window.reportHistorySync) window.reportHistorySync(location.href);
-            });
+            if (window.navigation) {
+                window.navigation.addEventListener('navigate', (event) => {
+                    if (window.reportNavigationSync) {
+                        window.reportNavigationSync({
+                            url: event.destination.url,
+                            navType: event.navigationType // 'push', 'replace', 'reload', 'traverse'
+                        });
+                    }
+                });
+            }
         `;
         
         await master.page.addInitScript(syncScript);
         await master.page.evaluate(syncScript).catch(err => logger.warn('Failed to immediately evaluate NavigationSynchronizer script: ' + err.message));
     }
 
-    /**
-     * Emits a Navigation Command for every distinct URL, in the order it
-     * was seen. Only suppresses an exact repeat of the immediately prior
-     * URL within dedupeWindowMs (the two-signals-one-navigation case) -
-     * it never collapses a sequence of different URLs down to the latest.
-     */
-    scheduleSync(url) {
+    emitNavigation(url, causality, navType) {
         const now = Date.now();
-        // Causal Deduplication: If a click happened very recently, the Slave's 
-        // simulated click will natively trigger the navigation. Drop this redundant command.
-        if (now - this.lastClickAt < 500) {
-            logger.info(`[Causal Deduplication] Dropping navigation command for ${url} because a click occurred ${now - this.lastClickAt}ms ago.`);
-            return;
+        
+        // SPEC-02: Deduplicate non-SPA navigations triggered by CLICK commands
+        if (this.actionDispatcher && causality === 'page_initiated' && (navType === 'push' || navType === 'replace')) {
+            const lastClick = this.actionDispatcher.getLastClickEmitTime();
+            if (now - lastClick < 200) {
+                // Task 1.5: Rate tracking
+                if (now - this.suppressionMetrics.windowStart > 60000) {
+                    logger.info(`[NavigationSynchronizer] Suppressed ${this.suppressionMetrics.count} duplicate navigations in the last minute.`);
+                    this.suppressionMetrics.count = 1;
+                    this.suppressionMetrics.windowStart = now;
+                } else {
+                    this.suppressionMetrics.count++;
+                }
+                logger.info(`[NavigationSynchronizer] Dropping duplicate navigation to ${url}. Deduped against recent CLICK.`);
+                return;
+            }
         }
-
-        if (url === this.lastQueuedUrl && (now - this.lastQueuedAt) < this.dedupeWindowMs) {
-            return;
-        }
-        this.lastQueuedUrl = url;
-        this.lastQueuedAt = now;
-
-        const master = this.registry.getMaster();
 
         this.emit('Command', new Command({
             category: 'Navigation',
             type: 'navigate',
-            payload: { url, captureTime: now },
+            payload: { url, captureTime: now, causality, navType },
             source: 'NavigationSynchronizer',
-            ges: null // Navigations bypass GES validation and execute immediately, but stall SequenceGate implicitly via DOM state
+            ges: null // Navigations bypass GES validation and execute immediately, stalling SequenceGate via DOM state
         }));
     }
 }
