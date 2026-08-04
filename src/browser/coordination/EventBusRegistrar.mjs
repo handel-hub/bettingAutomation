@@ -13,6 +13,7 @@ export class EventBusRegistrar {
         this.recoveryManager = deps.recoveryManager;
         this.navSync = deps.navSync;
         this.actionDispatcher = deps.actionDispatcher;
+        this.lifecycleManager = deps.lifecycleManager;
         this.commandReceiver = deps.commandReceiver;
         this.healthMonitor = deps.healthMonitor;
         this.syncRecoveryActionExecutor = deps.syncRecoveryActionExecutor;
@@ -31,10 +32,7 @@ export class EventBusRegistrar {
             
             logger.info(`[Broadcast] Command ${command.id} [${command.type}] | Latency (Capture->Broadcast): ${Date.now() - command.captureTime}ms | Lifecycle: ${lifecycle}${interactionLog}`);
             
-            if (command.type === 'CLICK' || command.type === 'click') {
-                this.navSync.recordClickTime(command.captureTime);
-            }
-            
+            // CLICK timestamp tracking is deprecated under Navigation API architecture            
             const targetBrowsers = this.targetResolver.resolve(command, logger);
 
             if (targetBrowsers.length === 0) {
@@ -161,6 +159,26 @@ export class EventBusRegistrar {
                 this.registry.updateState(id, 'Error');
             } else {
                 logger.debug(`[EventBusRegistrar] V3_DECOUPLE_HEALTH_MONITOR enabled: preserving ONLINE/READY state for [${id}] on ActionFailure.`);
+            }
+        });
+
+        // SPEC-03: Catch failover promotion and inject necessary master capabilities
+        this.registry.on('WORKER_FAILOVER', async ({ newMasterId, previousMasterId }) => {
+            logger.info(`[EventBusRegistrar] Handling failover promotion for ${newMasterId}`);
+            const newMaster = this.registry.getBrowser(newMasterId);
+            if (newMaster && newMaster.page) {
+                try {
+                    // Re-inject Stealth and Capability Providers
+                    await this.lifecycleManager.stealthEngine.injectAll(newMaster.page);
+                    // Task 3.6: Inject AOIS overlay capabilities
+                    if (this.simulator && this.simulator.injectOverlayScript) {
+                        await this.simulator.injectOverlayScript(newMaster.page);
+                    }
+                    // Re-inject ActionDispatcher capture listeners
+                    await this.actionDispatcher.injectMasterListeners(newMaster.page);
+                } catch (e) {
+                    logger.error(`[EventBusRegistrar] Failed to inject master scripts during failover: ${e.message}`);
+                }
             }
         });
     }

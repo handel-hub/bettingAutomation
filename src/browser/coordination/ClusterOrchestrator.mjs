@@ -145,4 +145,68 @@ export class ClusterOrchestrator {
             logger.error(`Error during shutdown: ${err.message}`);
         }
     }
+
+    // --- Observability & Worker Lifecycle Management ---
+    // Tracks the currently active command on each worker to prevent silent orphans
+
+    lease(browserId, command) {
+        if (!this.activeCommands) this.activeCommands = new Map();
+        this.activeCommands.set(browserId, command);
+        
+        // Emit WORKER_ASSIGNED
+        import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+            observabilityCollector.emitTransition({
+                commandId: command.id || command.commandId,
+                traceId: command.traceId || null,
+                interactionId: command.interactionId || null,
+                prevState: 'IDLE', // or WAITING
+                newState: 'BUSY',
+                eventName: 'WORKER_ASSIGNED',
+                owner: 'ClusterOrchestrator',
+                browserId: browserId
+            });
+        }).catch(() => {});
+    }
+
+    release(browserId) {
+        if (!this.activeCommands) this.activeCommands = new Map();
+        const command = this.activeCommands.get(browserId);
+        if (command) {
+            this.activeCommands.delete(browserId);
+            import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                observabilityCollector.emitTransition({
+                    commandId: command.id || command.commandId,
+                    traceId: command.traceId || null,
+                    interactionId: command.interactionId || null,
+                    prevState: 'BUSY',
+                    newState: 'RETURNED',
+                    eventName: 'WORKER_RELEASED',
+                    owner: 'ClusterOrchestrator',
+                    browserId: browserId
+                });
+            }).catch(() => {});
+        }
+    }
+
+    handleWorkerFailure(browserId, reason) {
+        if (!this.activeCommands) this.activeCommands = new Map();
+        const command = this.activeCommands.get(browserId);
+        if (command) {
+            this.activeCommands.delete(browserId);
+            logger.error(`[ClusterOrchestrator] Worker ${browserId} failed mid-execution. Orphaned command: ${command.id}`);
+            import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                observabilityCollector.emitTransition({
+                    commandId: command.id || command.commandId,
+                    traceId: command.traceId || null,
+                    interactionId: command.interactionId || null,
+                    prevState: 'BUSY',
+                    newState: 'FAILED',
+                    eventName: 'COMMAND_ORPHANED',
+                    owner: 'ClusterOrchestrator',
+                    browserId: browserId,
+                    metadata: { reason }
+                });
+            }).catch(() => {});
+        }
+    }
 }

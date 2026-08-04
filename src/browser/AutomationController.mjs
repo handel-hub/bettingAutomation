@@ -52,7 +52,8 @@ export class AutomationController {
 
         this.lifecycleManager = new BrowserLifecycleManager(this.registry, this.capabilityRegistry, settings, stealthEngine);
         this.sessionManager = new SessionManager(this.registry);
-        this.navSync = new NavigationSynchronizer(this.registry);
+        this.actionDispatcher = new ActionDispatcher(settings, this.registry);
+        this.navSync = new NavigationSynchronizer(this.registry, this.actionDispatcher);
         this.healthMonitor = new HealthMonitor(this.registry);
 
         // --- Initialize Execution Subsystem ---
@@ -60,7 +61,6 @@ export class AutomationController {
         this.simulator = new ActionSimulator();
         this.scheduler = new ExecutionScheduler(this.simulator, this.registry, this.syncManager);
         this.macroEngine = new MacroEngine(this.simulator, this.scheduler);
-        this.actionDispatcher = new ActionDispatcher(settings, this.registry);
         this.lockManager = new AccountLockManager();
         this.workflowEngine = new WorkflowEngine(this.lockManager, this.registry);
 
@@ -108,7 +108,10 @@ export class AutomationController {
             commandReceiver: this.commandReceiver,
             healthMonitor: this.healthMonitor,
             syncRecoveryActionExecutor: this.syncRecoveryActionExecutor,
-            simulator: this.simulator
+            stealthEngine: this.stealthEngine,
+            capabilityRegistry: this.capabilityRegistry,
+            lifecycleManager: this.lifecycleManager,
+            actionSimulator: this.simulator
         });
 
         this.clusterOrchestrator = new ClusterOrchestrator({
