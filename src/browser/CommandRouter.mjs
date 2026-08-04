@@ -6,6 +6,7 @@ import { TelemetryCollector } from './execution/locatorIntelligence/telemetry/Te
 import { ContractViolationError } from './execution/errors.mjs';
 import { EventEmitter } from 'node:events';
 import { attachCommandRouterAdapter } from '../rkp/integration/CommandRouterAdapter.mjs';
+import { observabilityCollector } from './telemetry/ObservabilityCollector.mjs';
 
 /**
  * Authoritative Ingress Gateway for routing IPC/WebSocket command payloads.
@@ -132,7 +133,7 @@ export class CommandRouter extends EventEmitter {
     async route(rawCommand, headers = null) {
         this._metrics.received++;
 
-        const command = this._parsePayload(rawCommand);
+        let command = this._parsePayload(rawCommand);
         if (!command || typeof command !== 'object') {
             this._metrics.rejected++;
             const errorMsg = '[LF-701] Ingress Contract Violation: Malformed JSON or non-object payload';
@@ -153,6 +154,20 @@ export class CommandRouter extends EventEmitter {
             logger.warn('Received invalid command object without category or type');
             this.emit('rejected', { command, reason: 'Missing category and type', headers });
             return false;
+        }
+
+        if (!Object.isExtensible(command)) {
+            command = { ...command };
+        }
+
+        if (!command.id && !command.commandId) {
+            command.id = (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+        }
+        if (!command.commandId) {
+            command.commandId = command.id;
+        }
+        if (!command.traceId) {
+            command.traceId = (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).substring(2);
         }
 
         // v3 Ingress Contract Gating
@@ -185,7 +200,7 @@ export class CommandRouter extends EventEmitter {
         const allHandlers = [...exactHandlers, ...wildcardHandlers];
 
         if (allHandlers.length === 0) {
-            logger.debug(`No handlers registered for command [${category} : ${command.type}]`);
+            logger.error(`[Telemetry] {"event":"UNHANDLED_COMMAND_DROPPED","commandId":"${command.id}","category":"${category}","type":"${command.type}"}`);
             return false;
         }
 
@@ -197,6 +212,16 @@ export class CommandRouter extends EventEmitter {
             protocolVersion,
             handlers: allHandlers.length,
             headers
+        });
+        
+        observabilityCollector.emitTransition({
+            commandId: command.id || command.commandId,
+            traceId: command.traceId,
+            interactionId: command.interactionId || null,
+            prevState: 'NORMALIZED',
+            newState: 'ROUTED',
+            eventName: 'COMMAND_ROUTED',
+            owner: 'CommandRouter'
         });
 
         const promises = allHandlers.map(async (handler) => {

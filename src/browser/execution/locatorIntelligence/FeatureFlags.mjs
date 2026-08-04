@@ -22,7 +22,12 @@ export class FeatureFlagsRegistry {
             SCENE_GRAPH_ENABLED: { default: false, dependsOn: [], description: 'Enable Scene Graph indexing and query planner in Slave browser' },
             INFERENCE_ENGINE_V2: { default: false, dependsOn: [], description: 'Route resolution through multiplicative InferenceEngine' },
             LI_INFERENCE_ENGINE_V2: { default: false, dependsOn: [], description: 'Route resolution through multiplicative InferenceEngine (alias)' },
-            enableSportyBetConfirmationClassifier: { default: false, dependsOn: [], description: 'V1 Technical Debt: Enable SportyBet specific classification for confirmations' }
+            enableSportyBetConfirmationClassifier: { default: false, dependsOn: [], description: 'V1 Technical Debt: Enable SportyBet specific classification for confirmations' },
+            FEATURE_TRACE_SCHEDULER: { default: true, dependsOn: [], description: 'Enable ExecutionScheduler telemetry transitions' },
+            FEATURE_TRACE_BARRIER: { default: true, dependsOn: [], description: 'Enable SynchronizationBarrier telemetry transitions' },
+            FEATURE_TRACE_SIMULATOR: { default: true, dependsOn: [], description: 'Enable ActionSimulator telemetry transitions' },
+            FEATURE_TRACE_PLAYWRIGHT: { default: true, dependsOn: [], description: 'Enable Playwright layer telemetry transitions' },
+            FEATURE_TRACE_CDP_NETWORK: { default: false, dependsOn: [], description: 'Enable verbose CDP network interception for Playwright' }
         };
         this.init();
     }

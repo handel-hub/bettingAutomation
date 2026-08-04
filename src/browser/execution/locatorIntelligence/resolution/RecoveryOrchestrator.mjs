@@ -46,7 +46,7 @@ export class RecoveryOrchestrator {
         const l1Deadline = Math.min(startTime + 500, hardDeadline);
         const l1Result = await this._executeL1(resolveFn, l1Deadline, state);
         if (l1Result.success) {
-            TelemetryCollector.recordRecovery(1);
+            TelemetryCollector.recordRecovery(1, options);
             return new RecoveryOutcome({
                 status: 'RESOLVED',
                 result: l1Result.result,
@@ -81,7 +81,7 @@ export class RecoveryOrchestrator {
         }
 
         if (l2Result.success) {
-            TelemetryCollector.recordRecovery(2);
+            TelemetryCollector.recordRecovery(2, options);
             return new RecoveryOutcome({
                 status: 'RESOLVED',
                 result: l2Result.result,
@@ -97,7 +97,7 @@ export class RecoveryOrchestrator {
         // L3: Skip
         if (this._isSkippable(interactionType)) {
             state.history.push({ level: 'L3', error: 'Skipped', duration: 0 });
-            TelemetryCollector.recordRecovery(3);
+            TelemetryCollector.recordRecovery(3, options);
             return new RecoveryOutcome({
                 status: 'SKIPPED',
                 result: null,
@@ -113,7 +113,7 @@ export class RecoveryOrchestrator {
         const l35Deadline = Math.min(Date.now() + 500, hardDeadline);
         const l35Result = await this._executeL3_5(page, l35Deadline, state, options);
         if (l35Result.success) {
-            TelemetryCollector.recordRecovery('3.5');
+            TelemetryCollector.recordRecovery('3.5', options);
             return new RecoveryOutcome({
                 status: 'RESOLVED',
                 result: l35Result.result,

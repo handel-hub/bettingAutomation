@@ -100,15 +100,14 @@ export class BatchResolver {
         const candMap = new Map();
         if (candidates && Array.isArray(candidates)) {
             for (const c of candidates) {
-                if (c && typeof c === 'object') {
-                    if (c.id) candMap.set(c.id, c);
-                    if (c.locator) candMap.set(c.locator, c);
+                if (c && typeof c === 'object' && c.id) {
+                    candMap.set(c.id, c);
                 }
             }
         }
 
         for (const res of (batchResult?.results || [])) {
-            const originalCand = candMap.get(res.candidateId) || candMap.get(res.locator);
+            const originalCand = candMap.get(res.candidateId);
             const item = {
                 candidateId: res.candidateId,
                 locator: res.locator,

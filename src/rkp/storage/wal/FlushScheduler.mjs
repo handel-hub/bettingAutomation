@@ -1,3 +1,5 @@
+import { logger } from '../../../config.mjs';
+
 /**
  * Decides when to flush facts from the RuntimeLedger to the WAL.
  * Operates entirely outside the critical hot path.
@@ -72,7 +74,7 @@ export class FlushScheduler {
     try {
       await this.worker.processAndFlush();
     } catch (err) {
-      console.error('WAL Flush Error:', err);
+      logger.error({ err }, 'WAL Flush Error');
     } finally {
       this.isFlushing = false;
     }

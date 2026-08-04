@@ -32,6 +32,8 @@ export class RecoveryCoordinator {
             escalateTo = null;
         }
 
+        logger.info(`[Telemetry] {"event":"RECOVERY_STRATEGY_SELECTED","attempts":${attempts},"strategy":"${strategy}","consistencyScore":${snapshot.consistency}}`);
+
         return new RecoveryPlan({
             strategy,
             targets: [failedCapability],

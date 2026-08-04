@@ -15,6 +15,27 @@ export class SynchronizationBarrier {
 
         const startTime = Date.now();
         executionContext.addTrace('BarrierWaitStarted');
+        
+        try {
+            if (executionContext && executionContext.command) {
+                const c = executionContext.command;
+                import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                    observabilityCollector.emitTransition({
+                        commandId: c.id || c.commandId,
+                        traceId: c.traceId,
+                        interactionId: c.interactionId || null,
+                        prevState: 'EXECUTING', // or ASSIGNED depending on prior step
+                        newState: 'WAITING_BARRIER',
+                        eventName: 'BARRIER_ENTERED',
+                        owner: 'SynchronizationBarrier',
+                        browserId: browserId,
+                        metadata: { expectedCapabilities: capabilities }
+                    });
+                }).catch(() => {});
+            }
+        } catch (e) {
+            logger.warn(`[SynchronizationBarrier] WAITING_BARRIER Telemetry emission failed: ${e.message}`);
+        }
 
         let recoveryAttempts = 0;
         const maxRecoveryAttempts = syncContext.context?.maxRecoveryAttempts ?? 2;
@@ -44,6 +65,35 @@ export class SynchronizationBarrier {
 
             if (syncManager.telemetry) {
                 syncManager.telemetry.recordBarrier(elapsed, resultStatus === 'PASSED');
+            }
+
+            try {
+                if (executionContext && executionContext.command) {
+                    const c = executionContext.command;
+                    let newState = 'UNKNOWN';
+                    let eventName = 'UNKNOWN';
+                    if (resultStatus === 'PASSED') { newState = 'BARRIER_PASSED'; eventName = 'BARRIER_PASSED'; }
+                    else if (resultStatus === 'TIMEOUT') { newState = 'BARRIER_TIMEOUT'; eventName = 'BARRIER_TIMEOUT'; }
+                    else if (resultStatus === 'RECOVERING') { newState = 'RECOVERING'; eventName = 'BARRIER_RECOVERING'; }
+                    else { newState = 'BARRIER_FAILED'; eventName = 'BARRIER_FAILED'; }
+                    
+                    import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                        observabilityCollector.emitTransition({
+                            commandId: c.id || c.commandId,
+                            traceId: c.traceId,
+                            interactionId: c.interactionId || null,
+                            prevState: 'WAITING_BARRIER',
+                            newState: newState,
+                            eventName: eventName,
+                            owner: 'SynchronizationBarrier',
+                            browserId: browserId,
+                            metadata: { elapsed, blockingCapability: managerResult.blockingCapability }
+                        });
+                    }).catch(() => {});
+                }
+            } catch (e) {
+                // strict try/catch to prevent deadlocks
+                logger.warn(`[SynchronizationBarrier] Telemetry emission failed: ${e.message}`);
             }
 
             return {

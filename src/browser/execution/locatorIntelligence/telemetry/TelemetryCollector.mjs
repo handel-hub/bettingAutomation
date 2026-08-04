@@ -161,8 +161,9 @@ class TelemetryCollectorImpl {
     /**
      * Records telemetry from the LocatorResolver.
      * @param {ResolutionResult} resolutionResult
+     * @param {object} [contextOptions]
      */
-    recordResolution(resolutionResult) {
+    recordResolution(resolutionResult, contextOptions = {}) {
         try {
             if (!resolutionResult) return;
             
@@ -197,16 +198,11 @@ class TelemetryCollectorImpl {
             // Record strategy failures
             if (resolutionResult.telemetry) {
                 for (const ctx of resolutionResult.telemetry) {
-                    // ctx is either a stripped object `{ rank, attempts, state }` or full `ResolutionContext`
-                    // We only count strategies that were exhausted or had terminal failures as failed.
                     if (ctx.state === 'EXHAUSTED' || ctx.state === 'TERMINAL_FAILURE') {
-                        // We need the strategy name, full context has candidate.strategy.
                         const strategyName = ctx.candidate?.strategy || ctx.strategy;
                         if (strategyName) {
                             this.registry.recordStrategyResult(strategyName, false);
                         }
-                        
-                        // Count LF codes from failures
                         if (ctx.lastFailure?.code) {
                             this.registry.recordFailureCode(ctx.lastFailure.code);
                         } else if (ctx.failureHistory && ctx.failureHistory.length > 0) {
@@ -216,6 +212,28 @@ class TelemetryCollectorImpl {
                     }
                 }
             }
+
+            this.recordLifecycleEvent({
+                traceId: contextOptions.traceId || 'tr-unknown',
+                spanId: 'sp-16-' + Math.random().toString(16).slice(2, 6),
+                parentSpanId: contextOptions.parentSpanId || null,
+                stageSequence: 16,
+                stageName: 'LI_RESOLUTION_COMPLETED',
+                component: 'LocatorResolver.mjs',
+                method: 'resolve',
+                interactionType: contextOptions.interactionType || 'UNKNOWN',
+                stageDurationMs: resolutionResult.duration || 0,
+                validationResult: resolutionResult.success ? 'PASS' : 'FAIL_RESOLUTION',
+                decisionTrace: {
+                    finalStatus: resolutionResult.success ? 'PASS' : 'FAIL',
+                    candidateEvaluatedCount: resolutionResult.totalCandidates || 0,
+                    resolvedStrategyName: resolutionResult.winningStrategy || null,
+                    resolvedElementHash: resolutionResult.winningCandidate?.identityHash || null,
+                    cacheHit: resolutionResult.winningCandidate?.isFromMemory === true,
+                    fallbackSequenceInvoked: (resolutionResult.resolutionCycles > 1 || (resolutionResult.exhaustedCandidates > 0)),
+                    failureReason: resolutionResult.failureReason || null
+                }
+            });
         } catch (e) {
             // Passive
         }
@@ -284,15 +302,34 @@ class TelemetryCollectorImpl {
 
     /**
      * Records telemetry from RecoveryOrchestrator.
+     * @param {string|number} level - Recovery level (e.g. 1, 2, '3.5')
+     * @param {object} [contextOptions] - Optional context for trace headers
      */
-    recordRecovery(level) {
+    recordRecovery(level, contextOptions = {}) {
         try {
-            const levelKey = `L${level}`;
-            const keyMap = { 'L1': 'L1_RETRY', 'L2': 'L2_WAIT', 'L3': 'L3_SKIP', 'L4': 'L4_RELOAD' };
-            const mapped = keyMap[levelKey];
+            const levelKey = typeof level === 'number' ? `L${level}` : (String(level).startsWith('L') ? String(level) : `L${level}`);
+            const keyMap = { 'L1': 'L1_RETRY', 'L2': 'L2_WAIT', 'L3': 'L3_SKIP', 'L3.5': 'L3.5_SEMANTIC', 'L4': 'L4_RELOAD' };
+            const mapped = keyMap[levelKey] || levelKey;
             if (mapped && this.registry.recovery[mapped] !== undefined) {
                 this.registry.recovery[mapped]++;
             }
+
+            this.recordLifecycleEvent({
+                traceId: contextOptions.traceId || 'tr-unknown',
+                spanId: 'sp-rec-' + Math.random().toString(16).slice(2, 6),
+                parentSpanId: contextOptions.parentSpanId || null,
+                stageSequence: 15,
+                stageName: 'LI_RECOVERY_HIERARCHY_ACTIVATED',
+                component: 'RecoveryOrchestrator.mjs',
+                method: 'orchestrate',
+                interactionType: contextOptions.interactionType || 'UNKNOWN',
+                validationResult: 'PASS',
+                errorDetails: {
+                    level: levelKey,
+                    triggerReason: contextOptions.triggerReason || 'Resolution Failed',
+                    candidatesFound: contextOptions.candidatesFound || 0
+                }
+            });
         } catch (e) {}
     }
 
@@ -332,13 +369,36 @@ class TelemetryCollectorImpl {
 
     /**
      * Records telemetry from the ConfidenceGate.
-     * @param {object} decision - ConfidenceDecision object
+     * @param {object|string} decision - ConfidenceDecision object or string
+     * @param {object} [contextOptions] - Optional context for trace headers
      */
-    recordConfidenceGateDecision(decision) {
+    recordConfidenceGateDecision(decision, contextOptions = {}) {
         try {
-            if (!decision || !decision.decision) return;
-            if (this.registry.confidence && this.registry.confidence[decision.decision] !== undefined) {
-                this.registry.confidence[decision.decision]++;
+            if (!decision) return;
+            const decStr = typeof decision === 'object' ? decision.decision : decision;
+            if (this.registry.confidence && this.registry.confidence[decStr] !== undefined) {
+                this.registry.confidence[decStr]++;
+            }
+
+            if (typeof decision === 'object') {
+                this.recordLifecycleEvent({
+                    traceId: contextOptions.traceId || 'tr-unknown',
+                    spanId: 'sp-14-' + Math.random().toString(16).slice(2, 6),
+                    parentSpanId: contextOptions.parentSpanId || null,
+                    stageSequence: 14,
+                    stageName: 'LI_CONFIDENCE_GATE_EVALUATED',
+                    component: 'ConfidenceGate.mjs',
+                    method: 'evaluate',
+                    interactionType: decision.interactionType || 'UNKNOWN',
+                    validationResult: decStr === 'ACCEPT' || decStr === 'TENTATIVE' ? 'PASS' : 'FAIL_CONFIDENCE',
+                    errorDetails: {
+                        thresholdApplied: decision.thresholdApplied,
+                        margin: decision.margin,
+                        confidence: decision.confidence,
+                        decision: decision.decision,
+                        reason: decision.reason
+                    }
+                });
             }
         } catch (e) {
             // Passive
@@ -583,7 +643,8 @@ class TelemetryCollectorImpl {
                 serializationSize: typeof event.serializationSize === 'number' ? event.serializationSize : 0,
                 validationResult: event.validationResult || 'PASS',
                 stageDurationMs: typeof event.stageDurationMs === 'number' ? event.stageDurationMs : 0,
-                errorDetails: event.errorDetails || null
+                errorDetails: event.errorDetails || null,
+                decisionTrace: event.decisionTrace || null
             };
 
             // PII Scrubbing on string properties

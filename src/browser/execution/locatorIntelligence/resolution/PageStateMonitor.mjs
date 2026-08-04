@@ -1,3 +1,5 @@
+import { logger } from '../../../../config.mjs';
+
 export class PageStateMonitor {
     constructor() {
         this.pageStates = new Map();
@@ -36,7 +38,7 @@ export class PageStateMonitor {
             });
         } catch (e) {
             // Page might be closed or navigating
-            console.warn(`[PageStateMonitor] Failed to attach: ${e.message}`);
+            logger.warn({ err: e }, `[PageStateMonitor] Failed to attach: ${e.message}`);
         }
     }
 

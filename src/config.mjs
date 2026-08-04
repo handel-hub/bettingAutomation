@@ -12,14 +12,25 @@ import { globalRecorder } from './rkp/RuntimeKnowledgePlatform.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
+const envResult = dotenv.config({ path: path.join(__dirname, '..', '.env'), quiet: true });
 
 export const logger = pino({
     transport: {
-        target: 'pino-pretty',
-        options: {
-            colorize: true
-        }
+        targets: [
+            {
+                target: 'pino-pretty',
+                options: {
+                    colorize: true
+                }
+            },
+            {
+                target: 'pino/file',
+                options: {
+                    destination: './logs/app.log',
+                    mkdir: true
+                }
+            }
+        ]
     },
     hooks: {
         logMethod(inputArgs, method, level) {
@@ -65,6 +76,10 @@ export const logger = pino({
         }
     }
 });
+
+if (envResult && envResult.parsed) {
+    logger.info(`Injected env (${Object.keys(envResult.parsed).length}) from .env`);
+}
 
 export async function loadConfig() {
     try {

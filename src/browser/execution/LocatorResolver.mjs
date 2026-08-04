@@ -53,10 +53,45 @@ export class ResolutionResult {
 }
 
 export class LocatorResolver {
+    static _emitDecisionTrace(options, verifyResult, candidateLocator, candidateStrategy, isVisible, interactionType) {
+        if (!options || !options.interactionId) return;
+        const sim = verifyResult.similarity || {};
+        const dims = sim.dimensions || {};
+        const trace = {
+            locator: candidateLocator,
+            strategy: candidateStrategy,
+            finalScore: sim.overallScore || 0,
+            textSimilarity: dims.textMatch || dims.textSimilarity || 0,
+            ancestorSimilarity: dims.hierarchyMatch || dims.ancestrySimilarity || 0,
+            attributeSimilarity: dims.attributeMatch || dims.dataAttributeMatch || 0,
+            structuralSimilarity: dims.tagMatch || 0,
+            positionSimilarity: dims.positionMatch || dims.positionProximity || 0,
+            visibilityScore: isVisible ? 1.0 : 0.0,
+            penalties: sim.rejectionReasons || [],
+            bonuses: []
+        };
+        TelemetryCollector.recordLifecycleEvent({
+            traceId: options.traceId || 'tr-unknown',
+            spanId: 'sp-eval-' + Math.random().toString(16).slice(2, 6),
+            parentSpanId: 'sp-13-' + (options.browserId || 'unknown').slice(0, 4),
+            stageSequence: 13,
+            stageName: 'LI_CANDIDATE_EVALUATED',
+            component: 'LocatorResolver.mjs',
+            method: 'resolve',
+            browserId: options.browserId || 'slave',
+            interactionId: options.interactionId || 'ia-unknown',
+            commandId: options.commandId || null,
+            interactionType,
+            validationResult: verifyResult.verified ? 'PASS' : 'FAIL_VERIFICATION',
+            decisionTrace: trace
+        });
+    }
+
     /**
      * Resolves the safest actionable locator from a list of candidates using an Adaptive Decision Engine.
      */
     static async resolve(page, candidates, interactionType, policy = DefaultPolicy, options = {}) {
+        const cmdId = options.commandId || 'unknown';
         const resStart = Date.now();
         if (!options.disableMemoization && options.executionContext && options.executionContext.memoizedResolution) {
             const context = options.executionContext;
@@ -78,10 +113,10 @@ export class LocatorResolver {
                     isConnected = false;
                 }
                 if (isConnected) {
-                    logger.info(`[LocatorResolver] Lifecycle memoization hit for command ${cmdId}`);
+                    logger.info(`[LocatorResolver] [Cmd: ${cmdId}] Lifecycle memoization hit for command ${cmdId}`);
                     return memo.resolutionOutcome;
                 } else {
-                    logger.info(`[LocatorResolver] Memoized handle detached from DOM; evicting cache.`);
+                    logger.info(`[LocatorResolver] [Cmd: ${cmdId}] Memoized handle detached from DOM; evicting cache.`);
                     context.memoizedResolution = null;
                 }
             }
@@ -172,6 +207,7 @@ export class LocatorResolver {
     }
 
     static async _resolveInternal(page, candidates, interactionType, policy = DefaultPolicy, options = {}) {
+        const cmdId = options.commandId || 'unknown';
         if (!policy || typeof policy.getRetryBudget !== 'function') {
             policy = new ResolutionPolicy(policy || {});
         }
@@ -244,15 +280,21 @@ export class LocatorResolver {
             let urlPathname = '';
             try { urlPathname = new URL(page.url()).pathname; } catch (e) {}
 
-            let candidatesToEvaluate = [...candidates];
+            let candidatesToEvaluate = candidates.map((c, idx) => {
+                if (c && typeof c === 'object' && !c.id) {
+                    return { ...c, id: `cand-${idx}` };
+                }
+                return c;
+            });
             let cacheHit = null;
 
             if (featureFlags.isEnabled('LI_RESOLUTION_MEMORY') && originalEID && originalEID.identityHash && urlPathname) {
                 cacheHit = resolutionMemory.recall(urlPathname, originalEID.identityHash);
                 if (cacheHit) {
-                    logger.info(`[LocatorResolver] ResolutionMemory hit for ${originalEID.identityHash} [${cacheHit.strategyName}]`);
+                    logger.info(`[LocatorResolver] [Cmd: ${cmdId}] ResolutionMemory hit for ${originalEID.identityHash} [${cacheHit.strategyName}]`);
                     candidatesToEvaluate = [
                         {
+                            id: `cache-${originalEID.identityHash}`,
                             locator: cacheHit.locator,
                             strategy: cacheHit.strategyName,
                             rank: 0,
@@ -289,7 +331,7 @@ export class LocatorResolver {
                         return null;
                     }, originalEID);
                 } catch (e) {
-                    logger.warn(`[LocatorResolver] SceneGraph query failed: ${e.message}`);
+                    logger.warn(`[LocatorResolver] [Cmd: ${cmdId}] SceneGraph query failed: ${e.message}`);
                 }
 
                 if (sgResults && sgResults.length > 0) {
@@ -300,8 +342,9 @@ export class LocatorResolver {
                         let similarity = null;
                         if (featureFlags.isEnabled('LI_VERIFICATION')) {
                             const verifyResult = await verificationEngine.verify(page, item.locator, originalEID);
+                            LocatorResolver._emitDecisionTrace(options, verifyResult, item.locator, item.strategy || 'scene-graph', item.visible, interactionType);
                             if (!verifyResult.verified) {
-                                logger.warn(`[LocatorResolver] Verification failed for SceneGraph locator [${item.locator}]: ${verifyResult.reason}`);
+                                logger.warn(`[LocatorResolver] [Cmd: ${cmdId}] Verification failed for SceneGraph locator [${item.locator}]: ${verifyResult.reason}`);
                                 continue;
                             }
                             similarity = verifyResult.similarity;
@@ -390,7 +433,7 @@ export class LocatorResolver {
                                 exhaustedCandidates: 0,
                                 telemetry: []
                             });
-                            TelemetryCollector.recordResolution(result);
+                            TelemetryCollector.recordResolution(result, options);
                             return result;
                         }
                     } catch (e) {
@@ -420,10 +463,11 @@ export class LocatorResolver {
                     let similarity = null;
                     if (featureFlags.isEnabled('LI_VERIFICATION')) {
                         const verifyResult = await verificationEngine.verify(page, item.locator, originalEID);
+                        LocatorResolver._emitDecisionTrace(options, verifyResult, item.locator, item.strategy, item.visible, interactionType);
                         if (!verifyResult.verified) {
-                            logger.warn(`[LocatorResolver] Verification failed for [${item.locator}]: ${verifyResult.reason}`);
+                            logger.warn(`[LocatorResolver] [Cmd: ${cmdId}] Verification failed for [${item.locator}]: ${verifyResult.reason}`);
                             if (item.candidate && item.candidate.isFromMemory && urlPathname && originalEID) {
-                                logger.info(`[LocatorResolver] Evicting stale cache entry for ${originalEID.identityHash}`);
+                                logger.info(`[LocatorResolver] [Cmd: ${cmdId}] Evicting stale cache entry for ${originalEID.identityHash}`);
                                 resolutionMemory.evict(urlPathname, originalEID.identityHash);
                             }
                             continue;
@@ -452,19 +496,19 @@ export class LocatorResolver {
                         const gateDecision = confidenceGate.evaluate(confToEval, interactionType);
                         TelemetryCollector.recordConfidenceGateDecision(gateDecision);
                         if (gateDecision.decision === 'REJECT') {
-                            logger.warn(`[LocatorResolver] ConfidenceGate rejected [${item.locator}]: ${gateDecision.reason}`);
+                            logger.warn(`[LocatorResolver] [Cmd: ${cmdId}] ConfidenceGate rejected [${item.locator}]: ${gateDecision.reason}`);
                             throw new ConfidenceGateRejectionError(gateDecision.reason);
                         }
                         if (gateDecision.decision === 'RECOVER') {
-                            logger.warn(`[LocatorResolver] ConfidenceGate RECOVER for [${item.locator}]: ${gateDecision.reason}`);
+                            logger.warn(`[LocatorResolver] [Cmd: ${cmdId}] ConfidenceGate RECOVER for [${item.locator}]: ${gateDecision.reason}`);
                             throw new Error(`[LF-302] Recoverable Confidence Miss: ${gateDecision.reason}`);
                         }
                         if (gateDecision.decision === 'TENTATIVE') {
-                            logger.warn(`[LocatorResolver] ConfidenceGate TENTATIVE for [${item.locator}]: ${gateDecision.reason}`);
+                            logger.warn(`[LocatorResolver] [Cmd: ${cmdId}] ConfidenceGate TENTATIVE for [${item.locator}]: ${gateDecision.reason}`);
                         }
                     }
 
-                    logger.info(`[LocatorResolver] Batch resolved in ${duration}ms using [${winningStrategy}]`);
+                    logger.info(`[LocatorResolver] [Cmd: ${cmdId}] Batch resolved in ${duration}ms using [${winningStrategy}]`);
                     
                     if (featureFlags.isEnabled('LI_RESOLUTION_MEMORY') && originalEID && originalEID.identityHash && urlPathname) {
                         resolutionMemory.remember(urlPathname, originalEID.identityHash, winningStrategy, item.locator, winningScore);
@@ -487,7 +531,7 @@ export class LocatorResolver {
                         exhaustedCandidates: 0,
                         telemetry: []
                     });
-                    TelemetryCollector.recordResolution(result);
+                    TelemetryCollector.recordResolution(result, options);
                     return result;
                 }
 
@@ -514,19 +558,19 @@ export class LocatorResolver {
                                 const gateDecision = confidenceGate.evaluate(confToEval, interactionType);
                                 TelemetryCollector.recordConfidenceGateDecision(gateDecision);
                                 if (gateDecision.decision === 'REJECT') {
-                                    logger.warn(`[LocatorResolver] ConfidenceGate rejected [${item.locator}]: ${gateDecision.reason}`);
+                                    logger.warn(`[LocatorResolver] [Cmd: ${cmdId}] ConfidenceGate rejected [${item.locator}]: ${gateDecision.reason}`);
                                     throw new ConfidenceGateRejectionError(gateDecision.reason);
                                 }
                                 if (gateDecision.decision === 'RECOVER') {
-                                    logger.warn(`[LocatorResolver] ConfidenceGate RECOVER for [${item.locator}]: ${gateDecision.reason}`);
+                                    logger.warn(`[LocatorResolver] [Cmd: ${cmdId}] ConfidenceGate RECOVER for [${item.locator}]: ${gateDecision.reason}`);
                                     throw new Error(`[LF-302] Recoverable Confidence Miss: ${gateDecision.reason}`);
                                 }
                                 if (gateDecision.decision === 'TENTATIVE') {
-                                    logger.warn(`[LocatorResolver] ConfidenceGate TENTATIVE for [${item.locator}]: ${gateDecision.reason}`);
+                                    logger.warn(`[LocatorResolver] [Cmd: ${cmdId}] ConfidenceGate TENTATIVE for [${item.locator}]: ${gateDecision.reason}`);
                                 }
                             }
 
-                            logger.info(`[LocatorResolver] Disambiguated in ${duration}ms using [${winningStrategy}] (index ${disambigResult.elementIndex})`);
+                            logger.info(`[LocatorResolver] [Cmd: ${cmdId}] Disambiguated in ${duration}ms using [${winningStrategy}] (index ${disambigResult.elementIndex})`);
                             const result = new ResolutionResult({
                                 success: true,
                                 playwrightLocator: locator,
@@ -543,10 +587,10 @@ export class LocatorResolver {
                                 exhaustedCandidates: 0,
                                 telemetry: []
                             });
-                            TelemetryCollector.recordResolution(result);
+                            TelemetryCollector.recordResolution(result, options);
                             return result;
                         } else {
-                            logger.warn(`[LocatorResolver] Disambiguation failed for [${item.locator}]: ${disambigResult.error}`);
+                            logger.warn(`[LocatorResolver] [Cmd: ${cmdId}] Disambiguation failed for [${item.locator}]: ${disambigResult.error}`);
                             continue;
                         }
                     } else {
@@ -556,7 +600,7 @@ export class LocatorResolver {
 
                 const duration = Date.now() - startTime;
                 const failureReason = `[LF-505] All Candidates Exhausted in Batch Resolution (${duration}ms)`;
-                logger.warn(`[LocatorResolver] ${failureReason}`);
+                logger.warn(`[LocatorResolver] [Cmd: ${cmdId}] ${failureReason}`);
                 throw new Error(failureReason);
             }
         }
@@ -571,7 +615,7 @@ export class LocatorResolver {
             if (activeContexts.length === 0) {
                 const duration = Date.now() - startTime;
                 const failureReason = `[LF-505] All Candidates Exhausted (${duration}ms)\n${this._formatTelemetry(contexts, policy)}`;
-                logger.warn(`[LocatorResolver] ${failureReason}`);
+                logger.warn(`[LocatorResolver] [Cmd: ${cmdId}] ${failureReason}`);
                 throw new Error("All Candidates Exhausted");
             }
             
@@ -606,6 +650,7 @@ export class LocatorResolver {
                         } else {
                             if (featureFlags.isEnabled('LI_VERIFICATION')) {
                                 const verifyResult = await verificationEngine.verify(page, ctx.candidate.locator, originalEID);
+                                LocatorResolver._emitDecisionTrace(options, verifyResult, ctx.candidate.locator, ctx.candidate.strategy, profile.includes('visible') ? true : null, interactionType);
                                 if (!verifyResult.verified) {
                                     throw new NotAttachedError(`Verification failed: ${verifyResult.reason}`);
                                 }
@@ -635,22 +680,35 @@ export class LocatorResolver {
                         const gateDecision = confidenceGate.evaluate(confToEval, interactionType);
                         TelemetryCollector.recordConfidenceGateDecision(gateDecision);
                         if (gateDecision.decision === 'REJECT') {
-                            logger.warn(`[LocatorResolver] ConfidenceGate rejected [${ctx.candidate.locator}]: ${gateDecision.reason}`);
+                            logger.warn(`[LocatorResolver] [Cmd: ${cmdId}] ConfidenceGate rejected [${ctx.candidate.locator}]: ${gateDecision.reason}`);
                             throw new ConfidenceGateRejectionError(gateDecision.reason);
                         }
                         if (gateDecision.decision === 'RECOVER') {
-                            logger.warn(`[LocatorResolver] ConfidenceGate RECOVER for [${ctx.candidate.locator}]: ${gateDecision.reason}`);
+                            logger.warn(`[LocatorResolver] [Cmd: ${cmdId}] ConfidenceGate RECOVER for [${ctx.candidate.locator}]: ${gateDecision.reason}`);
+                            import('./locatorIntelligence/telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                                observabilityCollector.emitTransition({
+                                    commandId: cmdId,
+                                    traceId: options.traceId || null,
+                                    interactionId: options.interactionId || null,
+                                    prevState: 'LOCATOR_STARTED',
+                                    newState: 'RECOVERING',
+                                    eventName: 'RESOLVER_RECOVERING',
+                                    owner: 'LocatorResolver',
+                                    browserId: options.browserId || 'slave',
+                                    metadata: { reason: gateDecision.reason }
+                                });
+                            }).catch(() => {});
                             throw new Error(`[LF-302] Recoverable Confidence Miss: ${gateDecision.reason}`);
                         }
                         if (gateDecision.decision === 'TENTATIVE') {
-                            logger.warn(`[LocatorResolver] ConfidenceGate TENTATIVE for [${ctx.candidate.locator}]: ${gateDecision.reason}`);
+                            logger.warn(`[LocatorResolver] [Cmd: ${cmdId}] ConfidenceGate TENTATIVE for [${ctx.candidate.locator}]: ${gateDecision.reason}`);
                         }
                     }
                     
                     // Success
                     ctx.transitionTo(ResolutionState.RESOLVED);
                     const duration = Date.now() - startTime;
-                    logger.info(`[LocatorResolver] Resolved in ${duration}ms (Cycle ${resolutionCycles}, Attempts ${ctx.attempts}) using [${ctx.candidate.strategy}] (Final Confidence: ${ctx.currentConfidence.toFixed(1)})`);
+                    logger.info(`[LocatorResolver] [Cmd: ${cmdId}] Resolved in ${duration}ms (Cycle ${resolutionCycles}, Attempts ${ctx.attempts}) using [${ctx.candidate.strategy}] (Final Confidence: ${ctx.currentConfidence.toFixed(1)})`);
                     
                     const result = new ResolutionResult({
                         success: true,
@@ -668,7 +726,7 @@ export class LocatorResolver {
                         exhaustedCandidates: contexts.filter(c => c.state === ResolutionState.EXHAUSTED).length,
                         telemetry: policy.telemetry.debug ? contexts : contexts.map(c => ({ rank: c.candidate.rank, strategy: c.candidate.strategy, attempts: c.attempts, state: c.state, lastFailure: c.lastFailure }))
                     });
-                    TelemetryCollector.recordResolution(result);
+                    TelemetryCollector.recordResolution(result, options);
                     return result;
                     
                 } catch (err) {
@@ -677,9 +735,9 @@ export class LocatorResolver {
                     }
                     const isTerminal = !policy.retry.retryableFailures.includes(err.name);
                     if (isTerminal) {
-                        logger.debug(`[LocatorResolver] Terminal error testing candidate ${ctx.candidate.locator}: ${err.message}`);
+                        logger.debug(`[LocatorResolver] [Cmd: ${cmdId}] Terminal error testing candidate ${ctx.candidate.locator}: ${err.message}`);
                     } else {
-                        logger.debug(`[LocatorResolver] Cycle ${resolutionCycles} Attempt ${ctx.attempts}: [${ctx.candidate.strategy}] ${ctx.candidate.locator} | Error: ${err.message}`);
+                        logger.debug(`[LocatorResolver] [Cmd: ${cmdId}] Cycle ${resolutionCycles} Attempt ${ctx.attempts}: [${ctx.candidate.strategy}] ${ctx.candidate.locator} | Error: ${err.message}`);
                     }
                     ctx.recordFailure(err, isTerminal);
                     throw err; // throw so the chunk runner knows this candidate failed
@@ -741,13 +799,13 @@ export class LocatorResolver {
                 ? `[LF-605] Resolution Skipped for ${interactionType}`
                 : (outcome.terminalError ? outcome.terminalError.message : `[LF-505] Resolution Aborted at ${outcome.level} after ${outcome.attempts} attempts (${duration}ms)\n${this._formatTelemetry(contexts, policy)}`);
                 
-            logger.warn(`[LocatorResolver] ${failureReason}`);
+            logger.warn(`[LocatorResolver] [Cmd: ${cmdId}] ${failureReason}`);
             const result = new ResolutionResult({
                 success: false, duration, resolutionCycles, failureReason,
                 totalCandidates: candidates.length, exhaustedCandidates: contexts.filter(c => c.state === ResolutionState.EXHAUSTED).length,
                 telemetry: policy.telemetry.debug ? contexts : contexts.map(c => ({ rank: c.candidate.rank, strategy: c.candidate.strategy, attempts: c.attempts, state: c.state, lastFailure: c.lastFailure }))
             });
-            TelemetryCollector.recordResolution(result);
+            TelemetryCollector.recordResolution(result, options);
             return result;
         } else {
             // Legacy Flat Retry Loop
@@ -768,13 +826,13 @@ export class LocatorResolver {
         }
 const duration = Date.now() - startTime;
         const failureReason = `[LF-504] Global Timeout (${duration}ms)\n${this._formatTelemetry(contexts, policy)}`;
-        logger.warn(`[LocatorResolver] ${failureReason}`);
+        logger.warn(`[LocatorResolver] [Cmd: ${cmdId}] ${failureReason}`);
         const result = new ResolutionResult({ 
             success: false, duration, resolutionCycles, failureReason, 
             totalCandidates: candidates.length, exhaustedCandidates: contexts.filter(c => c.state === ResolutionState.EXHAUSTED).length,
             telemetry: policy.telemetry.debug ? contexts : contexts.map(c => ({ rank: c.candidate.rank, strategy: c.candidate.strategy, attempts: c.attempts, state: c.state, lastFailure: c.lastFailure }))
         });
-        TelemetryCollector.recordResolution(result);
+        TelemetryCollector.recordResolution(result, options);
         return result;
     }
     

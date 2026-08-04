@@ -1,5 +1,6 @@
 import { Serializer } from './Serializer.mjs';
 import { ProcessLocalWal } from './ProcessLocalWal.mjs';
+import { logger } from '../../../config.mjs';
 
 /**
  * The background worker responsible for serializing facts and passing them to the WAL.
@@ -47,7 +48,7 @@ export class WalWriterWorker {
     }
 
     if (newFacts.length > 0) {
-      console.log(`WalWriterWorker writing ${newFacts.length} facts. First LSN: ${newFacts[0].lsn}, Last LSN: ${newFacts[newFacts.length-1].lsn}`);
+      logger.debug(`WalWriterWorker writing ${newFacts.length} facts. First LSN: ${newFacts[0].lsn}, Last LSN: ${newFacts[newFacts.length-1].lsn}`);
     }
 
     // 4. Force OS buffer flush (wait for drain)
