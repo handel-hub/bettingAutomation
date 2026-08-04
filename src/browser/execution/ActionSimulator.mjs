@@ -27,199 +27,7 @@ export class ActionSimulator extends EventEmitter {
         this.attachedPages = new WeakSet();
     }
 
-    async _executeWithRecovery(command, page, interactionType, actionFn, browserObj = null, deadlineBudget = null, executionContext = null) {
-        let attempts = 0;
-        const locators = command.payload.locators || [];
-
-        while (attempts < this.MAX_EXECUTION_RETRIES) {
-            attempts++;
-            if (deadlineBudget) {
-                deadlineBudget.checkOrThrow('ActionSimulator');
-            }
-            
-            // Phase 2 & 15: Resolve (Decoupled & Shadow Mode)
-            let result;
-            const resolveOpts = {
-                browserId: browserObj?.id || command.metadata?.browserId || command.target,
-                msn: command.metadata?.msn || command.payload?.msn,
-                shadowPath: command.payload.shadowPath || [],
-                identityDocument: command.payload?.identityDocument || command.metadata?.identityDocument,
-                deadlineBudget,
-                traceId: command.traceId || command.payload?.traceId,
-                eidHash: command.eidHash || command.payload?.eidHash,
-                commandId: command.id,
-                interactionId: command.payload?.interactionId,
-                executionContext
-            };
-            // Execute primary resolution synchronously on critical path
-            result = await LocatorResolver.resolve(page, locators, interactionType, undefined, resolveOpts);
-
-            if (featureFlags.isEnabled('LI_SHADOW_MODE')) {
-                // Launch secondary comparison resolution off the critical path without awaiting
-                Promise.resolve().then(async () => {
-                    try {
-                        const shadowOpts = {
-                            ...resolveOpts,
-                            disableMemoization: true,
-                            forceLegacyEvaluation: true
-                        };
-                        const shadowResult = await LocatorResolver.resolve(page, locators, interactionType, undefined, shadowOpts);
-                        
-                        TelemetryCollector.recordShadowMode(command.id, {
-                            legacySuccess: result.success,
-                            newSuccess: shadowResult.success,
-                            legacyLocator: result.locator,
-                            newLocator: shadowResult.locator,
-                            newConfidence: shadowResult.similarity?.overallScore || 0,
-                            latencyDeltaMs: shadowResult.latency?.totalDurationMs || 0
-                        });
-                    } catch (asyncError) {
-                        logger.debug(`[ActionSimulator] Async shadow resolution failed: ${asyncError.message}`);
-                    }
-                });
-            }
-            
-            if (!result.success) {
-                if (result.failureReason && result.failureReason.includes('LF-702')) {
-                    const error = new QueueDeadlineExceededError(result.failureReason);
-                    throw error;
-                }
-                const error = new GlobalTimeoutError(result.failureReason);
-                error.addChain(`[LF-504] Resolution failed during execution attempt ${attempts}`);
-                throw error;
-            }
-
-            // Phase 3: Physical Execution
-            const execStart = Date.now();
-            try {
-                await actionFn(result.playwrightLocator);
-                
-                const execDur = Date.now() - execStart;
-                const eid = command.payload?.identityDocument || command.metadata?.identityDocument;
-                TelemetryCollector.recordLifecycleEvent({
-                    traceId: command.traceId || command.payload?.traceId || 'tr-unknown',
-                    spanId: 'sp-14-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
-                    parentSpanId: 'sp-13-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
-                    stageSequence: 14,
-                    stageName: 'PHYSICAL_PLAYWRIGHT_EXECUTION',
-                    component: 'ActionSimulator.mjs',
-                    method: '_executeWithRecovery',
-                    timestamp: Date.now(),
-                    browserId: browserObj?.id || command.target || 'slave',
-                    interactionId: command.payload?.interactionId || 'ia-unknown',
-                    commandId: command.id,
-                    interactionType,
-                    stageDurationMs: execDur,
-                    eidPresent: !!eid,
-                    eidHash: command.eidHash || TelemetryCollector.computeEIDHash(eid),
-                    validationResult: 'PASS'
-                });
-
-                // Success - Log Execution metrics separate from Resolution metrics
-                logger.info(`[ActionSimulator] Execution Success | Action: ${interactionType} | Exec Duration: ${execDur}ms | Retries: ${attempts - 1}`);
-                return result; // return the resolution info so caller can log the used locator
-                
-            } catch (err) {
-                const execDur = Date.now() - execStart;
-                const eid = command.payload?.identityDocument || command.metadata?.identityDocument;
-                let valRes14 = 'FAIL_AUTOMATION';
-                if (err && err.code && String(err.code).startsWith('LF-')) {
-                    valRes14 = `FAIL_${String(err.code).replace('-', '')}`;
-                } else if (err && err.message && err.message.includes('LF-')) {
-                    const match = err.message.match(/\[(LF-\d+)\]/);
-                    if (match) valRes14 = `FAIL_${match[1].replace('-', '')}`;
-                }
-                TelemetryCollector.recordLifecycleEvent({
-                    traceId: command.traceId || command.payload?.traceId || 'tr-unknown',
-                    spanId: 'sp-14-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
-                    parentSpanId: 'sp-13-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
-                    stageSequence: 14,
-                    stageName: 'PHYSICAL_PLAYWRIGHT_EXECUTION',
-                    component: 'ActionSimulator.mjs',
-                    method: '_executeWithRecovery',
-                    timestamp: Date.now(),
-                    browserId: browserObj?.id || command.target || 'slave',
-                    interactionId: command.payload?.interactionId || 'ia-unknown',
-                    commandId: command.id,
-                    interactionType,
-                    stageDurationMs: execDur,
-                    eidPresent: !!eid,
-                    eidHash: command.eidHash || TelemetryCollector.computeEIDHash(eid),
-                    validationResult: valRes14,
-                    errorDetails: { errorCode: valRes14.replace('FAIL_', ''), errorMessage: err.message || String(err) }
-                });
-
-                if (err instanceof QueueDeadlineExceededError || err instanceof GlobalTimeoutError || err instanceof LocatorResolutionError) {
-                    throw err; // Terminal synchronization errors must not be caught and retried locally
-                }
-                const errMessage = err.message || '';
-                let automationError;
-
-                // Playwright Interception & Detachment mapping
-                if (errMessage.includes('is intercepted by') || errMessage.includes('covered by')) {
-                    automationError = new OverlayInterceptionError(errMessage);
-                } else if (errMessage.includes('Target closed') || errMessage.includes('Node is detached') || errMessage.includes('DOMElement is no longer attached')) {
-                    automationError = new ElementDetachedError(errMessage);
-                } else if (errMessage.includes('Timeout')) {
-                    automationError = new PlaywrightTimeoutError(errMessage);
-                } else {
-                    // Unknown Playwright error - throw it immediately to avoid infinite loops on syntax errors
-                    throw err;
-                }
-
-                logger.warn(`[ActionSimulator] ${automationError.code} Execution failed on attempt ${attempts}: ${automationError.message}. Triggering re-resolution.`);
-                
-                TelemetryCollector.recordLifecycleEvent({
-                    traceId: command.traceId || command.payload?.traceId || 'tr-unknown',
-                    spanId: 'sp-retry-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
-                    parentSpanId: 'sp-14-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
-                    stageSequence: 14.5,
-                    stageName: 'PHYSICAL_PLAYWRIGHT_RETRY',
-                    component: 'ActionSimulator.mjs',
-                    method: '_executeWithRecovery',
-                    timestamp: Date.now(),
-                    browserId: browserObj?.id || command.target || 'slave',
-                    commandId: command.id,
-                    interactionType,
-                    attempt: attempts,
-                    remainingRetries: this.MAX_EXECUTION_RETRIES - attempts,
-                    timeRemaining: deadlineBudget ? deadlineBudget.timeRemaining() : null,
-                    mappedError: automationError ? automationError.code : 'UNKNOWN'
-                });
-
-
-                if (attempts >= this.MAX_EXECUTION_RETRIES) {
-                    automationError.addChain(`[LF-505] Max execution retries (${this.MAX_EXECUTION_RETRIES}) reached for Action: ${interactionType}`);
-                    throw automationError;
-                }
-
-                // Cooldown before retrying full resolution loop
-                if (deadlineBudget) {
-                    deadlineBudget.checkOrThrow('ActionSimulator');
-                }
-                await new Promise(r => setTimeout(r, 150));
-            }
-        }
-    }
-
-
-
-    async execute(browserObj, command, options = {}) {
-        const startTime = Date.now();
-        const { id, page } = browserObj;
-        const deadlineBudget = options.deadlineBudget || DeadlineBudget.fromCommand(command, 1500);
-
-        try {
-            deadlineBudget.checkOrThrow('ActionSimulator');
-        } catch (err) {
-            logger.warn(`[Interaction Failure] Command ${command?.id} on slave [${id}]: ${err.message} | Execution duration: ${Date.now() - startTime}ms | Lifecycle: ABORTED`);
-            this.emit('ActionFailure', { id, command, error: err });
-            return false;
-        }
-        
-        // Ensure PageStateMonitor is attached to this page to track DOM mutations
-        await pageStateMonitor.attach(page).catch(() => {});
-        
+    async injectOverlayScript(page) {
         if (!this.attachedPages.has(page)) {
             this.attachedPages.add(page);
             try {
@@ -277,6 +85,323 @@ export class ActionSimulator extends EventEmitter {
                 logger.warn(`[AOIS] Failed to load overlays.json on Slave: ${e.message}`);
             }
         }
+    }
+
+    async _executeWithRecovery(command, page, interactionType, actionFn, browserObj = null, deadlineBudget = null, executionContext = null) {
+        if (page && !this.attachedPages.has(page)) {
+            this.attachedPages.add(page);
+            import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                const bId = browserObj?.id || command.target || 'unknown';
+                if (featureFlags.isEnabled('FEATURE_TRACE_CDP_NETWORK')) {
+                    try {
+                        page.context().newCDPSession(page).then(cdp => {
+                            cdp.send('Network.enable').catch(() => {});
+                            cdp.on('Network.requestWillBeSent', (e) => {
+                                if (e.type === 'Document' || e.type === 'XHR' || e.type === 'Fetch') {
+                                    observabilityCollector.emitTransition({
+                                        commandId: 'async-network',
+                                        traceId: null,
+                                        prevState: 'NETWORK_IDLE',
+                                        newState: 'NETWORK_REQUEST',
+                                        eventName: 'CDP_REQUEST',
+                                        owner: 'Playwright',
+                                        browserId: bId,
+                                        metadata: { url: e.request.url, type: e.type }
+                                    });
+                                }
+                            });
+                        }).catch(() => {});
+                    } catch (e) {
+                        logger.warn(`[ActionSimulator] Failed to attach CDP session: ${e.message}`);
+                    }
+                }
+
+                page.on('framenavigated', (frame) => {
+                    if (frame === page.mainFrame()) {
+                        observabilityCollector.emitTransition({ commandId: 'async-nav', traceId: null, prevState: 'ANY', newState: 'NAVIGATED', eventName: 'FRAME_NAVIGATED', owner: 'Playwright', browserId: bId, metadata: { url: frame.url() } });
+                    }
+                });
+                page.on('load', () => {
+                    observabilityCollector.emitTransition({ commandId: 'async-nav', traceId: null, prevState: 'ANY', newState: 'LOADED', eventName: 'PAGE_LOAD', owner: 'Playwright', browserId: bId });
+                });
+            }).catch(() => {});
+        }
+
+        let attempts = 0;
+        const locators = command.payload.locators || [];
+
+        while (attempts < this.MAX_EXECUTION_RETRIES) {
+            attempts++;
+            if (deadlineBudget) {
+                deadlineBudget.checkOrThrow('ActionSimulator');
+            }
+            
+            // Phase 2 & 15: Resolve (Decoupled & Shadow Mode)
+            let result;
+            const resolveOpts = {
+                browserId: browserObj?.id || command.metadata?.browserId || command.target,
+                msn: command.metadata?.msn || command.payload?.msn,
+                shadowPath: command.payload.shadowPath || [],
+                identityDocument: command.payload?.identityDocument || command.metadata?.identityDocument,
+                deadlineBudget,
+                traceId: command.traceId || command.payload?.traceId,
+                eidHash: command.eidHash || command.payload?.eidHash,
+                commandId: command.id,
+                interactionId: command.payload?.interactionId,
+                executionContext
+            };
+            // Execute primary resolution synchronously on critical path
+            import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                observabilityCollector.emitTransition({
+                    commandId: command.id || command.commandId,
+                    traceId: command.traceId || null,
+                    interactionId: command.interactionId || null,
+                    prevState: 'ASSIGNED',
+                    newState: 'LOCATOR_STARTED',
+                    eventName: 'LOCATOR_STARTED',
+                    owner: 'ActionSimulator',
+                    browserId: resolveOpts.browserId
+                });
+            }).catch(() => {});
+
+            result = await LocatorResolver.resolve(page, locators, interactionType, undefined, resolveOpts);
+
+            import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                observabilityCollector.emitTransition({
+                    commandId: command.id || command.commandId,
+                    traceId: command.traceId || null,
+                    interactionId: command.interactionId || null,
+                    prevState: 'LOCATOR_STARTED',
+                    newState: 'LOCATOR_FINISHED',
+                    eventName: 'LOCATOR_FINISHED',
+                    owner: 'ActionSimulator',
+                    browserId: resolveOpts.browserId,
+                    metadata: { success: result.success }
+                });
+            }).catch(() => {});
+
+            if (featureFlags.isEnabled('LI_SHADOW_MODE')) {
+                // Launch secondary comparison resolution off the critical path without awaiting
+                Promise.resolve().then(async () => {
+                    try {
+                        const shadowOpts = {
+                            ...resolveOpts,
+                            disableMemoization: true,
+                            forceLegacyEvaluation: true
+                        };
+                        const shadowResult = await LocatorResolver.resolve(page, locators, interactionType, undefined, shadowOpts);
+                        
+                        TelemetryCollector.recordShadowMode(command.id, {
+                            legacySuccess: result.success,
+                            newSuccess: shadowResult.success,
+                            legacyLocator: result.locator,
+                            newLocator: shadowResult.locator,
+                            newConfidence: shadowResult.similarity?.overallScore || 0,
+                            latencyDeltaMs: shadowResult.latency?.totalDurationMs || 0
+                        });
+                    } catch (asyncError) {
+                        logger.debug(`[ActionSimulator] [Cmd: ${command.id}] Async shadow resolution failed: ${asyncError.message}`);
+                    }
+                });
+            }
+            
+            if (!result.success) {
+                if (result.failureReason && result.failureReason.includes('LF-702')) {
+                    const error = new QueueDeadlineExceededError(result.failureReason);
+                    throw error;
+                }
+                const error = new GlobalTimeoutError(result.failureReason);
+                error.addChain(`[LF-504] Resolution failed during execution attempt ${attempts}`);
+                throw error;
+            }
+
+            // Phase 3: Physical Execution
+            const execStart = Date.now();
+            try {
+                import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                    observabilityCollector.emitTransition({
+                        commandId: command.id || command.commandId,
+                        traceId: command.traceId || null,
+                        interactionId: command.interactionId || null,
+                        prevState: 'LOCATOR_FINISHED',
+                        newState: 'PLAYWRIGHT_BEGIN',
+                        eventName: 'PLAYWRIGHT_BEGIN',
+                        owner: 'ActionSimulator',
+                        browserId: browserObj?.id || command.target || 'slave'
+                    });
+                }).catch(() => {});
+
+                await actionFn(result.playwrightLocator);
+                
+                import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                    observabilityCollector.emitTransition({
+                        commandId: command.id || command.commandId,
+                        traceId: command.traceId || null,
+                        interactionId: command.interactionId || null,
+                        prevState: 'PLAYWRIGHT_BEGIN',
+                        newState: 'PLAYWRIGHT_END',
+                        eventName: 'PLAYWRIGHT_END',
+                        owner: 'ActionSimulator',
+                        browserId: browserObj?.id || command.target || 'slave',
+                        metadata: { success: true }
+                    });
+                }).catch(() => {});
+
+                const execDur = Date.now() - execStart;
+                const eid = command.payload?.identityDocument || command.metadata?.identityDocument;
+                TelemetryCollector.recordLifecycleEvent({
+                    traceId: command.traceId || command.payload?.traceId || 'tr-unknown',
+                    spanId: 'sp-14-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
+                    parentSpanId: 'sp-13-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
+                    stageSequence: 14,
+                    stageName: 'PHYSICAL_PLAYWRIGHT_EXECUTION',
+                    component: 'ActionSimulator.mjs',
+                    method: '_executeWithRecovery',
+                    timestamp: Date.now(),
+                    browserId: browserObj?.id || command.target || 'slave',
+                    interactionId: command.payload?.interactionId || 'ia-unknown',
+                    commandId: command.id,
+                    interactionType,
+                    stageDurationMs: execDur,
+                    eidPresent: !!eid,
+                    eidHash: command.eidHash || TelemetryCollector.computeEIDHash(eid),
+                    validationResult: 'PASS'
+                });
+
+                // Success - Log Execution metrics separate from Resolution metrics
+                logger.info(`[ActionSimulator] [Cmd: ${command.id}] Execution Success | Action: ${interactionType} | Exec Duration: ${execDur}ms | Retries: ${attempts - 1}`);
+                return result; // return the resolution info so caller can log the used locator
+                
+            } catch (err) {
+                import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                    observabilityCollector.emitTransition({
+                        commandId: command.id || command.commandId,
+                        traceId: command.traceId || null,
+                        interactionId: command.interactionId || null,
+                        prevState: 'PLAYWRIGHT_BEGIN',
+                        newState: 'PLAYWRIGHT_END',
+                        eventName: 'PLAYWRIGHT_END',
+                        owner: 'ActionSimulator',
+                        browserId: browserObj?.id || command.target || 'slave',
+                        metadata: { success: false, error: err.message }
+                    });
+                }).catch(() => {});
+                
+                const execDur = Date.now() - execStart;
+                const eid = command.payload?.identityDocument || command.metadata?.identityDocument;
+                let valRes14 = 'FAIL_AUTOMATION';
+                if (err && err.code && String(err.code).startsWith('LF-')) {
+                    valRes14 = `FAIL_${String(err.code).replace('-', '')}`;
+                } else if (err && err.message && err.message.includes('LF-')) {
+                    const match = err.message.match(/\[(LF-\d+)\]/);
+                    if (match) valRes14 = `FAIL_${match[1].replace('-', '')}`;
+                }
+                TelemetryCollector.recordLifecycleEvent({
+                    traceId: command.traceId || command.payload?.traceId || 'tr-unknown',
+                    spanId: 'sp-14-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
+                    parentSpanId: 'sp-13-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
+                    stageSequence: 14,
+                    stageName: 'PHYSICAL_PLAYWRIGHT_EXECUTION',
+                    component: 'ActionSimulator.mjs',
+                    method: '_executeWithRecovery',
+                    timestamp: Date.now(),
+                    browserId: browserObj?.id || command.target || 'slave',
+                    interactionId: command.payload?.interactionId || 'ia-unknown',
+                    commandId: command.id,
+                    interactionType,
+                    stageDurationMs: execDur,
+                    eidPresent: !!eid,
+                    eidHash: command.eidHash || TelemetryCollector.computeEIDHash(eid),
+                    validationResult: valRes14,
+                    errorDetails: { errorCode: valRes14.replace('FAIL_', ''), errorMessage: err.message || String(err) }
+                });
+
+                if (err instanceof QueueDeadlineExceededError || err instanceof GlobalTimeoutError || err instanceof LocatorResolutionError) {
+                    throw err; // Terminal synchronization errors must not be caught and retried locally
+                }
+                const errMessage = err.message || '';
+                let automationError;
+
+                // Playwright Interception & Detachment mapping
+                if (errMessage.includes('is intercepted by') || errMessage.includes('covered by')) {
+                    automationError = new OverlayInterceptionError(errMessage);
+                } else if (errMessage.includes('Target closed') || errMessage.includes('Node is detached') || errMessage.includes('DOMElement is no longer attached')) {
+                    automationError = new ElementDetachedError(errMessage);
+                } else if (errMessage.includes('Timeout')) {
+                    automationError = new PlaywrightTimeoutError(errMessage);
+                } else {
+                    // Unknown Playwright error - throw it immediately to avoid infinite loops on syntax errors
+                    throw err;
+                }
+
+                logger.warn(`[ActionSimulator] [Cmd: ${command.id}] ${automationError.code} Execution failed on attempt ${attempts}: ${automationError.message}. Triggering re-resolution.`);
+                
+                import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                    observabilityCollector.emitTransition({
+                        commandId: command.id || command.commandId,
+                        traceId: command.traceId || null,
+                        interactionId: command.interactionId || null,
+                        prevState: 'EXECUTING',
+                        newState: 'RECOVERING',
+                        eventName: 'SIMULATOR_RECOVERING',
+                        owner: 'ActionSimulator',
+                        browserId: browserObj?.id || command.target || 'slave',
+                        metadata: { attempt: attempts, error: automationError.code }
+                    });
+                }).catch(() => {});
+                
+                TelemetryCollector.recordLifecycleEvent({
+                    traceId: command.traceId || command.payload?.traceId || 'tr-unknown',
+                    spanId: 'sp-retry-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
+                    parentSpanId: 'sp-14-' + (browserObj?.id || command.target || 'unknown').slice(0, 4),
+                    stageSequence: 14.5,
+                    stageName: 'PHYSICAL_PLAYWRIGHT_RETRY',
+                    component: 'ActionSimulator.mjs',
+                    method: '_executeWithRecovery',
+                    timestamp: Date.now(),
+                    browserId: browserObj?.id || command.target || 'slave',
+                    commandId: command.id,
+                    interactionType,
+                    attempt: attempts,
+                    remainingRetries: this.MAX_EXECUTION_RETRIES - attempts,
+                    timeRemaining: deadlineBudget ? deadlineBudget.timeRemaining() : null,
+                    mappedError: automationError ? automationError.code : 'UNKNOWN'
+                });
+
+
+                if (attempts >= this.MAX_EXECUTION_RETRIES) {
+                    automationError.addChain(`[LF-505] Max execution retries (${this.MAX_EXECUTION_RETRIES}) reached for Action: ${interactionType}`);
+                    throw automationError;
+                }
+
+                // Cooldown before retrying full resolution loop
+                if (deadlineBudget) {
+                    deadlineBudget.checkOrThrow('ActionSimulator');
+                }
+                await new Promise(r => setTimeout(r, 150));
+            }
+        }
+    }
+
+
+
+    async execute(browserObj, command, options = {}) {
+        const startTime = Date.now();
+        const { id, page } = browserObj;
+        const deadlineBudget = options.deadlineBudget || DeadlineBudget.fromCommand(command, 1500);
+
+        try {
+            deadlineBudget.checkOrThrow('ActionSimulator');
+        } catch (err) {
+            logger.warn(`[Interaction Failure] Command ${command?.id} on slave [${id}]: ${err.message} | Execution duration: ${Date.now() - startTime}ms | Lifecycle: ABORTED`);
+            this.emit('ActionFailure', { id, command, error: err });
+            return false;
+        }
+        
+        // Ensure PageStateMonitor is attached to this page to track DOM mutations
+        await pageStateMonitor.attach(page).catch(() => {});
+        
+        await this.injectOverlayScript(page);
         const lifecycle = 'EXECUTING';
         logger.info(`[Execute Start] Command ${command.id} on [${id}] | Latency (Receive->Start): ${startTime - command.creationTime}ms | Lifecycle: ${lifecycle}`);
         try {
@@ -356,8 +481,37 @@ export class ActionSimulator extends EventEmitter {
                     }, { scrollTop: payload.scrollTop, scrollLeft: payload.scrollLeft });
                 }, browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'navigate') {
-                await page.goto(payload.url, { waitUntil: 'domcontentloaded', ...tOpts });
-                // SynchronizationBarrier will assert URL correctness in SequenceGate
+                const { url, causality, navType } = payload;
+                logger.info(`[ActionSimulator] Received Navigation command: ${url} (Causality: ${causality}, NavType: ${navType})`);
+                
+                if (causality === 'browser_initiated' || navType === 'external') {
+                    logger.info(`[ActionSimulator] Executing immediate navigation override: ${url} (${causality})`);
+                    await page.goto(url, { waitUntil: 'domcontentloaded', ...tOpts });
+                } else if (navType === 'reload') {
+                    logger.info(`[ActionSimulator] Executing immediate reload`);
+                    await page.reload({ waitUntil: 'domcontentloaded', ...tOpts });
+                } else if (navType === 'traverse') {
+                    logger.info(`[ActionSimulator] Executing immediate traverse to: ${url}`);
+                    await page.goto(url, { waitUntil: 'domcontentloaded', ...tOpts });
+                } else if (causality === 'page_initiated' && (navType === 'push' || navType === 'replace')) {
+                    logger.info(`[ActionSimulator] Asserting native route via waitForURL: ${url}`);
+                    try {
+                        await page.waitForURL(url, { timeout: 30000 });
+                        logger.info(`[ActionSimulator] Native routing successful: ${url}`);
+                    } catch (e) {
+                        // SPEC-04: If we timed out waiting for the URL, check if we're already there.
+                        // A preceding CLICK might have already completed the navigation.
+                        if (page.url() === url) {
+                            logger.info(`[ActionSimulator] Synthetic navigation to ${url} timed out, but page is already at target URL. Proceeding.`);
+                            // Success bypass - do not throw
+                        } else {
+                            throw e; // genuine failure
+                        }
+                    }
+                } else {
+                    // Fallback for any unexpected types
+                    await page.goto(url, { waitUntil: 'domcontentloaded', ...tOpts });
+                }
             } else if (type === 'add_style') {
                 await page.addStyleTag({ content: payload.content });
             }
