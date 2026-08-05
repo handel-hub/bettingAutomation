@@ -111,7 +111,7 @@ export class AutomationController {
             stealthEngine: this.stealthEngine,
             capabilityRegistry: this.capabilityRegistry,
             lifecycleManager: this.lifecycleManager,
-            actionSimulator: this.simulator
+            simulator: this.simulator
         });
 
         this.clusterOrchestrator = new ClusterOrchestrator({
