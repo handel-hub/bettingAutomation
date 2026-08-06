@@ -22,45 +22,6 @@
             window.__lastHlc = null;
 
 
-            (function() {
-                const _origPush = history.pushState;
-                const _origReplace = history.replaceState;
-                
-                history.pushState = function(...args) {
-                    _origPush.apply(this, args);
-                    if (window.__notifyNavigation) {
-                        window.__notifyNavigation({ 
-                            type: 'pushState', 
-                            url: location.href, 
-                            timestamp: Date.now(),
-                            monotonicUs: Math.round(performance.now() * 1000)
-                        });
-                    }
-                };
-                
-                history.replaceState = function(...args) {
-                    _origReplace.apply(this, args);
-                    if (window.__notifyNavigation) {
-                        window.__notifyNavigation({ 
-                            type: 'replaceState', 
-                            url: location.href, 
-                            timestamp: Date.now(),
-                            monotonicUs: Math.round(performance.now() * 1000)
-                        });
-                    }
-                };
-                
-                window.addEventListener('popstate', function() {
-                    if (window.__notifyNavigation) {
-                        window.__notifyNavigation({ 
-                            type: 'popstate', 
-                            url: location.href, 
-                            timestamp: Date.now(),
-                            monotonicUs: Math.round(performance.now() * 1000)
-                        });
-                    }
-                });
-            })();
 
             const locatorIntelligencePipelineStart = Date.now();
             function generateUUID() {
