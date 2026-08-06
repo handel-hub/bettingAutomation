@@ -16,6 +16,7 @@ export class ClusterOrchestrator {
         this.healthMonitor = deps.healthMonitor;
         this.commandReceiver = deps.commandReceiver;
         this.scheduler = deps.scheduler;
+        this.stateObserver = deps.stateObserver;
     }
 
     async start() {
@@ -94,9 +95,15 @@ export class ClusterOrchestrator {
 
         // 3. Setup Navigation Synchronization
         await this.navSync.setupMasterSync();
+        const master = this.registry.getMaster();
+        if (master && master.page) {
+            await this.stateObserver.injectObservers(master.id, master.page);
+        }
+        for (const slave of this.registry.getReadySlaves()) {
+             await this.stateObserver.injectObservers(slave.id, slave.page);
+        }
 
         // 4. Replay Startup Macro (moved up, BEFORE listener injection)
-        const master = this.registry.getMaster();
         if (this.settings.Memory.replay_action_sequence === 'true') {
             logger.info('Replaying startup macro on Master...');
             const sequence = await this.macroEngine.loadSequence('startup'); 

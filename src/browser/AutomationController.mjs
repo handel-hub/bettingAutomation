@@ -10,7 +10,10 @@ import {
     RecoveryManager,
     AccountLockManager,
     ClusterOrchestrator,
-    EventBusRegistrar
+    EventBusRegistrar,
+    StateObserver,
+    ConvergenceEngine,
+    VerificationEngine
 } from './coordination/index.mjs';
 
 import {
@@ -55,6 +58,21 @@ export class AutomationController {
         this.actionDispatcher = new ActionDispatcher(settings, this.registry);
         this.navSync = new NavigationSynchronizer(this.registry, this.actionDispatcher);
         this.healthMonitor = new HealthMonitor(this.registry);
+        this.stateObserver = new StateObserver(this.registry);
+        this.verificationEngine = new VerificationEngine();
+        this.convergenceEngine = new ConvergenceEngine(this.verificationEngine);
+
+        // Wire StateObserver to ConvergenceEngine
+        this.stateObserver.on('StateObservation', (obs) => {
+            this.convergenceEngine.processObservation(obs);
+        });
+
+        this.convergenceEngine.on('ConvergenceDiverged', (evt) => {
+            logger.warn(`[AutomationController] Slave ${evt.slaveId} diverged on command ${evt.commandId}. Reason: ${evt.reason}. Issuing corrective navigation.`);
+            if (this.recoveryManager && evt.expectedUrl) {
+                this.recoveryManager.initiateCorrectiveNavigation(evt.slaveId, evt.expectedUrl);
+            }
+        });
 
         // --- Initialize Execution Subsystem ---
         this.commandReceiver = new CommandReceiver(settings);
@@ -111,7 +129,9 @@ export class AutomationController {
             stealthEngine: this.stealthEngine,
             capabilityRegistry: this.capabilityRegistry,
             lifecycleManager: this.lifecycleManager,
-            simulator: this.simulator
+            simulator: this.simulator,
+            stateObserver: this.stateObserver,
+            convergenceEngine: this.convergenceEngine
         });
 
         this.clusterOrchestrator = new ClusterOrchestrator({
@@ -128,7 +148,8 @@ export class AutomationController {
             actionDispatcher: this.actionDispatcher,
             healthMonitor: this.healthMonitor,
             commandReceiver: this.commandReceiver,
-            scheduler: this.scheduler
+            scheduler: this.scheduler,
+            stateObserver: this.stateObserver
         });
 
         this.eventBusRegistrar.registerAll();
