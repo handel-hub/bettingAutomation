@@ -18,6 +18,7 @@ export class EventBusRegistrar {
         this.healthMonitor = deps.healthMonitor;
         this.syncRecoveryActionExecutor = deps.syncRecoveryActionExecutor;
         this.simulator = deps.simulator;
+        this.convergenceEngine = deps.convergenceEngine;
     }
 
     registerAll() {
@@ -118,7 +119,45 @@ export class EventBusRegistrar {
             logger.info(`[Broadcast] Command ${command.id} [Navigation] | Latency (Capture->Broadcast): ${Date.now() - command.captureTime}ms`);
             const slaves = this.registry.getReadySlaves();
             logger.info(`Routing NavigationCommand to ${slaves.length} ready slaves: ${command.payload.url}`);
-            slaves.forEach(b => this.scheduler.enqueue(b, command));
+            const promises = slaves.map(b => {
+                return new Promise((resolve) => {
+                    if (this.convergenceEngine) {
+                        const onAchieved = (evt) => {
+                            if (evt.slaveId === b.id && evt.commandId === command.id) {
+                                cleanup();
+                                resolve();
+                            }
+                        };
+                        const onDiverged = (evt) => {
+                            if (evt.slaveId === b.id && evt.commandId === command.id) {
+                                cleanup();
+                                resolve(); // Resolve anyway so Promise.all completes; RecoveryManager handles the divergence
+                            }
+                        };
+                        const onTimeout = (evt) => {
+                            if (evt.slaveId === b.id && evt.commandId === command.id) {
+                                cleanup();
+                                resolve(); // Resolve anyway so Promise.all completes; RecoveryManager handles the timeout
+                            }
+                        };
+                        const cleanup = () => {
+                            this.convergenceEngine.off('ConvergenceAchieved', onAchieved);
+                            this.convergenceEngine.off('ConvergenceDiverged', onDiverged);
+                            this.convergenceEngine.off('ConvergenceTimeout', onTimeout);
+                        };
+                        this.convergenceEngine.on('ConvergenceAchieved', onAchieved);
+                        this.convergenceEngine.on('ConvergenceDiverged', onDiverged);
+                        this.convergenceEngine.on('ConvergenceTimeout', onTimeout);
+                        
+                        this.convergenceEngine.expectConvergence(b.id, command.id, command.payload.domHash, command.payload.url);
+                    } else {
+                        resolve();
+                    }
+                    this.scheduler.enqueue(b, command);
+                });
+            });
+            await Promise.all(promises);
+            logger.info(`[EventBusRegistrar] Navigation ${command.id} completed resolution across all slaves.`);
         });
 
         this.commandRouter.register('Recovery', 'HEAL_REQUESTED', async (command) => {

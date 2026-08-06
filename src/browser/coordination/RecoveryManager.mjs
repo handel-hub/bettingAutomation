@@ -18,6 +18,17 @@ export class RecoveryManager extends EventEmitter {
         this.cdpMutex = options.cdpMutex ?? new CDPMutex();
     }
 
+    initiateCorrectiveNavigation(browserId, url) {
+        logger.info(`[RecoveryManager] Issuing CORRECTIVE_NAV to ${browserId} for url: ${url}`);
+        this.emit('Command', new Command({
+            category: 'Navigation',
+            type: 'navigate',
+            target: browserId,
+            payload: { url, navClass: 'CORRECTIVE_NAV' },
+            source: 'RecoveryManager'
+        }));
+    }
+
     async heal(browserId) {
         const target = this.registry.get(browserId);
         if (!target) {
