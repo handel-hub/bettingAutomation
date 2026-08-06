@@ -7,3 +7,6 @@ export { HealthMonitor } from './HealthMonitor.mjs';
 export { AccountLockManager } from './AccountLockManager.mjs';
 export { EventBusRegistrar } from './EventBusRegistrar.mjs';
 export { ClusterOrchestrator } from './ClusterOrchestrator.mjs';
+export { StateObserver } from './StateObserver.mjs';
+export { ConvergenceEngine } from './ConvergenceEngine.mjs';
+export { VerificationEngine } from './VerificationEngine.mjs';

@@ -63,6 +63,13 @@ export class Command {
         if (traceId !== undefined) this.traceId = traceId;
         if (eidHash !== undefined) this.eidHash = eidHash;
 
+        if (this.type === 'navigate') {
+            if (!this.payload.navClass) {
+                this.payload.navClass = 'PRIMARY_NAV';
+            }
+            this.navClass = this.payload.navClass;
+        }
+
         deepFreeze(this);
     }
 
