@@ -50,11 +50,15 @@ export class ClassificationPolicy {
 
 export class SchedulingPolicy {
     static apply(queueBucket, queueClass, entry) {
+        let dropped = [];
         if (queueClass === 'Discrete' || queueClass === 'Critical') {
             queueBucket.push(entry);
             entry.schedulerDecision = 'Enqueued FIFO';
         } else if (queueClass === 'Continuous') {
             const existed = queueBucket.length > 0;
+            if (existed) {
+                dropped.push(queueBucket[0]);
+            }
             queueBucket[0] = entry; // Latest State
             entry.schedulerDecision = existed ? 'Overwrote Pending' : 'Enqueued Latest';
         } else if (queueClass === 'Aggregated') {
@@ -87,17 +91,21 @@ export class SchedulingPolicy {
                             payload: {
                                ...existing.command.payload,
                                deltas: { deltaX: edx + ndx, deltaY: edy + ndy }
-                            }
+                            },
+                            ges: existing.command.ges
                         });
                         entry.schedulerDecision = 'Coalesced Payload';
+                        dropped.push(entry);
                     }
                 } else {
+                    dropped.push(existing);
                     // Absolute target overwrite for window_scroll/element_scroll 
                     queueBucket[0] = entry;
                     entry.schedulerDecision = 'Overwrote Pending Scroll';
                 }
             }
         }
+        return dropped;
     }
 }
 
@@ -119,37 +127,68 @@ export class QueueManager {
         if (queueClass === 'Discrete' && this.buckets.Discrete.length >= 100) {
             throw new Error('Queue Limit Exceeded: Discrete Queue overflowed (max 100). FATAL_DESYNC.');
         }
-        SchedulingPolicy.apply(this.buckets[queueClass], queueClass, entry);
+        const dropped = SchedulingPolicy.apply(this.buckets[queueClass], queueClass, entry);
+        
+        for (const drop of dropped) {
+            if (drop.command && drop.command.ges !== undefined && drop.command.ges !== null) {
+                this.buckets.Discrete.push({
+                    command: new Command({
+                        category: 'Execution',
+                        type: 'NOOP',
+                        ges: drop.command.ges,
+                        captureTime: drop.command.captureTime,
+                        metadata: { reason: 'Skipped due to coalesce/overwrite' }
+                    }),
+                    enqueueTime: Date.now(),
+                    queueClass: 'Discrete',
+                    priority: 'High',
+                    dequeueTime: null,
+                    queueDelay: 0,
+                    schedulerDecision: 'NOOP Gap Filler'
+                });
+            }
+        }
+
         if (entry.schedulerDecision && entry.schedulerDecision.includes('Overwrote')) {
-            this.stats.droppedHovers++;
+            this.stats.droppedHovers += dropped.length;
         }
         if (entry.schedulerDecision && entry.schedulerDecision.includes('Coalesced')) {
-            this.stats.coalescedScrolls++;
+            this.stats.coalescedScrolls += dropped.length;
         }
     }
 
     dequeueNext() {
-        // Priority: Critical -> Discrete -> Aggregated -> Continuous
         const order = ['Critical', 'Discrete', 'Aggregated', 'Continuous'];
-        const now = Date.now();
         
+        let candidates = [];
         for (const queueClass of order) {
-            const bucket = this.buckets[queueClass];
-            while (bucket.length > 0) {
-                const entry = bucket.shift();
-                
-                // TTL Expiration for non-critical non-discrete
-                if (queueClass === 'Continuous' || queueClass === 'Aggregated') {
-                    if (now - entry.enqueueTime > 1500) {
-                        logger.debug(`[ExecutionScheduler] Expired stale ${queueClass} command (>${now - entry.enqueueTime}ms)`);
-                        continue;
-                    }
-                }
-                
-                return entry;
+            if (this.buckets[queueClass].length > 0) {
+                candidates.push({ queueClass, entry: this.buckets[queueClass][0] });
             }
         }
-        return null;
+
+        if (candidates.length === 0) return null;
+
+        candidates.sort((a, b) => {
+            const aGes = a.entry.command.ges;
+            const bGes = b.entry.command.ges;
+
+            const aHasGes = aGes !== undefined && aGes !== null;
+            const bHasGes = bGes !== undefined && bGes !== null;
+
+            if (!aHasGes && bHasGes) return -1;
+            if (aHasGes && !bHasGes) return 1;
+
+            if (!aHasGes && !bHasGes) {
+                return order.indexOf(a.queueClass) - order.indexOf(b.queueClass);
+            }
+
+            return aGes - bGes;
+        });
+
+        const selected = candidates[0];
+        this.buckets[selected.queueClass].shift();
+        return selected.entry;
     }
 
     clear() {
@@ -579,7 +618,14 @@ export class ExecutionScheduler {
                     }).catch(() => {});
 
                     try {
-                        await this.simulator.execute(currentState, finalCommand, { deadlineBudget, executionContext: context });
+                        const success = await this.simulator.execute(currentState, finalCommand, { deadlineBudget, executionContext: context });
+                        if (success === false) {
+                            // Command failed gracefully without throwing. We MUST increment the GES 
+                            // to prevent the Sequence Gate from blocking subsequent commands!
+                            if (ges !== undefined && ges !== null) {
+                                this.registry.incrementSlaveGes(browserId, true);
+                            }
+                        }
                     } finally {
                         import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
                             observabilityCollector.emitTransition({

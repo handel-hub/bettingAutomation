@@ -481,8 +481,14 @@ export class ActionSimulator extends EventEmitter {
                     }, { scrollTop: payload.scrollTop, scrollLeft: payload.scrollLeft });
                 }, browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'navigate') {
+                const navClass = command.navClass || payload.navClass || 'PRIMARY_NAV';
+                if (navClass !== 'PRIMARY_NAV' && navClass !== 'CORRECTIVE_NAV') {
+                    logger.info(`[ActionSimulator] Ignoring navigate command with navClass: ${navClass}`);
+                    return true;
+                }
+
                 const { url, causality, navType } = payload;
-                logger.info(`[ActionSimulator] Received Navigation command: ${url} (Causality: ${causality}, NavType: ${navType})`);
+                logger.info(`[ActionSimulator] Received Navigation command: ${url} (Causality: ${causality}, NavType: ${navType}, NavClass: ${navClass})`);
                 
                 if (causality === 'browser_initiated' || navType === 'external') {
                     logger.info(`[ActionSimulator] Executing immediate navigation override: ${url} (${causality})`);

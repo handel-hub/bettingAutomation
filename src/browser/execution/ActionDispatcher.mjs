@@ -138,45 +138,6 @@ export class ActionDispatcher extends EventEmitter {
             window.__lastHlc = null;
 
 
-            (function() {
-                const _origPush = history.pushState;
-                const _origReplace = history.replaceState;
-                
-                history.pushState = function(...args) {
-                    _origPush.apply(this, args);
-                    if (window.__notifyNavigation) {
-                        window.__notifyNavigation({ 
-                            type: 'pushState', 
-                            url: location.href, 
-                            timestamp: Date.now(),
-                            monotonicUs: Math.round(performance.now() * 1000)
-                        });
-                    }
-                };
-                
-                history.replaceState = function(...args) {
-                    _origReplace.apply(this, args);
-                    if (window.__notifyNavigation) {
-                        window.__notifyNavigation({ 
-                            type: 'replaceState', 
-                            url: location.href, 
-                            timestamp: Date.now(),
-                            monotonicUs: Math.round(performance.now() * 1000)
-                        });
-                    }
-                };
-                
-                window.addEventListener('popstate', function() {
-                    if (window.__notifyNavigation) {
-                        window.__notifyNavigation({ 
-                            type: 'popstate', 
-                            url: location.href, 
-                            timestamp: Date.now(),
-                            monotonicUs: Math.round(performance.now() * 1000)
-                        });
-                    }
-                });
-            })();
 
             const locatorIntelligencePipelineStart = Date.now();
             function generateUUID() {
@@ -863,11 +824,12 @@ export class ActionDispatcher extends EventEmitter {
         // Determine immutable scheduling priority based on abstract infrastructure directive
         let priority = 'DISCRETE';
         const directive = metadata.locator?.schedulingDirective;
+        const typeLower = event.type ? event.type.toLowerCase() : '';
         if (directive === 'CRITICAL') {
             priority = 'CRITICAL';
-        } else if (event.type === 'hover' || event.type === 'mousemove' || event.type === 'pointermove') {
+        } else if (typeLower === 'hover' || typeLower === 'mousemove' || typeLower === 'pointermove') {
             priority = 'CONTINUOUS';
-        } else if (event.type === 'scroll' || event.type === 'wheel') {
+        } else if (typeLower === 'scroll' || typeLower === 'wheel') {
             priority = 'AGGREGATED';
         }
 
