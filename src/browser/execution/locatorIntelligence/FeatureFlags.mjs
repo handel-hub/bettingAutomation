@@ -15,6 +15,7 @@ export class FeatureFlagsRegistry {
             LI_RECOVERY_HIERARCHY: { default: false, dependsOn: ['LI_CONFIDENCE_GATE'], description: 'Use tiered recovery instead of flat retry' },
             LI_RESOLUTION_MEMORY: { default: false, dependsOn: ['LI_VERIFICATION'], description: 'Enable resolution caching' },
             LI_SHADOW_MODE: { default: false, dependsOn: [], description: 'Run new pipeline in parallel with legacy for comparison' },
+            LI_SID_MODE: { default: true, dependsOn: ['LI_IDENTITY_DOCUMENT'], description: 'Use SID-based cross-machine contract instead of locator strings' },
             V3_SCHEMA_ENFORCEMENT_MODE: { default: 'STRICT', dependsOn: [], description: 'Schema enforcement mode: DISABLED, SHADOW, or STRICT' },
             V3_DECOUPLE_HEALTH_MONITOR: { default: true, dependsOn: [], description: 'Decouple HealthMonitor from command execution failure state' },
             V3_ENABLE_STANDBY_POOL: { default: false, dependsOn: [], description: 'Enable WARM_STANDBY browser failover pool' },

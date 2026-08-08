@@ -288,7 +288,9 @@ export class FeatureExtractor extends PipelineStep {
             const midY = (rect.top || 0) + (rect.height || 0) / 2;
             const isTop = midY < height / 2;
             const isLeft = midX < width / 2;
-            pos.viewportQuadrant = `${isTop ? 'TOP' : 'BOTTOM'}_${isLeft ? 'LEFT' : 'RIGHT'}`;
+            pos.viewportQuadrant = isTop ? (isLeft ? 'top-left' : 'top-right') : (isLeft ? 'bottom-left' : 'bottom-right');
+            pos.normalizedX = Number((midX / width).toFixed(4));
+            pos.normalizedY = Number((midY / height).toFixed(4));
         }
 
         try {

@@ -108,7 +108,7 @@ describe('Milestone 6: Feature Flag Governance & Production Cutover', () => {
 
         // Send BROADCAST_ROLLBACK command
         const rollbackCmd = {
-            id: 'cfg-2',
+            id: 'cmd-cfg-2',
             category: 'Configuration',
             type: 'BROADCAST_ROLLBACK',
             timestamp: Date.now()

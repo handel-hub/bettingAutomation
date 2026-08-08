@@ -5,7 +5,6 @@ import { HardConstraints } from '../inference/HardConstraints.mjs';
 import { AnchorResolver } from '../inference/AnchorResolver.mjs';
 import { EntropyScaler } from '../inference/EntropyScaler.mjs';
 import { LocatorCandidate } from '../models/LocatorCandidate.mjs';
-import { LocatorIntelligenceEngine } from '../engine/LocatorIntelligenceEngine.mjs';
 import { PipelineContext } from '../engine/PipelineContext.mjs';
 import featureFlags from '../FeatureFlags.mjs';
 import { MockElement } from './TestHarness.mjs';
@@ -171,39 +170,5 @@ describe('Phase 4: Inference Engine', () => {
         }
     });
 
-    it('LocatorIntelligenceEngine routes candidate ranking through InferenceEngine when INFERENCE_ENGINE_V2 is enabled', () => {
-        featureFlags.resetForTesting({ INFERENCE_ENGINE_V2: true });
-        const engine = new LocatorIntelligenceEngine();
-        const context = new PipelineContext(null);
-        context.identityDocument = {
-            dataTestId: 'submit-btn',
-            textContent: 'Submit',
-            tagName: 'BUTTON'
-        };
 
-        const cand1 = new LocatorCandidate({ strategy: 'css', locator: '#btn-sub' });
-        cand1.features = { attributes: { 'data-testid': 'submit-btn' }, text: { normalized: 'submit' } };
-        cand1.node = { tagName: 'BUTTON' };
-
-        const cand2 = new LocatorCandidate({ strategy: 'css', locator: '#other' });
-        cand2.features = { text: { normalized: 'other' } };
-        cand2.node = { tagName: 'DIV' };
-
-        context.candidates = [cand2, cand1];
-
-        // Execute ranking step
-        engine.pipeline.forEach(step => {
-            if (step.name === 'RankingEngine') {
-                if (featureFlags.isEnabled('INFERENCE_ENGINE_V2')) {
-                    engine.inferenceEngine.infer(context.identityDocument || context.metadata?.identityDocument, context.candidates);
-                } else {
-                    step.execute(context);
-                }
-            }
-        });
-
-        expect(context.candidates[0]).toBe(cand1);
-        expect(cand1.ranking.finalScore).toBeDefined();
-        expect(cand1.scoringVector).toBeDefined();
-    });
 });

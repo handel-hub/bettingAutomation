@@ -213,6 +213,7 @@ export class ElementIdentityDocument {
         return {
             version: this.version,
             identityHash: this.identityHash,
+            tagName: this.element?.tagName || '',
             captureEpoch: this.captureEpoch,
             captureTimestamp: this.captureTimestamp,
             sourceEpoch: this.sourceEpoch,

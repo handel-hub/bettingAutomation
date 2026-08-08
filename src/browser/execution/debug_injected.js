@@ -3,6 +3,7 @@
             if (window.__locatorIntelligenceInjected) return;
             window.__locatorIntelligenceInjected = true;
             window.__ANTIGRAVITY_SEQ__ = 0;
+            window.__LI_SID_MODE_ENABLED__ = true;
 
             class HybridLogicalClock {
                 constructor(physical, logical) {
@@ -51,6 +52,7 @@
             LI_RECOVERY_HIERARCHY: { default: false, dependsOn: ['LI_CONFIDENCE_GATE'], description: 'Use tiered recovery instead of flat retry' },
             LI_RESOLUTION_MEMORY: { default: false, dependsOn: ['LI_VERIFICATION'], description: 'Enable resolution caching' },
             LI_SHADOW_MODE: { default: false, dependsOn: [], description: 'Run new pipeline in parallel with legacy for comparison' },
+            LI_SID_MODE: { default: true, dependsOn: ['LI_IDENTITY_DOCUMENT'], description: 'Use SID-based cross-machine contract instead of locator strings' },
             V3_SCHEMA_ENFORCEMENT_MODE: { default: 'STRICT', dependsOn: [], description: 'Schema enforcement mode: DISABLED, SHADOW, or STRICT' },
             V3_DECOUPLE_HEALTH_MONITOR: { default: true, dependsOn: [], description: 'Decouple HealthMonitor from command execution failure state' },
             V3_ENABLE_STANDBY_POOL: { default: false, dependsOn: [], description: 'Enable WARM_STANDBY browser failover pool' },
@@ -412,6 +414,7 @@ class ElementIdentityDocument {
         return {
             version: this.version,
             identityHash: this.identityHash,
+            tagName: this.element?.tagName || '',
             captureEpoch: this.captureEpoch,
             captureTimestamp: this.captureTimestamp,
             sourceEpoch: this.sourceEpoch,
@@ -916,7 +919,9 @@ class FeatureExtractor extends PipelineStep {
             const midY = (rect.top || 0) + (rect.height || 0) / 2;
             const isTop = midY < height / 2;
             const isLeft = midX < width / 2;
-            pos.viewportQuadrant = `${isTop ? 'TOP' : 'BOTTOM'}_${isLeft ? 'LEFT' : 'RIGHT'}`;
+            pos.viewportQuadrant = isTop ? (isLeft ? 'top-left' : 'top-right') : (isLeft ? 'bottom-left' : 'bottom-right');
+            pos.normalizedX = Number((midX / width).toFixed(4));
+            pos.normalizedY = Number((midY / height).toFixed(4));
         }
 
         try {
@@ -1462,7 +1467,9 @@ class IdentityDocumentBuilder extends PipelineStep {
                 viewportQuadrant: f.position?.viewportQuadrant || null,
                 isSticky: Boolean(f.position?.isSticky),
                 isFixed: Boolean(f.position?.isFixed),
-                zIndex: Number(f.position?.zIndex) || 0
+                zIndex: Number(f.position?.zIndex) || 0,
+                normalizedX: f.position?.normalizedX,
+                normalizedY: f.position?.normalizedY
             },
             state: {
                 visible: f.rect ? (f.rect.width > 0 && f.rect.height > 0) : Boolean(f.isIntersecting),
@@ -1644,6 +1651,7 @@ class StructuralStrategy {
 
 
 
+
 class CandidateGenerator extends PipelineStep {
     constructor() {
         super('CandidateGenerator');
@@ -1666,6 +1674,87 @@ class CandidateGenerator extends PipelineStep {
             }
         }
 
+        context.candidates = candidates;
+    }
+
+    executeFromSID(context, sid) {
+        const candidates = [];
+        let rank = 0;
+        
+        // DataAttribute strategy
+        const testId = sid.semantic?.dataTestId;
+        if (testId) {
+            candidates.push(new LocatorCandidate({
+                strategy: 'data-attribute',
+                locator: `[data-testid="${typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(testId) : testId}"]`,
+                rank: rank++,
+                reason: 'data-testid from SID'
+            }));
+        }
+        
+        const dataAttrs = sid.element?.dataAttributes;
+        if (dataAttrs) {
+            for (const [key, val] of Object.entries(dataAttrs)) {
+                if (key !== 'testid' && val) {
+                    candidates.push(new LocatorCandidate({
+                        strategy: 'data-attribute',
+                        locator: `[data-${key}="${typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(val) : val}"]`,
+                        rank: rank++,
+                        reason: `data-${key} from SID`
+                    }));
+                }
+            }
+        }
+        
+        // Text strategy
+        const textContent = sid.text?.exact;
+        if (textContent && textContent.trim().length > 0 && textContent.trim().length < 100) {
+            candidates.push(new LocatorCandidate({
+                strategy: 'text',
+                locator: `text="${textContent.trim()}"`,
+                rank: rank++,
+                reason: 'text from SID'
+            }));
+        }
+        
+        // Aria strategy
+        const ariaLabel = sid.element?.ariaAttributes ? sid.element.ariaAttributes['aria-label'] : null;
+        if (ariaLabel) {
+            candidates.push(new LocatorCandidate({
+                strategy: 'aria',
+                locator: `[aria-label="${typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(ariaLabel) : ariaLabel}"]`,
+                rank: rank++,
+                reason: 'aria-label from SID'
+            }));
+        }
+        
+        // Role strategy
+        const role = sid.element?.role || sid.semantic?.ariaRole;
+        if (role) {
+            let locStr = `role=${role}`;
+            if (ariaLabel) {
+                locStr = `${(sid.tagName || '').toLowerCase()}[role="${role}"][aria-label="${typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(ariaLabel) : ariaLabel}"]`;
+            } else if (textContent && textContent.trim().length < 50) {
+                locStr = `${(sid.tagName || '').toLowerCase()}[role="${role}"]`;
+            }
+            candidates.push(new LocatorCandidate({
+                strategy: 'role',
+                locator: locStr,
+                rank: rank++,
+                reason: 'role from SID'
+            }));
+        }
+        
+        // Structural fallback (cssSelector from SID)
+        if (sid.cssSelector) {
+            candidates.push(new LocatorCandidate({
+                strategy: 'structural',
+                locator: sid.cssSelector,
+                rank: rank++,
+                reason: 'cssSelector fallback from SID'
+            }));
+        }
+        
         context.candidates = candidates;
     }
 }
@@ -2265,32 +2354,6 @@ class NormalizedVisibilityRule extends RankingRule {
 
 
 
-
-
-
-
-
-
-
-
-
-class RankingConfig {
-    static getRules() {
-        const removeValidator = featureFlags.isEnabled('LI_REMOVE_VALIDATOR');
-        return [
-            { rule: new BaseScoreRule(), enabled: true, priority: 100 },
-            { rule: new DynamicContentRule(), enabled: true, priority: 90 },
-            { rule: new ValidationConfidenceRule(), enabled: !removeValidator, priority: 80 },
-            { rule: new SpecificityRule(), enabled: true, priority: 70 },
-            { rule: new ComplexityRule(), enabled: true, priority: 60 },
-            { rule: new StructuralRule(), enabled: true, priority: 50 },
-            { rule: new VisibilityRule(), enabled: true, priority: 40 },
-            { rule: new CorroborationRule(), enabled: true, priority: 30 }
-        ];
-    }
-}
-
-
 class ScoringWeights {
     constructor(overrides = {}) {
         const defaults = {
@@ -2324,96 +2387,6 @@ class ScoringWeights {
     }
 }
 
-
-
-
-
-
-
-class RankingEngine extends PipelineStep {
-    constructor() {
-        super('RankingEngine');
-        this.configRules = RankingConfig.getRules();
-    }
-
-    execute(context) {
-        if (!context.candidates || context.candidates.length === 0) return;
-
-        const removeValidator = featureFlags.isEnabled('LI_REMOVE_VALIDATOR');
-        const activeRules = RankingConfig.getRules()
-            .filter(r => r.enabled && (!removeValidator || r.rule.name !== 'ValidationConfidenceRule'))
-            .sort((a, b) => b.priority - a.priority)
-            .map(r => r.rule);
-
-        for (const candidate of context.candidates) {
-            candidate.ranking.scoreBreakdown = {};
-            
-            for (const rule of activeRules) {
-                const result = rule.evaluate(candidate, context);
-                
-                if (result.baseScore !== undefined) {
-                    candidate.ranking.baseScore = result.baseScore;
-                    candidate.ranking.finalScore = result.baseScore;
-                    candidate.ranking.scoreBreakdown[rule.name] = result.baseScore;
-                }
-                if (result.scoreDelta !== undefined) {
-                    candidate.ranking.baseScore = (candidate.ranking.baseScore || 0) + result.scoreDelta;
-                    candidate.ranking.finalScore = (candidate.ranking.finalScore || 0) + result.scoreDelta;
-                    candidate.ranking.scoreBreakdown[rule.name] = result.scoreDelta;
-                }
-                if (result.multiplier !== undefined) {
-                    candidate.ranking.finalScore *= result.multiplier;
-                    candidate.ranking.scoreBreakdown[rule.name] = result.multiplier;
-                }
-            }
-            candidate.telemetry.rankedAt = Date.now();
-        }
-
-        // Deterministic sorting with Tie Breakers
-        // Higher Final Score -> Higher Validation Status -> Higher Specificity -> Lower Complexity -> Higher Corroboration -> Strategy Stability -> Shorter Locator -> Generation Order
-        
-        const statusValue = { 'UNIQUE': 3, 'NOT_VERIFIABLE': 2, 'AMBIGUOUS': 1, 'MISSING': 0, 'INVALID': -1 };
-        
-        context.candidates.sort((a, b) => {
-            if (b.ranking.finalScore !== a.ranking.finalScore) {
-                return b.ranking.finalScore - a.ranking.finalScore;
-            }
-            
-            const valA = statusValue[a.validation.status] ?? 0;
-            const valB = statusValue[b.validation.status] ?? 0;
-            if (valB !== valA) return valB - valA;
-            
-            const specA = a.ranking.scoreBreakdown['SpecificityRule'] ?? 1;
-            const specB = b.ranking.scoreBreakdown['SpecificityRule'] ?? 1;
-            if (specB !== specA) return specB - specA;
-            
-            const compA = a.ranking.scoreBreakdown['ComplexityRule'] ?? 1;
-            const compB = b.ranking.scoreBreakdown['ComplexityRule'] ?? 1;
-            if (compA !== compB) return compA - compB; // Lower multiplier means higher penalty, so lower complexity = higher multiplier
-            
-            const corrA = a.ranking.scoreBreakdown['CorroborationRule'] ?? 1;
-            const corrB = b.ranking.scoreBreakdown['CorroborationRule'] ?? 1;
-            if (corrB !== corrA) return corrB - corrA;
-            
-            const stratA = a.ranking.scoreBreakdown['BaseScoreRule'] ?? 0;
-            const stratB = b.ranking.scoreBreakdown['BaseScoreRule'] ?? 0;
-            if (stratA !== stratB) return stratB - stratA;
-            
-            const lenA = (a.locator || '').length;
-            const lenB = (b.locator || '').length;
-            if (lenA !== lenB) return lenA - lenB;
-            
-            return 0; // Generation order is preserved
-        });
-
-        // Assign ordinal rank
-        context.candidates.forEach((c, index) => {
-            c.rank = index + 1;
-        });
-
-        TelemetryCollector.recordRanking({ candidates: context.candidates });
-    }
-}
 
 
 
@@ -2459,7 +2432,9 @@ class AdditiveRankingEngine extends PipelineStep {
             c.rank = index + 1;
         });
 
-        TelemetryCollector.recordRanking({ candidates: context.candidates });
+        if (typeof TelemetryCollector !== 'undefined') {
+            TelemetryCollector.recordRanking({ candidates: context.candidates });
+        }
     }
 
     _evaluateRules(candidate, context) {
@@ -2531,122 +2506,6 @@ class AdditiveRankingEngine extends PipelineStep {
         if (locA < locB) return -1;
         if (locA > locB) return 1;
         return 0;
-    }
-}
-
-
-
-
-
-
-class LocatorSerializer extends PipelineStep {
-    constructor() {
-        super('LocatorSerializer');
-    }
-
-    execute(context) {
-        const candidates = context.candidates || [];
-        const serializeFeatures = featureFlags.isEnabled('LI_SERIALIZE_FEATURES');
-        
-        let shadowPath = [];
-        if (context.composedPath && Array.isArray(context.composedPath)) {
-            for (let i = 0; i < context.composedPath.length; i++) {
-                const node = context.composedPath[i];
-                if (node && node.nodeType === 11) { // ShadowRoot
-                    const host = node.host || context.composedPath[i + 1];
-                    if (host && host.nodeType === 1) {
-                        let selector = host.nodeName.toLowerCase();
-                        if (host.id && !/\d+/.test(host.id)) {
-                            selector += '#' + (typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(host.id) : host.id);
-                        }
-                        shadowPath.unshift(selector);
-                    }
-                }
-            }
-        }
-        
-        context.output = {
-            shadowPath,
-            identityDocument: context.identityDocument ? (typeof context.identityDocument.serialize === 'function' ? context.identityDocument.serialize() : context.identityDocument) : null,
-            locators: candidates.map(c => ({
-                id: c.id,
-                strategy: c.strategy,
-                locator: c.locator,
-                rank: c.rank,
-                reason: c.reason,
-                generatedBy: context.config?.debug ? c.generatedBy : undefined,
-                validation: context.config?.debug ? c.validation : undefined,
-                structural: context.config?.debug ? c.structural : undefined,
-                ranking: {
-                    baseScore: context.config?.debug ? c.ranking.baseScore : undefined,
-                    finalScore: c.ranking.finalScore,
-                    scoringVector: (serializeFeatures && c.ranking.scoringVector) ? (typeof c.ranking.scoringVector.toBreakdown === 'function' ? c.ranking.scoringVector.toBreakdown() : c.ranking.scoringVector.dimensions) : undefined,
-                    scoreBreakdown: context.config?.debug ? c.ranking.scoreBreakdown : undefined
-                },
-                telemetry: context.config?.debug ? c.telemetry : undefined
-            })),
-            metadata: {
-                ...context.metadata,
-                platform: context.platform || context.metadata?.platform || null,
-                schedulingDirective: context.schedulingDirective || context.metadata?.schedulingDirective || null,
-                captureEpoch: context.navigationEpoch ?? context.metadata?.captureEpoch ?? 0,
-                generationMetrics: {
-                    durationMs: context.telemetry.pipelineDurationMs,
-                    candidateCount: candidates.length,
-                    stages: context.telemetry.stages
-                }
-            }
-        };
-
-        const eid = context.output.identityDocument;
-        const eidHash = TelemetryCollector.computeEIDHash(eid);
-        let valRes4 = 'PASS';
-        let err4 = null;
-        
-        const isEidValid = eid && (eid.confidenceScore === undefined || eid.confidenceScore > 0) && (eid.identityHash || eid.fingerprint);
-        
-        if (!isEidValid) {
-            valRes4 = 'FAIL_LF602';
-            err4 = { errorCode: 'LF-602', errorMessage: 'Payload Assembly missing or invalid identityDocument at Stage 4' };
-        }
-        TelemetryCollector.recordLifecycleEvent({
-            traceId: context.metadata?.traceId || 'tr-unknown',
-            spanId: 'sp-04',
-            parentSpanId: 'sp-02',
-            stageSequence: 4,
-            stageName: 'PAYLOAD_ASSEMBLED',
-            component: 'LocatorSerializer.mjs',
-            method: 'execute',
-            timestamp: Date.now(),
-            interactionId: context.metadata?.interactionId || 'ia-unknown',
-            interactionType: context.metadata?.interactionType || 'CLICK',
-            eidPresent: !!eid,
-            eidHash,
-            validationResult: valRes4,
-            errorDetails: err4
-        });
-
-        try {
-            const serializedStr = JSON.stringify(context.output);
-            TelemetryCollector.recordLifecycleEvent({
-                traceId: context.metadata?.traceId || 'tr-unknown',
-                spanId: 'sp-05',
-                parentSpanId: 'sp-04',
-                stageSequence: 5,
-                stageName: 'WIRE_SERIALIZED',
-                component: 'LocatorSerializer.mjs',
-                method: 'execute',
-                timestamp: Date.now(),
-                interactionId: context.metadata?.interactionId || 'ia-unknown',
-                interactionType: context.metadata?.interactionType || 'CLICK',
-                payloadSize: serializedStr.length,
-                serializationSize: serializedStr.length,
-                eidPresent: !!eid,
-                eidHash
-            });
-        } catch (e) {
-            // Ignore serialization error in telemetry calculation
-        }
     }
 }
 
@@ -4769,89 +4628,6 @@ class SportyBetConfirmationClassifier {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-class LocatorIntelligenceEngine {
-    constructor(config = {}) {
-        this.config = config;
-        this.rankingEngine = new RankingEngine();
-        this.additiveRankingEngine = new AdditiveRankingEngine();
-        this.inferenceEngine = new InferenceEngine();
-        this.pipeline = [
-            new FeatureExtractor(),
-            new IdentityDocumentBuilder(),
-            new CandidateGenerator(),
-            new CandidateDeduplicator()
-        ];
-        
-        // V1 Technical Debt: Platform-Specific Classification
-        if (featureFlags.isEnabled('enableSportyBetConfirmationClassifier')) {
-            // Note: Checking CurrentPlatform == 'SPORTYBET' would ideally be done here,
-            // but config.platform is usually available. We will assume the flag itself
-            // gates it appropriately for now or checking config.platform inside.
-            this.pipeline.push(new SportyBetConfirmationClassifier());
-        }
-
-        this.pipeline.push(
-            new StructuralAnalyzer(),
-            this.rankingEngine,
-            new LocatorSerializer()
-        );
-    }
-
-    process(el, composedPath, config = {}) {
-        const mergedConfig = { ...this.config, ...config };
-        const context = new PipelineContext(el, composedPath, mergedConfig);
-        if (context.metadata) {
-            context.metadata.flags = featureFlags.getAll();
-        }
-        
-        for (const step of this.pipeline) {
-            const stepStart = Date.now();
-
-
-            let currentStep = step;
-            if (step.name === 'RankingEngine') {
-                if (featureFlags.isEnabled('INFERENCE_ENGINE_V2') || featureFlags.isEnabled('LI_INFERENCE_ENGINE_V2')) {
-                    try {
-                        this.inferenceEngine.infer(context.identityDocument || context.metadata?.identityDocument, context.candidates);
-                    } catch (e) {
-                        console.warn(`[LocatorIntelligence] Pipeline step InferenceEngine failed:`, e);
-                    }
-                    context.telemetry.stages['InferenceEngine'] = Date.now() - stepStart;
-                    continue;
-                } else if (featureFlags.isEnabled('LI_ADDITIVE_SCORING')) {
-                    currentStep = this.additiveRankingEngine;
-                }
-            }
-            
-            try {
-                currentStep.execute(context);
-            } catch (e) {
-                console.warn(`[LocatorIntelligence] Pipeline step ${currentStep.name} failed:`, e);
-            }
-            
-            context.telemetry.stages[currentStep.name] = Date.now() - stepStart;
-        }
-        
-        context.telemetry.pipelineDurationMs = Date.now() - context.metadata.startTime;
-        
-        // Return the serialized output, which the Serializer places into context.output
-        return context.output;
-    }
-}
-
-
-
             // --------------------------------------------------------
 
             if (typeof featureFlags !== 'undefined' && featureFlags.isEnabled('SCENE_GRAPH_ENABLED')) {
@@ -5011,15 +4787,34 @@ class LocatorIntelligenceEngine {
 
                     let eid = null;
                     if (data.target && ['CLICK', 'DOUBLE_CLICK', 'DRAG', 'INPUT'].includes(type)) {
-                        const engine = new LocatorIntelligenceEngine();
-                        const resolution = engine.process(data.target, data.composedPath || []);
-                        if (resolution) {
-                            payload.locators = resolution.locators;
-                            payload.locatorMetadata = resolution.metadata;
-                            payload.shadowPath = resolution.shadowPath;
-                            payload.identityDocument = resolution.identityDocument || null;
-                            payload.probabilisticEID = resolution.identityDocument || null;
-                            eid = payload.identityDocument;
+                        if (window.__LI_SID_MODE_ENABLED__) {
+                            const ctx = new PipelineContext(data.target, data.composedPath || [], {});
+                            const extractor = new FeatureExtractor();
+                            extractor.execute(ctx);
+                            const builder = new IdentityDocumentBuilder();
+                            builder.execute(ctx);
+                            const sid = ctx.identityDocument ? (typeof ctx.identityDocument.serialize === 'function' ? ctx.identityDocument.serialize() : ctx.identityDocument) : null;
+                            payload.sid = sid;
+                            payload.identityDocument = sid;
+                            eid = sid;
+                            
+                            let shadowPath = [];
+                            if (data.composedPath && Array.isArray(data.composedPath)) {
+                                for (let i = 0; i < data.composedPath.length; i++) {
+                                    const node = data.composedPath[i];
+                                    if (node && node.nodeType === 11) {
+                                        const host = node.host || data.composedPath[i + 1];
+                                        if (host && host.nodeType === 1) {
+                                            let sel = host.nodeName.toLowerCase();
+                                            if (host.id && !/\d+/.test(host.id)) {
+                                                sel += '#' + (typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(host.id) : host.id);
+                                            }
+                                            shadowPath.unshift(sel);
+                                        }
+                                    }
+                                }
+                            }
+                            payload.shadowPath = shadowPath;
                         }
                     }
 

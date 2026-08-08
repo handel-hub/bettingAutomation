@@ -84,6 +84,29 @@ export class CommandPayloadSchema {
     }
 
     /**
+     * Validates a Semantic Identity Descriptor (SID) for structural integrity.
+     * @param {object} sid - The SID to validate
+     * @returns {boolean} true if valid, false otherwise
+     */
+    static isSIDValid(sid) {
+        if (!sid || typeof sid !== 'object') return false;
+        if (!sid.identityHash || typeof sid.identityHash !== 'string' || sid.identityHash.trim() === '') return false;
+        if (!sid.tagName || typeof sid.tagName !== 'string' || sid.tagName.trim() === '') return false;
+        
+        if (sid.boundingBox !== undefined && sid.boundingBox !== null) {
+            const bb = sid.boundingBox;
+            if (typeof bb !== 'object' ||
+                typeof bb.x !== 'number' || isNaN(bb.x) ||
+                typeof bb.y !== 'number' || isNaN(bb.y) ||
+                typeof bb.width !== 'number' || isNaN(bb.width) ||
+                typeof bb.height !== 'number' || isNaN(bb.height)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Validates an incoming command object against structural and semantic rules.
      * Preserves backwards compatibility for v2 attributes while enforcing v3 contracts when present.
      * @param {object} command - The incoming command object to validate
@@ -182,10 +205,25 @@ export class CommandPayloadSchema {
         // Category-specific validation for Execution commands (non-macro, non-navigate)
         if (category === 'Execution' && command.type !== 'macro' && command.type !== 'NAVIGATE' && command.type !== 'navigate') {
             const p = command.payload || {};
-            // Must have interactionId, selector, eid, locator, or v3 target / masterEID
-            const hasTarget = p.interactionId || p.selector || p.eid || p.locator || command.target || command.masterEID;
+            // Must have interactionId, sid, selector, eid, locator, or v3 target / masterEID
+            const hasTarget = p.interactionId || p.sid || p.selector || p.eid || p.locator || command.target || command.masterEID;
             if (!hasTarget) {
-                errors.push('Execution command must contain interactionId, selector, eid, locator, target, or masterEID.');
+                errors.push('Execution command must contain interactionId, sid, selector, eid, locator, target, or masterEID.');
+            }
+
+            if (p.sid !== undefined && p.sid !== null) {
+                if (!this.isSIDValid(p.sid)) {
+                    errors.push('Command payload.sid is invalid or malformed (requires identityHash and tagName).');
+                }
+            }
+
+            if (enforcementMode === 'STRICT') {
+                if (p.locators !== undefined && p.locators !== null) {
+                    errors.push('STRICT mode: payload.locators is deprecated. Use payload.sid.');
+                }
+                if (p.probabilisticEID !== undefined && p.probabilisticEID !== null) {
+                    errors.push('STRICT mode: payload.probabilisticEID is deprecated. Use payload.sid.');
+                }
             }
 
             // If coordinates are provided in payload or top level, they must be numeric x and y

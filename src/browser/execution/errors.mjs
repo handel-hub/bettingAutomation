@@ -24,6 +24,8 @@ export class GenerationFailure extends AutomationError {
 export class ExtractionError extends GenerationFailure { constructor(msg) { super('LF-001', msg); } }
 export class StrategyError extends GenerationFailure { constructor(msg) { super('LF-002', msg, 'WARNING'); } }
 export class NoCandidatesError extends GenerationFailure { constructor(msg) { super('LF-003', msg); } }
+export class CandidateGenerationError extends GenerationFailure { constructor(msg) { super('LF-607', msg, 'CRITICAL', 'LocatorResolver'); } }
+export class GenerationScriptMissingError extends GenerationFailure { constructor(msg) { super('LF-608', msg, 'CRITICAL', 'LocatorResolver'); } }
 
 // ----------------------------------------------------
 // 2. Resolution Failure (Slave)

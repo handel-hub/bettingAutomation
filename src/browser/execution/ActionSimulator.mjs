@@ -17,7 +17,9 @@ import {
     ElementDetachedError, 
     PlaywrightTimeoutError,
     GlobalTimeoutError,
-    QueueDeadlineExceededError
+    QueueDeadlineExceededError,
+    CandidateGenerationError,
+    GenerationScriptMissingError
 } from './errors.mjs';
 
 export class ActionSimulator extends EventEmitter {
@@ -25,6 +27,24 @@ export class ActionSimulator extends EventEmitter {
         super();
         this.MAX_EXECUTION_RETRIES = 3;
         this.attachedPages = new WeakSet();
+    }
+
+    async _ensureGenerationScriptInjected(page) {
+        if (this._generationScriptInjected && this._generationScriptInjected.has(page)) {
+            return;
+        }
+        if (!this._generationScriptInjected) {
+            this._generationScriptInjected = new WeakSet();
+        }
+        
+        const scriptPath = path.join(__dirname, 'locatorIntelligence', '_slave_generation_bundle.mjs');
+        if (!this._cachedGenerationScript) {
+            this._cachedGenerationScript = await fsPromises.readFile(scriptPath, 'utf8');
+        }
+        
+        await page.addInitScript(this._cachedGenerationScript);
+        await page.evaluate(this._cachedGenerationScript).catch(() => {});
+        this._generationScriptInjected.add(page);
     }
 
     async injectOverlayScript(page) {
@@ -128,7 +148,32 @@ export class ActionSimulator extends EventEmitter {
         }
 
         let attempts = 0;
-        const locators = command.payload.locators || [];
+        let locators = [];
+
+        if (command.payload.sid && featureFlags.isEnabled('LI_SID_MODE')) {
+            try {
+                await this._ensureGenerationScriptInjected(page);
+                locators = await page.evaluate((sid) => {
+                    if (typeof window.__liGenerateFromSID !== 'function') {
+                        throw new Error('Generation script not injected');
+                    }
+                    return window.__liGenerateFromSID(sid);
+                }, command.payload.sid);
+                
+                if (!locators || locators.length === 0) {
+                    throw new CandidateGenerationError(
+                        `[LF-607] Slave-side generation produced 0 candidates from SID (identityHash: ${command.payload.sid?.identityHash})`
+                    );
+                }
+            } catch (err) {
+                if (err instanceof CandidateGenerationError) throw err;
+                throw new GenerationScriptMissingError(
+                    `[LF-608] Slave-side generation failed: ${err.message}`
+                );
+            }
+        } else {
+            locators = command.payload.locators || [];
+        }
 
         while (attempts < this.MAX_EXECUTION_RETRIES) {
             attempts++;

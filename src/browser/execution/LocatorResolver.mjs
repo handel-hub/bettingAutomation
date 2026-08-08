@@ -13,7 +13,9 @@ import {
     MaxAttemptsReachedError,
     RecoveryExhaustedError,
     AmbiguousResolutionError,
-    VerificationMismatchError
+    VerificationMismatchError,
+    CandidateGenerationError,
+    GenerationScriptMissingError
 } from './errors.mjs';
 import { ResolutionPolicy, DefaultPolicy } from './locatorIntelligence/resolution/ResolutionPolicy.mjs';
 import { ResolutionContext, ResolutionState } from './locatorIntelligence/resolution/ResolutionContext.mjs';
@@ -730,7 +732,7 @@ export class LocatorResolver {
                     return result;
                     
                 } catch (err) {
-                    if (err instanceof ConfidenceGateRejectionError || err.name === 'ConfidenceBelowThresholdError' || err.code === 'LF-602' || err instanceof GlobalTimeoutError || err instanceof QueueDeadlineExceededError || err.code === 'LF-504' || err.code === 'LF-702' || err instanceof ContractViolationError || err.code === 'LF-701' || err instanceof MaxAttemptsReachedError || err.code === 'LF-505' || err instanceof RecoveryExhaustedError || err.code === 'LF-605' || err instanceof AmbiguousResolutionError || err.code === 'LF-603' || err instanceof VerificationMismatchError || err.code === 'LF-601') {
+                    if (err instanceof ConfidenceGateRejectionError || err.name === 'ConfidenceBelowThresholdError' || err.code === 'LF-602' || err instanceof GlobalTimeoutError || err instanceof QueueDeadlineExceededError || err.code === 'LF-504' || err.code === 'LF-702' || err instanceof ContractViolationError || err.code === 'LF-701' || err instanceof MaxAttemptsReachedError || err.code === 'LF-505' || err instanceof RecoveryExhaustedError || err.code === 'LF-605' || err instanceof AmbiguousResolutionError || err.code === 'LF-603' || err instanceof VerificationMismatchError || err.code === 'LF-601' || err instanceof CandidateGenerationError || err.code === 'LF-607' || err instanceof GenerationScriptMissingError || err.code === 'LF-608') {
                         throw err;
                     }
                     const isTerminal = !policy.retry.retryableFailures.includes(err.name);
@@ -753,7 +755,7 @@ export class LocatorResolver {
                         const errors = [];
                         chunk.forEach(ctx => {
                             evaluateContext(ctx).then(resolve).catch(err => {
-                                const isFatal = (err instanceof ConfidenceGateRejectionError || err.name === 'ConfidenceBelowThresholdError' || err.code === 'LF-602' || err instanceof GlobalTimeoutError || err instanceof QueueDeadlineExceededError || err.code === 'LF-504' || err.code === 'LF-702' || err instanceof ContractViolationError || err.code === 'LF-701' || err instanceof MaxAttemptsReachedError || err.code === 'LF-505' || err instanceof RecoveryExhaustedError || err.code === 'LF-605' || err instanceof AmbiguousResolutionError || err.code === 'LF-603' || err instanceof VerificationMismatchError || err.code === 'LF-601');
+                                const isFatal = (err instanceof ConfidenceGateRejectionError || err.name === 'ConfidenceBelowThresholdError' || err.code === 'LF-602' || err instanceof GlobalTimeoutError || err instanceof QueueDeadlineExceededError || err.code === 'LF-504' || err.code === 'LF-702' || err instanceof ContractViolationError || err.code === 'LF-701' || err instanceof MaxAttemptsReachedError || err.code === 'LF-505' || err instanceof RecoveryExhaustedError || err.code === 'LF-605' || err instanceof AmbiguousResolutionError || err.code === 'LF-603' || err instanceof VerificationMismatchError || err.code === 'LF-601' || err instanceof CandidateGenerationError || err.code === 'LF-607' || err instanceof GenerationScriptMissingError || err.code === 'LF-608');
                                 if (isFatal) {
                                     reject(err);
                                 } else {
@@ -817,7 +819,7 @@ export class LocatorResolver {
                     const result = await resolveAttempt();
                     if (result && result.success) return result;
                 } catch (err) {
-                    if (err instanceof ConfidenceGateRejectionError || err.name === 'ConfidenceBelowThresholdError' || err.code === 'LF-602' || err instanceof GlobalTimeoutError || err instanceof QueueDeadlineExceededError || err.code === 'LF-504' || err.code === 'LF-702' || err instanceof ContractViolationError || err.code === 'LF-701' || err instanceof MaxAttemptsReachedError || err.code === 'LF-505' || err instanceof RecoveryExhaustedError || err.code === 'LF-605' || err instanceof AmbiguousResolutionError || err.code === 'LF-603' || err instanceof VerificationMismatchError || err.code === 'LF-601') {
+                    if (err instanceof ConfidenceGateRejectionError || err.name === 'ConfidenceBelowThresholdError' || err.code === 'LF-602' || err instanceof GlobalTimeoutError || err instanceof QueueDeadlineExceededError || err.code === 'LF-504' || err.code === 'LF-702' || err instanceof ContractViolationError || err.code === 'LF-701' || err instanceof MaxAttemptsReachedError || err.code === 'LF-505' || err instanceof RecoveryExhaustedError || err.code === 'LF-605' || err instanceof AmbiguousResolutionError || err.code === 'LF-603' || err instanceof VerificationMismatchError || err.code === 'LF-601' || err instanceof CandidateGenerationError || err.code === 'LF-607' || err instanceof GenerationScriptMissingError || err.code === 'LF-608') {
                         throw err; // propagate terminal budget and contract errors immediately without retrying!
                     }
                 }

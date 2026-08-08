@@ -82,11 +82,8 @@ export class ActionDispatcher extends EventEmitter {
             'ranking/RankingRules/NormalizedSpecificityRule.mjs',
             'ranking/RankingRules/NormalizedCorroborationRule.mjs',
             'ranking/RankingRules/NormalizedVisibilityRule.mjs',
-            'ranking/RankingConfig.mjs',
             'ranking/ScoringWeights.mjs',
-            'ranking/RankingEngine.mjs',
             'ranking/AdditiveRankingEngine.mjs',
-            'serialization/LocatorSerializer.mjs',
             'telemetry/RollingWindow.mjs',
             'telemetry/MetricsRegistry.mjs',
             'telemetry/TelemetryCollector.mjs',
@@ -99,8 +96,7 @@ export class ActionDispatcher extends EventEmitter {
             'inference/AnchorResolver.mjs',
             'inference/EntropyScaler.mjs',
             'inference/InferenceEngine.mjs',
-            'platforms/sportybet/SportyBetConfirmationClassifier.mjs',
-            'engine/LocatorIntelligenceEngine.mjs'
+            'platforms/sportybet/SportyBetConfirmationClassifier.mjs'
         ];
 
         let locatorIntelligenceCode = '';
@@ -119,6 +115,7 @@ export class ActionDispatcher extends EventEmitter {
             if (window.__locatorIntelligenceInjected) return;
             window.__locatorIntelligenceInjected = true;
             window.__ANTIGRAVITY_SEQ__ = 0;
+            window.__LI_SID_MODE_ENABLED__ = ${featureFlags.isEnabled('LI_SID_MODE')};
 
             class HybridLogicalClock {
                 constructor(physical, logical) {
@@ -310,15 +307,34 @@ export class ActionDispatcher extends EventEmitter {
 
                     let eid = null;
                     if (data.target && ['CLICK', 'DOUBLE_CLICK', 'DRAG', 'INPUT'].includes(type)) {
-                        const engine = new LocatorIntelligenceEngine();
-                        const resolution = engine.process(data.target, data.composedPath || []);
-                        if (resolution) {
-                            payload.locators = resolution.locators;
-                            payload.locatorMetadata = resolution.metadata;
-                            payload.shadowPath = resolution.shadowPath;
-                            payload.identityDocument = resolution.identityDocument || null;
-                            payload.probabilisticEID = resolution.identityDocument || null;
-                            eid = payload.identityDocument;
+                        if (window.__LI_SID_MODE_ENABLED__) {
+                            const ctx = new PipelineContext(data.target, data.composedPath || [], {});
+                            const extractor = new FeatureExtractor();
+                            extractor.execute(ctx);
+                            const builder = new IdentityDocumentBuilder();
+                            builder.execute(ctx);
+                            const sid = ctx.identityDocument ? (typeof ctx.identityDocument.serialize === 'function' ? ctx.identityDocument.serialize() : ctx.identityDocument) : null;
+                            payload.sid = sid;
+                            payload.identityDocument = sid;
+                            eid = sid;
+                            
+                            let shadowPath = [];
+                            if (data.composedPath && Array.isArray(data.composedPath)) {
+                                for (let i = 0; i < data.composedPath.length; i++) {
+                                    const node = data.composedPath[i];
+                                    if (node && node.nodeType === 11) {
+                                        const host = node.host || data.composedPath[i + 1];
+                                        if (host && host.nodeType === 1) {
+                                            let sel = host.nodeName.toLowerCase();
+                                            if (host.id && !/\\d+/.test(host.id)) {
+                                                sel += '#' + (typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(host.id) : host.id);
+                                            }
+                                            shadowPath.unshift(sel);
+                                        }
+                                    }
+                                }
+                            }
+                            payload.shadowPath = shadowPath;
                         }
                     }
 

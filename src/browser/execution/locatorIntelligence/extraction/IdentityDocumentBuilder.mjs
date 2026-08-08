@@ -59,7 +59,9 @@ export class IdentityDocumentBuilder extends PipelineStep {
                 viewportQuadrant: f.position?.viewportQuadrant || null,
                 isSticky: Boolean(f.position?.isSticky),
                 isFixed: Boolean(f.position?.isFixed),
-                zIndex: Number(f.position?.zIndex) || 0
+                zIndex: Number(f.position?.zIndex) || 0,
+                normalizedX: f.position?.normalizedX,
+                normalizedY: f.position?.normalizedY
             },
             state: {
                 visible: f.rect ? (f.rect.width > 0 && f.rect.height > 0) : Boolean(f.isIntersecting),

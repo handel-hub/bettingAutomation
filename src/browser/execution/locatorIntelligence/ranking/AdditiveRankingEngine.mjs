@@ -42,7 +42,9 @@ export class AdditiveRankingEngine extends PipelineStep {
             c.rank = index + 1;
         });
 
-        TelemetryCollector.recordRanking({ candidates: context.candidates });
+        if (typeof TelemetryCollector !== 'undefined') {
+            TelemetryCollector.recordRanking({ candidates: context.candidates });
+        }
     }
 
     _evaluateRules(candidate, context) {

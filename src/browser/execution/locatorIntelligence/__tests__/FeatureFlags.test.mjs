@@ -69,7 +69,8 @@ describe('FeatureFlagsRegistry', () => {
         registry.resetForTesting({
             LI_SERIALIZE_FEATURES: true,
             LI_IDENTITY_DOCUMENT: true,
-            LI_EXTENDED_FEATURES: false
+            LI_EXTENDED_FEATURES: false,
+            LI_SID_MODE: false
         });
         expect(registry.isEnabled('LI_EXTENDED_FEATURES')).toBe(false);
         expect(registry.isEnabled('LI_IDENTITY_DOCUMENT')).toBe(false);
