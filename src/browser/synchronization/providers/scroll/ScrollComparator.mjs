@@ -1,4 +1,5 @@
 import { ScrollLifecycle } from '../../models/BrowserStateModel.mjs';
+import featureFlags from '../../../execution/locatorIntelligence/FeatureFlags.mjs';
 
 export const ScrollComparisonResult = {
     MATCH: 'MATCH',
@@ -8,7 +9,8 @@ export const ScrollComparisonResult = {
     CONTAINER_ID_MISMATCH: 'CONTAINER_ID_MISMATCH',
     WAITING: 'WAITING',
     MOMENTUM_ACTIVE: 'MOMENTUM_ACTIVE',
-    VIRTUALIZATION_PENDING: 'VIRTUALIZATION_PENDING'
+    VIRTUALIZATION_PENDING: 'VIRTUALIZATION_PENDING',
+    CLAMPING_REQUIRED: 'CLAMPING_REQUIRED'
 };
 
 export class ScrollComparator {
@@ -49,6 +51,43 @@ export class ScrollComparator {
         }
 
         // Compare Container Scroll
+        if (featureFlags.isEnabled('V4_SPATIAL_SCROLL')) {
+            // Topological Addressing Check
+            if (expectedScroll.spatialHash && expectedScroll.spatialHash !== runtimeScrollContext.spatialHash) {
+                return { result: ScrollComparisonResult.CONTAINER_ID_MISMATCH, confidence: 1 };
+            }
+
+            // Normalized Coordinate Comparison
+            const dRhoX = Math.abs((expectedScroll.rhoX || 0) - (runtimeScrollContext.rhoX || 0));
+            const dRhoY = Math.abs((expectedScroll.rhoY || 0) - (runtimeScrollContext.rhoY || 0));
+
+            if (dRhoX > this.policy.v4SpatialTolerance || dRhoY > this.policy.v4SpatialTolerance) {
+                // If coordinates mismatch, check if it's because of limit differences
+                const limitXDiff = Math.abs((expectedScroll.viewportLimitX || 0) - (runtimeScrollContext.viewportLimitX || 0));
+                const limitYDiff = Math.abs((expectedScroll.viewportLimitY || 0) - (runtimeScrollContext.viewportLimitY || 0));
+                
+                // If the target scroll is unreachable in the current viewport, require clamping
+                if (expectedScroll.rhoX > 0 && runtimeScrollContext.rhoX < expectedScroll.rhoX && (runtimeScrollContext.viewportLimitX || 0) === (runtimeScrollContext.containerScrollX || runtimeScrollContext.pageScrollX || 0)) {
+                    if (limitXDiff > 5) return { result: ScrollComparisonResult.CLAMPING_REQUIRED, confidence: 1 };
+                }
+                if (expectedScroll.rhoY > 0 && runtimeScrollContext.rhoY < expectedScroll.rhoY && (runtimeScrollContext.viewportLimitY || 0) === (runtimeScrollContext.containerScrollY || runtimeScrollContext.pageScrollY || 0)) {
+                    if (limitYDiff > 5) return { result: ScrollComparisonResult.CLAMPING_REQUIRED, confidence: 1 };
+                }
+
+                // Normal mismatch
+                if (expectedScroll.spatialHash === 'window') {
+                    return { result: ScrollComparisonResult.WINDOW_POSITION_MISMATCH, confidence: 1 };
+                }
+                return { result: ScrollComparisonResult.CONTAINER_POSITION_MISMATCH, confidence: 1 };
+            }
+            
+            return {
+                result: (dRhoX > 0 || dRhoY > 0) ? ScrollComparisonResult.TOLERANCE_MATCH : ScrollComparisonResult.MATCH,
+                confidence: 1
+            };
+        }
+
+        // V3 Legacy Comparison
         if (expectedScroll.containerId !== runtimeScrollContext.activeContainerId) {
             return { result: ScrollComparisonResult.CONTAINER_ID_MISMATCH, confidence: 1 };
         }

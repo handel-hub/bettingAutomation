@@ -1,4 +1,5 @@
 import { logger } from '../../../../config.mjs';
+import featureFlags from '../../../execution/locatorIntelligence/FeatureFlags.mjs';
 
 /**
  * Injects a script into the browser to monitor scroll events
@@ -15,6 +16,8 @@ export class ScrollTracker {
     async initialize() {
         if (this.started) return;
         this.started = true;
+
+        const v4SpatialScroll = featureFlags.isEnabled('V4_SPATIAL_SCROLL');
 
         await this.page.exposeFunction('dispatchProviderScrollEvent', (eventData) => {
             if (this.onScrollEvent) {
@@ -113,6 +116,32 @@ export class ScrollTracker {
                         velocity = 0;
                     }
 
+                    // V4 Spatial Scroll logic
+                    let rhoX = 0, rhoY = 0, limitX = 0, limitY = 0, spatialHash = null;
+                    if (${v4SpatialScroll}) {
+                        const target = (source === 'ELEMENT_SCROLL' && e.target instanceof Element) ? e.target : document.documentElement;
+                        limitX = Math.max(0, target.scrollWidth - target.clientWidth);
+                        limitY = Math.max(0, target.scrollHeight - target.clientHeight);
+                        
+                        const sx = source === 'ELEMENT_SCROLL' ? containerX : currentPageX;
+                        const sy = source === 'ELEMENT_SCROLL' ? containerY : currentPageY;
+
+                        rhoX = limitX > 0 ? (sx / limitX) : 0;
+                        rhoY = limitY > 0 ? (sy / limitY) : 0;
+
+                        // FNV-1a hash of topological path
+                        if (source === 'ELEMENT_SCROLL' && containerId) {
+                            let hash = 2166136261;
+                            for (let i = 0; i < containerId.length; i++) {
+                                hash ^= containerId.charCodeAt(i);
+                                hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+                            }
+                            spatialHash = (hash >>> 0).toString(16);
+                        } else {
+                            spatialHash = 'window';
+                        }
+                    }
+
                     const payload = {
                         browserId: '${this.browserId}',
                         timestamp: Date.now(),
@@ -124,7 +153,12 @@ export class ScrollTracker {
                         containerScrollY: containerY,
                         direction: dy > 0 ? 'down' : (dy < 0 ? 'up' : (dx > 0 ? 'right' : (dx < 0 ? 'left' : 'none'))),
                         velocity: velocity,
-                        isScrollEnd: isEnd
+                        isScrollEnd: isEnd,
+                        rhoX: rhoX,
+                        rhoY: rhoY,
+                        viewportLimitX: limitX,
+                        viewportLimitY: limitY,
+                        spatialHash: spatialHash
                     };
 
                     if (window.dispatchProviderScrollEvent) {

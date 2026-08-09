@@ -34,5 +34,11 @@ export class ScrollPolicy extends CapabilityPolicy {
          * Default: 500ms
          */
         this.virtualizationTimeoutMs = config.virtualizationTimeoutMs ?? 500;
+
+        /**
+         * The tolerance for normalized spatial coordinate comparison (0.0 to 1.0).
+         * Default: 0.001 (0.1%)
+         */
+        this.v4SpatialTolerance = config.v4SpatialTolerance ?? 0.001;
     }
 }

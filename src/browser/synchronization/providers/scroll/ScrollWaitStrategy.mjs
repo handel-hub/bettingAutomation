@@ -61,6 +61,11 @@ export class ScrollWaitStrategy {
                             errorCode = 'SY-131';
                             errorMsg = 'Container mismatch';
                             break;
+                        case 'CLAMPING_REQUIRED':
+                        case 99: // Assuming CLAMPING_REQUIRED might be an enum
+                            errorCode = 'SY-135';
+                            errorMsg = 'Target scroll coordinate unreachable; layout clamping required';
+                            break;
                     }
 
                     reject(new Error(`[${errorCode}] ${errorMsg}: expected ${JSON.stringify(expectedScroll)}, got ${JSON.stringify(scrollContext)}`));

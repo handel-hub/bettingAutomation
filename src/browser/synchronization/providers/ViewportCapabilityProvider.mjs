@@ -37,7 +37,7 @@ export class ViewportCapabilityProvider extends CapabilityProvider {
             const tracker = new ViewportTracker(browserId);
             tracker.setStateMachine(stateMachine);
 
-            const recoveryStrategy = new ViewportRecoveryStrategy(browserId);
+            const recoveryStrategy = new ViewportRecoveryStrategy(browserId, page);
             const gatingController = new ViewportIsomorphicGatingController(browserId, this.registry, this.syncManager?.telemetry);
 
             // Forward state machine events to the global provider event emitter

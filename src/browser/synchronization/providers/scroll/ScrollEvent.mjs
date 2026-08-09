@@ -24,5 +24,12 @@ export class ScrollEvent {
 
         // true if the event was an explicit "scrollend" event
         this.isScrollEnd = data.isScrollEnd || false;
+
+        // V4 Spatial Extensions
+        this.rhoX = data.rhoX || 0;
+        this.rhoY = data.rhoY || 0;
+        this.viewportLimitX = data.viewportLimitX || 0;
+        this.viewportLimitY = data.viewportLimitY || 0;
+        this.spatialHash = data.spatialHash || null;
     }
 }

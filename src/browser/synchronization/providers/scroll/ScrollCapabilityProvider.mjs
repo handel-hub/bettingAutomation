@@ -5,6 +5,8 @@ import { ScrollTracker } from './ScrollTracker.mjs';
 import { ScrollStateMachine } from './ScrollStateMachine.mjs';
 import { ScrollComparator } from './ScrollComparator.mjs';
 import { ScrollWaitStrategy } from './ScrollWaitStrategy.mjs';
+import { ScrollRecoveryStrategy } from './ScrollRecoveryStrategy.mjs';
+import { VsyncCoalescer } from './VsyncCoalescer.mjs';
 import { ScrollEvent } from './ScrollEvent.mjs';
 import EventEmitter from 'node:events';
 
@@ -31,14 +33,20 @@ export class ScrollCapabilityProvider extends CapabilityProvider {
             const stateMachine = new ScrollStateMachine(browserId, this.registry, this.policy);
             const comparator = new ScrollComparator(this.policy);
             const waitStrategy = new ScrollWaitStrategy(browserId, this.registry, stateMachine, comparator, this.policy);
+            const recoveryStrategy = new ScrollRecoveryStrategy(browserId, page);
             const tracker = new ScrollTracker(browserId, page);
+            const coalescer = new VsyncCoalescer();
             
-            tracker.on('ScrollEvent', (eventData) => {
+            coalescer.on('ScrollEvent', (eventData) => {
                 const scrollEvent = new ScrollEvent(eventData);
                 stateMachine.processEvent(scrollEvent);
             });
 
-            this.instances.set(browserId, { tracker, stateMachine, waitStrategy, comparator });
+            tracker.on('ScrollEvent', (eventData) => {
+                coalescer.pushEvent(browserId, eventData);
+            });
+
+            this.instances.set(browserId, { tracker, stateMachine, waitStrategy, comparator, recoveryStrategy, coalescer });
 
             // Forward state machine events as provider events
             stateMachine.on('ScrollStarted', (e) => this.events.emit('ScrollStarted', e));
@@ -55,7 +63,15 @@ export class ScrollCapabilityProvider extends CapabilityProvider {
         const { browserId, context, deadline } = syncContext;
         const instance = this.instances.get(browserId);
         if (!instance) return;
-        return instance.waitStrategy.waitForScroll(context.command, deadline);
+        
+        try {
+            return await instance.waitStrategy.waitForScroll(context.command, deadline);
+        } catch (error) {
+            if (await instance.recoveryStrategy.attemptRecovery(error)) {
+                return await instance.waitStrategy.waitForScroll(context.command, deadline);
+            }
+            throw error;
+        }
     }
 
     async currentStatus(syncContext) {
