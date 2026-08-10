@@ -87,6 +87,7 @@ export class ActionDispatcher extends EventEmitter {
             'telemetry/RollingWindow.mjs',
             'telemetry/MetricsRegistry.mjs',
             'telemetry/TelemetryCollector.mjs',
+            'memory/ResolutionMemory.mjs',
             'scenegraph/TextIndex.mjs',
             'scenegraph/MutationProcessor.mjs',
             'scenegraph/QueryPlanner.mjs',
