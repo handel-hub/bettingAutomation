@@ -3,32 +3,32 @@ export class FeatureFlagsRegistry {
         this._flags = new Map();
         this._initialized = false;
         this.definitions = {
-            LI_EXTENDED_FEATURES: { default: false, dependsOn: [], description: 'Enable extended feature extraction' },
-            LI_IDENTITY_DOCUMENT: { default: false, dependsOn: ['LI_EXTENDED_FEATURES'], description: 'Enable EID generation and transmission' },
-            LI_ADDITIVE_SCORING: { default: false, dependsOn: [], description: 'Use additive vector scoring model' },
-            LI_SERIALIZE_FEATURES: { default: false, dependsOn: ['LI_IDENTITY_DOCUMENT'], description: 'Include features/EID in serialized output' },
-            LI_EPOCH_GATING: { default: false, dependsOn: [], description: 'Enable navigation epoch checks' },
-            LI_BATCH_RESOLVER: { default: false, dependsOn: ['LI_SERIALIZE_FEATURES'], description: 'Use batch resolution via page.evaluate' },
-            LI_DISAMBIGUATION: { default: false, dependsOn: ['LI_IDENTITY_DOCUMENT'], description: 'Enable disambiguation engine for count>1' },
-            LI_VERIFICATION: { default: false, dependsOn: ['LI_IDENTITY_DOCUMENT'], description: 'Enable post-resolution EID verification' },
-            LI_CONFIDENCE_GATE: { default: false, dependsOn: ['LI_VERIFICATION', 'LI_DISAMBIGUATION'], description: 'Enable threshold-based execution gating' },
-            LI_RECOVERY_HIERARCHY: { default: false, dependsOn: ['LI_CONFIDENCE_GATE'], description: 'Use tiered recovery instead of flat retry' },
-            LI_RESOLUTION_MEMORY: { default: false, dependsOn: ['LI_VERIFICATION'], description: 'Enable resolution caching' },
+            LI_EXTENDED_FEATURES: { default: true, dependsOn: [], description: 'Enable extended feature extraction' },
+            LI_IDENTITY_DOCUMENT: { default: true, dependsOn: ['LI_EXTENDED_FEATURES'], description: 'Enable EID generation and transmission' },
+            LI_ADDITIVE_SCORING: { default: true, dependsOn: [], description: 'Use additive vector scoring model' },
+            LI_SERIALIZE_FEATURES: { default: true, dependsOn: ['LI_IDENTITY_DOCUMENT'], description: 'Include features/EID in serialized output' },
+            LI_EPOCH_GATING: { default: true, dependsOn: [], description: 'Enable navigation epoch checks' },
+            LI_BATCH_RESOLVER: { default: true, dependsOn: ['LI_SERIALIZE_FEATURES'], description: 'Use batch resolution via page.evaluate' },
+            LI_DISAMBIGUATION: { default: true, dependsOn: ['LI_IDENTITY_DOCUMENT'], description: 'Enable disambiguation engine for count>1' },
+            LI_VERIFICATION: { default: true, dependsOn: ['LI_IDENTITY_DOCUMENT'], description: 'Enable post-resolution EID verification' },
+            LI_CONFIDENCE_GATE: { default: true, dependsOn: ['LI_VERIFICATION', 'LI_DISAMBIGUATION'], description: 'Enable threshold-based execution gating' },
+            LI_RECOVERY_HIERARCHY: { default: true, dependsOn: ['LI_CONFIDENCE_GATE'], description: 'Use tiered recovery instead of flat retry' },
+            LI_RESOLUTION_MEMORY: { default: true, dependsOn: ['LI_VERIFICATION'], description: 'Enable resolution caching' },
             LI_SHADOW_MODE: { default: false, dependsOn: [], description: 'Run new pipeline in parallel with legacy for comparison' },
             LI_SID_MODE: { default: true, dependsOn: ['LI_IDENTITY_DOCUMENT'], description: 'Use SID-based cross-machine contract instead of locator strings' },
             V3_SCHEMA_ENFORCEMENT_MODE: { default: 'STRICT', dependsOn: [], description: 'Schema enforcement mode: DISABLED, SHADOW, or STRICT' },
             V3_DECOUPLE_HEALTH_MONITOR: { default: true, dependsOn: [], description: 'Decouple HealthMonitor from command execution failure state' },
             V3_ENABLE_STANDBY_POOL: { default: false, dependsOn: [], description: 'Enable WARM_STANDBY browser failover pool' },
             V3_ENABLE_GLOBAL_TTL: { default: true, dependsOn: [], description: 'Enable 1,500ms global distributed deadline budgeting' },
-            SCENE_GRAPH_ENABLED: { default: false, dependsOn: [], description: 'Enable Scene Graph indexing and query planner in Slave browser' },
-            INFERENCE_ENGINE_V2: { default: false, dependsOn: [], description: 'Route resolution through multiplicative InferenceEngine' },
-            LI_INFERENCE_ENGINE_V2: { default: false, dependsOn: [], description: 'Route resolution through multiplicative InferenceEngine (alias)' },
+            SCENE_GRAPH_ENABLED: { default: true, dependsOn: [], description: 'Enable Scene Graph indexing and query planner in Slave browser' },
+            INFERENCE_ENGINE_V2: { default: true, dependsOn: [], description: 'Route resolution through multiplicative InferenceEngine' },
+            LI_INFERENCE_ENGINE_V2: { default: true, dependsOn: [], description: 'Route resolution through multiplicative InferenceEngine (alias)' },
             enableSportyBetConfirmationClassifier: { default: false, dependsOn: [], description: 'V1 Technical Debt: Enable SportyBet specific classification for confirmations' },
             FEATURE_TRACE_SCHEDULER: { default: true, dependsOn: [], description: 'Enable ExecutionScheduler telemetry transitions' },
             FEATURE_TRACE_BARRIER: { default: true, dependsOn: [], description: 'Enable SynchronizationBarrier telemetry transitions' },
             FEATURE_TRACE_SIMULATOR: { default: true, dependsOn: [], description: 'Enable ActionSimulator telemetry transitions' },
             FEATURE_TRACE_PLAYWRIGHT: { default: true, dependsOn: [], description: 'Enable Playwright layer telemetry transitions' },
-            FEATURE_TRACE_CDP_NETWORK: { default: false, dependsOn: [], description: 'Enable verbose CDP network interception for Playwright' }
+            FEATURE_TRACE_CDP_NETWORK: { default: true, dependsOn: [], description: 'Enable verbose CDP network interception for Playwright' }
         };
         this.init();
     }
