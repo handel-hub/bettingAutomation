@@ -91,6 +91,7 @@ export class ActionDispatcher extends EventEmitter {
             'scenegraph/MutationProcessor.mjs',
             'scenegraph/QueryPlanner.mjs',
             'scenegraph/AccessibilityIndex.mjs',
+            'scenegraph/SpatialCache.mjs',
             'scenegraph/SceneGraph.mjs',
             'inference/EvidenceComputer.mjs',
             'inference/HardConstraints.mjs',
