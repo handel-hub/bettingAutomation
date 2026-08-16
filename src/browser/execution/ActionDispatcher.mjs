@@ -47,70 +47,12 @@ export class ActionDispatcher extends EventEmitter {
     }
 
     async buildInjectedScript() {
-        const pipelineFiles = [
-            'FeatureFlags.mjs',
-            'models/ValidationResult.mjs',
-            'models/RankingResult.mjs',
-            'models/LocatorCandidate.mjs',
-            'models/ElementIdentityDocument.mjs',
-            'models/ScoringVector.mjs',
-            'engine/PipelineContext.mjs',
-            'engine/PipelineStep.mjs',
-            'extraction/FeatureExtractor.mjs',
-            'extraction/IdentityDocumentBuilder.mjs',
-            'generation/strategies/DataAttributeStrategy.mjs',
-            'generation/strategies/TextStrategy.mjs',
-            'generation/strategies/AriaStrategy.mjs',
-            'generation/strategies/RoleStrategy.mjs',
-            'generation/strategies/SemanticClassStrategy.mjs',
-            'generation/strategies/StructuralStrategy.mjs',
-            'generation/CandidateGenerator.mjs',
-            'generation/CandidateDeduplicator.mjs',
-            'validation/StructuralAnalyzer.mjs',
-            'ranking/RankingRule.mjs',
-            'ranking/RankingRules/BaseScoreRule.mjs',
-            'ranking/RankingRules/DynamicContentRule.mjs',
-            'ranking/RankingRules/ValidationConfidenceRule.mjs',
-            'ranking/RankingRules/SpecificityRule.mjs',
-            'ranking/RankingRules/ComplexityRule.mjs',
-            'ranking/RankingRules/StructuralRule.mjs',
-            'ranking/RankingRules/VisibilityRule.mjs',
-            'ranking/RankingRules/CorroborationRule.mjs',
-            'ranking/RankingRules/NormalizedBaseScoreRule.mjs',
-            'ranking/RankingRules/NormalizedStructuralRule.mjs',
-            'ranking/RankingRules/NormalizedDynamicContentRule.mjs',
-            'ranking/RankingRules/NormalizedSpecificityRule.mjs',
-            'ranking/RankingRules/NormalizedCorroborationRule.mjs',
-            'ranking/RankingRules/NormalizedVisibilityRule.mjs',
-            'ranking/ScoringWeights.mjs',
-            'ranking/AdditiveRankingEngine.mjs',
-            'telemetry/RollingWindow.mjs',
-            'telemetry/MetricsRegistry.mjs',
-            'telemetry/TelemetryCollector.mjs',
-            'memory/ResolutionMemory.mjs',
-            'scenegraph/TextIndex.mjs',
-            'scenegraph/MutationProcessor.mjs',
-            'scenegraph/QueryPlanner.mjs',
-            'scenegraph/AccessibilityIndex.mjs',
-            'scenegraph/SpatialCache.mjs',
-            'scenegraph/SceneGraph.mjs',
-            'inference/EvidenceComputer.mjs',
-            'inference/HardConstraints.mjs',
-            'inference/AnchorResolver.mjs',
-            'inference/EntropyScaler.mjs',
-            'inference/InferenceEngine.mjs',
-            'platforms/sportybet/SportyBetConfirmationClassifier.mjs'
-        ];
-
-        let locatorIntelligenceCode = '';
-        for (const file of pipelineFiles) {
-            const filePath = path.join(__dirname, 'locatorIntelligence', file);
-            let content = await fsPromises.readFile(filePath, 'utf8');
-            content = content.replace(/^\uFEFF/, '')
-                             .replace(/^\s*export\s+default\s+.*$/gm, '')
-                             .replace(/^\s*export\s+/gm, '')
-                             .replace(/^\s*import\s+.*$/gm, '');
-            locatorIntelligenceCode += content + '\n\n';
+        const scriptPath = path.join(__dirname, '../../../../playwright-injected/generated/playwright-iife.js');
+        let playwrightBundle = '';
+        try {
+            playwrightBundle = await fsPromises.readFile(scriptPath, 'utf8');
+        } catch (e) {
+            console.error('Failed to load Playwright IIFE bundle', e);
         }
 
         const scriptContent = `
@@ -148,18 +90,18 @@ export class ActionDispatcher extends EventEmitter {
             }
 
             // --------------------------------------------------------
-            // LOCATOR INTELLIGENCE ENGINE (STAGE 2.1 - PIPELINE)
+            // PLAYWRIGHT LOCATOR INTELLIGENCE
             // --------------------------------------------------------
-            ${locatorIntelligenceCode}
-            // --------------------------------------------------------
-
-            if (typeof featureFlags !== 'undefined' && featureFlags.isEnabled('SCENE_GRAPH_ENABLED')) {
-                if (!window.__sceneGraph && typeof SceneGraph !== 'undefined') {
-                    window.SceneGraph = SceneGraph;
-                    window.__sceneGraph = new SceneGraph();
-                    window.__sceneGraph.initialize(document);
-                }
+            ${playwrightBundle}
+            if (typeof __PlaywrightExports !== 'undefined' && !window.__pwInjectedScript) {
+                window.__pwInjectedScript = new (__PlaywrightExports.InjectedScript())(globalThis, {
+                    isUnderTest: false,
+                    testIdAttributeName: 'data-testid',
+                    browserName: 'chromium',
+                    customEngines: []
+                });
             }
+            // --------------------------------------------------------
 
             class ClientRingBuffer {
                 constructor(capacity = 128) {
@@ -310,16 +252,14 @@ export class ActionDispatcher extends EventEmitter {
 
                     let eid = null;
                     if (data.target && ['CLICK', 'DOUBLE_CLICK', 'DRAG', 'INPUT'].includes(type)) {
-                        if (window.__LI_SID_MODE_ENABLED__) {
-                            const ctx = new PipelineContext(data.target, data.composedPath || [], {});
-                            const extractor = new FeatureExtractor();
-                            extractor.execute(ctx);
-                            const builder = new IdentityDocumentBuilder();
-                            builder.execute(ctx);
-                            const sid = ctx.identityDocument ? (typeof ctx.identityDocument.serialize === 'function' ? ctx.identityDocument.serialize() : ctx.identityDocument) : null;
-                            payload.sid = sid;
-                            payload.identityDocument = sid;
-                            eid = sid;
+                        if (window.__pwInjectedScript) {
+                            try {
+                                const pwResult = window.__pwInjectedScript.generateSelector(data.target, { testIdAttributeName: 'data-testid' });
+                                payload.playwrightSelector = pwResult.selector;
+                                eid = payload.playwrightSelector; // Provide a string as EID for telemetry hashing
+                            } catch (e) {
+                                console.error('Playwright selector generation failed', e);
+                            }
                             
                             let shadowPath = [];
                             if (data.composedPath && Array.isArray(data.composedPath)) {

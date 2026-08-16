@@ -1,6 +1,6 @@
 import { logger } from '../../config.mjs';
 import EventEmitter from 'node:events';
-import { LocatorResolver } from './LocatorResolver.mjs';
+
 import { pageStateMonitor } from './locatorIntelligence/resolution/PageStateMonitor.mjs';
 import featureFlags from './locatorIntelligence/FeatureFlags.mjs';
 import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCollector.mjs';
@@ -29,23 +29,7 @@ export class ActionSimulator extends EventEmitter {
         this.attachedPages = new WeakSet();
     }
 
-    async _ensureGenerationScriptInjected(page) {
-        if (this._generationScriptInjected && this._generationScriptInjected.has(page)) {
-            return;
-        }
-        if (!this._generationScriptInjected) {
-            this._generationScriptInjected = new WeakSet();
-        }
-        
-        const scriptPath = path.join(__dirname, 'locatorIntelligence', '_slave_generation_bundle.mjs');
-        if (!this._cachedGenerationScript) {
-            this._cachedGenerationScript = await fsPromises.readFile(scriptPath, 'utf8');
-        }
-        
-        await page.addInitScript(this._cachedGenerationScript);
-        await page.evaluate(this._cachedGenerationScript).catch(() => {});
-        this._generationScriptInjected.add(page);
-    }
+    // Removed _ensureGenerationScriptInjected - Playwright's coreBundle auto-injects its own InjectedScript.
 
     async injectOverlayScript(page) {
         if (!this.attachedPages.has(page)) {
@@ -148,31 +132,9 @@ export class ActionSimulator extends EventEmitter {
         }
 
         let attempts = 0;
-        let locators = [];
-
-        if (command.payload.sid && featureFlags.isEnabled('LI_SID_MODE')) {
-            try {
-                await this._ensureGenerationScriptInjected(page);
-                locators = await page.evaluate((sid) => {
-                    if (typeof window.__liGenerateFromSID !== 'function') {
-                        throw new Error('Generation script not injected');
-                    }
-                    return window.__liGenerateFromSID(sid);
-                }, command.payload.sid);
-                
-                if (!locators || locators.length === 0) {
-                    throw new CandidateGenerationError(
-                        `[LF-607] Slave-side generation produced 0 candidates from SID (identityHash: ${command.payload.sid?.identityHash})`
-                    );
-                }
-            } catch (err) {
-                if (err instanceof CandidateGenerationError) throw err;
-                throw new GenerationScriptMissingError(
-                    `[LF-608] Slave-side generation failed: ${err.message}`
-                );
-            }
-        } else {
-            locators = command.payload.locators || [];
+        const selector = command.payload.playwrightSelector;
+        if (!selector) {
+            throw new Error(`[LF-501] No playwrightSelector found in command payload`);
         }
 
         while (attempts < this.MAX_EXECUTION_RETRIES) {
@@ -181,21 +143,7 @@ export class ActionSimulator extends EventEmitter {
                 deadlineBudget.checkOrThrow('ActionSimulator');
             }
             
-            // Phase 2 & 15: Resolve (Decoupled & Shadow Mode)
-            let result;
-            const resolveOpts = {
-                browserId: browserObj?.id || command.metadata?.browserId || command.target,
-                msn: command.metadata?.msn || command.payload?.msn,
-                shadowPath: command.payload.shadowPath || [],
-                identityDocument: command.payload?.identityDocument || command.metadata?.identityDocument,
-                deadlineBudget,
-                traceId: command.traceId || command.payload?.traceId,
-                eidHash: command.eidHash || command.payload?.eidHash,
-                commandId: command.id,
-                interactionId: command.payload?.interactionId,
-                executionContext
-            };
-            // Execute primary resolution synchronously on critical path
+            // Phase 2: Resolve natively via Playwright
             import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
                 observabilityCollector.emitTransition({
                     commandId: command.id || command.commandId,
@@ -205,11 +153,11 @@ export class ActionSimulator extends EventEmitter {
                     newState: 'LOCATOR_STARTED',
                     eventName: 'LOCATOR_STARTED',
                     owner: 'ActionSimulator',
-                    browserId: resolveOpts.browserId
+                    browserId: browserObj?.id || command.target || 'slave'
                 });
             }).catch(() => {});
 
-            result = await LocatorResolver.resolve(page, locators, interactionType, undefined, resolveOpts);
+            const playwrightLocator = page.locator(selector);
 
             import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
                 observabilityCollector.emitTransition({
@@ -220,45 +168,10 @@ export class ActionSimulator extends EventEmitter {
                     newState: 'LOCATOR_FINISHED',
                     eventName: 'LOCATOR_FINISHED',
                     owner: 'ActionSimulator',
-                    browserId: resolveOpts.browserId,
-                    metadata: { success: result.success }
+                    browserId: browserObj?.id || command.target || 'slave',
+                    metadata: { success: true }
                 });
             }).catch(() => {});
-
-            if (featureFlags.isEnabled('LI_SHADOW_MODE')) {
-                // Launch secondary comparison resolution off the critical path without awaiting
-                Promise.resolve().then(async () => {
-                    try {
-                        const shadowOpts = {
-                            ...resolveOpts,
-                            disableMemoization: true,
-                            forceLegacyEvaluation: true
-                        };
-                        const shadowResult = await LocatorResolver.resolve(page, locators, interactionType, undefined, shadowOpts);
-                        
-                        TelemetryCollector.recordShadowMode(command.id, {
-                            legacySuccess: result.success,
-                            newSuccess: shadowResult.success,
-                            legacyLocator: result.locator,
-                            newLocator: shadowResult.locator,
-                            newConfidence: shadowResult.similarity?.overallScore || 0,
-                            latencyDeltaMs: shadowResult.latency?.totalDurationMs || 0
-                        });
-                    } catch (asyncError) {
-                        logger.debug(`[ActionSimulator] [Cmd: ${command.id}] Async shadow resolution failed: ${asyncError.message}`);
-                    }
-                });
-            }
-            
-            if (!result.success) {
-                if (result.failureReason && result.failureReason.includes('LF-702')) {
-                    const error = new QueueDeadlineExceededError(result.failureReason);
-                    throw error;
-                }
-                const error = new GlobalTimeoutError(result.failureReason);
-                error.addChain(`[LF-504] Resolution failed during execution attempt ${attempts}`);
-                throw error;
-            }
 
             // Phase 3: Physical Execution
             const execStart = Date.now();
@@ -276,7 +189,7 @@ export class ActionSimulator extends EventEmitter {
                     });
                 }).catch(() => {});
 
-                await actionFn(result.playwrightLocator);
+                await actionFn(playwrightLocator);
                 
                 import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
                     observabilityCollector.emitTransition({

@@ -82,7 +82,7 @@ export class SchedulingPolicy {
                             target: existing.command.target,
                             source: existing.command.source,
                             executionMode: existing.command.executionMode,
-                            metadata: existing.command.metadata,
+                            metadata: entry.command.metadata,
                             version: existing.command.version,
                             lifecycle: existing.command.lifecycle,
                             id: existing.command.id,
