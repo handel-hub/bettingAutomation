@@ -199,23 +199,30 @@ export class SessionManager {
             await page.goto('https://www.sportybet.com/ng/m/', { waitUntil: 'domcontentloaded' });
             
             const macroPath = path.join(__dirname, '..', '..', '..', 'sequences', 'login.json');
-            let macroContent = await fsPromises.readFile(macroPath, 'utf-8');
-            macroContent = macroContent.replace(/\{USERNAME\}/g, () => username).replace(/\{PASSWORD\}/g, () => password);
-            const steps = JSON.parse(macroContent);
+            const macroRaw = await fsPromises.readFile(macroPath, 'utf-8');
+            const steps = JSON.parse(macroRaw);
+
+            // Replace placeholders safely within the object
+            for (const step of steps) {
+                if (step.value && typeof step.value === 'string') {
+                    step.value = step.value.replace(/\{USERNAME\}/g, username).replace(/\{PASSWORD\}/g, password);
+                }
+            }
 
             for (const step of steps) {
                 if (step.type === 'click') {
-                    await page.click(step.selector, { timeout: 5000 });
+                    await page.locator(step.selector).click({ timeout: step.timeout || 15000 });
                 } else if (step.type === 'input') {
+                    const loc = page.locator(step.selector);
+                    await loc.fill('');
                     if (step.delay) {
-                        await page.locator(step.selector).fill('');
-                        await page.locator(step.selector).pressSequentially(step.value, { delay: step.delay });
+                        await loc.pressSequentially(step.value, { delay: step.delay });
                     } else {
-                        await page.fill(step.selector, step.value, { timeout: 2000 });
+                        await loc.fill(step.value, { timeout: step.timeout || 5000 });
                     }
                 } else if (step.type === 'wait') {
                     if (step.selector) {
-                        await page.waitForSelector(step.selector, { state: step.state || 'visible', timeout: step.timeout || 10000 });
+                        await page.locator(step.selector).waitFor({ state: step.state || 'visible', timeout: step.timeout || 15000 });
                     } else if (step.timeout) {
                         await page.waitForTimeout(step.timeout);
                     }
@@ -224,14 +231,47 @@ export class SessionManager {
                 }
             }
 
-            const successPromise = page.waitForFunction(() => {
-                return window.loginStatus === true || !!document.querySelector('.m-balance, .m-avatar, [data-op="bottom-me"].active, .user-assets-panel, .m-user-wrapper');
-            }, { timeout: 15000 }).then(() => ({ outcome: 'success' })).catch(() => ({ outcome: 'timeout' }));
+            const successIndicators = '.m-balance, .m-avatar, [data-op="bottom-me"].active, .user-assets-panel, .m-user-wrapper';
+            const errorIndicators = 'div.m-toast, div.m-error-msg, .error-message';
 
-            const errorPromise = page.waitForSelector('div.m-toast, div.m-error-msg, .error-message', { timeout: 15000 })
-                .then(async (el) => ({ outcome: 'error', message: await el.textContent() })).catch(() => ({ outcome: 'timeout' }));
+            const successPromise = page.waitForFunction((selectors) => {
+                return window.loginStatus === true || !!document.querySelector(selectors);
+            }, successIndicators, { timeout: 15000 })
+            .then(() => ({ outcome: 'success' }))
+            .catch(e => {
+                if (e.message.includes('Execution context was destroyed') || e.message.includes('Target closed')) {
+                    return { outcome: 'navigation' };
+                }
+                return { outcome: 'timeout' };
+            });
 
-            const result = await Promise.race([successPromise, errorPromise]);
+            const errorPromise = page.locator(errorIndicators).first().waitFor({ state: 'visible', timeout: 15000 })
+            .then(async () => {
+                const el = page.locator(errorIndicators).first();
+                return { outcome: 'error', message: await el.textContent() };
+            })
+            .catch(e => {
+                if (e.message.includes('Execution context was destroyed') || e.message.includes('Target closed')) {
+                    return { outcome: 'navigation' };
+                }
+                return { outcome: 'timeout' };
+            });
+
+            let result = await Promise.race([successPromise, errorPromise]);
+
+            if (result.outcome === 'navigation') {
+                logger.info(`Login page navigated for ${redactUsername(username)} on [${id}], verifying login state...`);
+                try {
+                    await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+                } catch (e) {}
+                
+                const isLoggedIn = await this.verifyLoggedIn(id, { timeoutMs: 5000 });
+                if (isLoggedIn) {
+                    result = { outcome: 'success' };
+                } else {
+                    throw new Error('Navigated after login attempt but could not verify logged-in state.');
+                }
+            }
 
             if (result.outcome === 'timeout') {
                 throw new Error('Login timed out waiting for success or error indicator.');

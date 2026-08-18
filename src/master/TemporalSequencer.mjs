@@ -150,17 +150,17 @@ export class TemporalSequencer extends EventEmitter {
         }
 
         this.buffer.push(event);
+        event.localEnqueueTime = performance.now();
     }
 
     _flush(force = false) {
-        const now = performance.timeOrigin + performance.now();
-        const cutoff = force ? Infinity : now - this.deltaMs;
+        const now = performance.now();
 
         while (true) {
             const minEvent = this.buffer.peek();
             if (!minEvent) break;
 
-            if (minEvent.hlc.physical <= cutoff) {
+            if (force || (now - minEvent.localEnqueueTime >= this.deltaMs)) {
                 const event = this.buffer.pop();
                 this.currentGES++;
                 

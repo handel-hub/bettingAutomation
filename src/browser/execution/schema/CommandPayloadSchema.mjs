@@ -29,56 +29,8 @@ export class CommandPayloadSchema {
         if (!eid || typeof eid !== 'object') {
             return false;
         }
-        if (!eid.identityHash || typeof eid.identityHash !== 'string' || eid.identityHash.trim() === '') {
+        if (!eid.tag && !eid.role && !eid.text) {
             return false;
-        }
-        if (!eid.tagName || typeof eid.tagName !== 'string' || eid.tagName.trim() === '') {
-            return false;
-        }
-        if (eid.attributes !== undefined && (typeof eid.attributes !== 'object' || eid.attributes === null)) {
-            return false;
-        }
-        if (eid.boundingBox !== undefined && eid.boundingBox !== null) {
-            const bb = eid.boundingBox;
-            if (typeof bb !== 'object' ||
-                typeof bb.x !== 'number' || isNaN(bb.x) ||
-                typeof bb.y !== 'number' || isNaN(bb.y) ||
-                typeof bb.width !== 'number' || isNaN(bb.width) ||
-                typeof bb.height !== 'number' || isNaN(bb.height)) {
-                return false;
-            }
-        }
-        if (eid.anchor !== undefined && eid.anchor !== null) {
-            const anc = eid.anchor;
-            if (typeof anc !== 'object' ||
-                typeof anc.textContent !== 'string' ||
-                typeof anc.tagName !== 'string') {
-                return false;
-            }
-            if (anc.edgeDistance !== undefined && (typeof anc.edgeDistance !== 'number' || isNaN(anc.edgeDistance))) {
-                return false;
-            }
-            if (anc.spatialVector !== undefined && anc.spatialVector !== null) {
-                const sv = anc.spatialVector;
-                if (typeof sv !== 'object' || typeof sv.dx !== 'number' || isNaN(sv.dx) || typeof sv.dy !== 'number' || isNaN(sv.dy)) {
-                    return false;
-                }
-            }
-        }
-        if (eid.captureTimestamp !== undefined && eid.captureTimestamp !== null) {
-            if (typeof eid.captureTimestamp !== 'number' || isNaN(eid.captureTimestamp)) {
-                return false;
-            }
-        }
-        if (eid.sourceEpoch !== undefined && eid.sourceEpoch !== null) {
-            if (typeof eid.sourceEpoch !== 'number' || isNaN(eid.sourceEpoch) || !Number.isInteger(eid.sourceEpoch)) {
-                return false;
-            }
-        }
-        if (eid.cssSelector !== undefined && eid.cssSelector !== null) {
-            if (typeof eid.cssSelector !== 'string') {
-                return false;
-            }
         }
         return true;
     }
@@ -89,21 +41,7 @@ export class CommandPayloadSchema {
      * @returns {boolean} true if valid, false otherwise
      */
     static isSIDValid(sid) {
-        if (!sid || typeof sid !== 'object') return false;
-        if (!sid.identityHash || typeof sid.identityHash !== 'string' || sid.identityHash.trim() === '') return false;
-        if (!sid.tagName || typeof sid.tagName !== 'string' || sid.tagName.trim() === '') return false;
-        
-        if (sid.boundingBox !== undefined && sid.boundingBox !== null) {
-            const bb = sid.boundingBox;
-            if (typeof bb !== 'object' ||
-                typeof bb.x !== 'number' || isNaN(bb.x) ||
-                typeof bb.y !== 'number' || isNaN(bb.y) ||
-                typeof bb.width !== 'number' || isNaN(bb.width) ||
-                typeof bb.height !== 'number' || isNaN(bb.height)) {
-                return false;
-            }
-        }
-        return true;
+        return this.isEIDValid(sid);
     }
 
     /**

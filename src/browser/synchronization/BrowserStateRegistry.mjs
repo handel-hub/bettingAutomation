@@ -185,6 +185,17 @@ export class BrowserStateRegistry extends EventEmitter {
             oldState.context.close().catch(() => {});
         }
 
+        // Task 10: Forcefully terminate the hung zombie process holding onto debugging ports
+        if (oldState.browser && typeof oldState.browser.process === 'function') {
+            const pid = oldState.browser.process()?.pid;
+            if (pid) {
+                try {
+                    process.kill(pid, 'SIGKILL');
+                    logger.info(`[BrowserStateRegistry] Forcefully terminated zombie process ${pid} during failover for [${brokenId}]`);
+                } catch (e) {}
+            }
+        }
+
         // Atomically rebind worker state
         oldState.context = standbyContext;
         oldState.page = standbyPage;
@@ -192,6 +203,7 @@ export class BrowserStateRegistry extends EventEmitter {
         oldState.health = 'Good';
         oldState.url = destinationUrl;
         oldState.lifecycleState = LifecycleState.READY;
+        oldState.currentGes = 0; // Task 10: Reset currentGes to prevent executing commands against a stale DOM
         oldState.recoveryState = {
             ...oldState.recoveryState,
             lastFailover: NTPClockSync.now(),

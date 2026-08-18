@@ -32,15 +32,31 @@ export class ProcessLifecycleManager {
 
         process.on('uncaughtException', async (err) => {
             this._writeFatalLog('uncaughtException', err);
-            this.logger.error({ err }, `Uncaught Exception: ${err.message}`);
-            await this.shutdown('uncaughtException');
+            this.logger.fatal({ err }, `Uncaught Exception: ${err.message}`);
+            process.exitCode = 1;
         });
 
         process.on('unhandledRejection', async (reason, promise) => {
             this._writeFatalLog('unhandledRejection', reason);
-            this.logger.error({ err: reason }, `Unhandled Rejection: ${reason}`);
-            await this.shutdown('unhandledRejection');
+            this.logger.fatal({ err: reason }, `Unhandled Rejection: ${reason}`);
+            process.exitCode = 1;
         });
+    }
+
+    _killZombies() {
+        if (!this.controller || !this.controller.registry) return;
+        const states = this.controller.registry.getAll();
+        for (const state of states) {
+            if (state.browser && typeof state.browser.process === 'function') {
+                const pid = state.browser.process()?.pid;
+                if (pid) {
+                    try {
+                        process.kill(pid, 'SIGKILL');
+                        this.logger.info(`Killed zombie browser process: ${pid}`);
+                    } catch (e) {}
+                }
+            }
+        }
     }
 
     async shutdown(signal) {
@@ -50,6 +66,7 @@ export class ProcessLifecycleManager {
         
         const forceExit = setTimeout(() => {
             this.logger.error('Shutdown took too long, forcing exit.');
+            this._killZombies();
             process.exit(1);
         }, 5000);
         
@@ -62,7 +79,8 @@ export class ProcessLifecycleManager {
             this._writeFatalLog('shutdown_error', err);
         } finally {
             clearTimeout(forceExit);
-            process.exit(signal === 'uncaughtException' || signal === 'unhandledRejection' ? 1 : 0);
+            this._killZombies();
+            process.exit(0);
         }
     }
 }

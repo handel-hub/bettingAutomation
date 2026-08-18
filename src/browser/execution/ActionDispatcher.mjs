@@ -47,12 +47,40 @@ export class ActionDispatcher extends EventEmitter {
     }
 
     async buildInjectedScript() {
-        const scriptPath = path.join(__dirname, '../../../../playwright-injected/generated/playwright-iife.js');
+        const pipelineFiles = [
+            'FeatureFlags.mjs',
+            'extraction/FeatureExtractor.mjs',
+            'telemetry/RollingWindow.mjs',
+            'telemetry/MetricsRegistry.mjs',
+            'telemetry/TelemetryCollector.mjs'
+        ];
+
+        const scriptPath = path.join(__dirname, '../../../playwright-injected/generated/playwright-iife.js');
         let playwrightBundle = '';
         try {
             playwrightBundle = await fsPromises.readFile(scriptPath, 'utf8');
         } catch (e) {
             console.error('Failed to load Playwright IIFE bundle', e);
+        }
+        
+        let overlayLocators = [];
+        try {
+            const overlayConfigPath = path.join(__dirname, '..', '..', '..', 'config', 'overlays.json');
+            const overlayData = JSON.parse(await fsPromises.readFile(overlayConfigPath, 'utf8'));
+            overlayLocators = overlayData.overlays.map(o => o.locator);
+        } catch (e) {
+            logger.warn(`Failed to load overlays.json for ActionDispatcher: ${e.message}`);
+        }
+
+        let locatorIntelligenceCode = '';
+        for (const file of pipelineFiles) {
+            const filePath = path.join(__dirname, 'locatorIntelligence', file);
+            let content = await fsPromises.readFile(filePath, 'utf8');
+            content = content.replace(/^\uFEFF/, '')
+                             .replace(/^\s*export\s+default\s+.*$/gm, '')
+                             .replace(/^\s*export\s+/gm, '')
+                             .replace(/^\s*import\s+.*$/gm, '');
+            locatorIntelligenceCode += content + '\n\n';
         }
 
         const scriptContent = `
@@ -90,18 +118,21 @@ export class ActionDispatcher extends EventEmitter {
             }
 
             // --------------------------------------------------------
-            // PLAYWRIGHT LOCATOR INTELLIGENCE
+            // PLAYWRIGHT AND LOCATOR INTELLIGENCE HYBRID ENGINE
             // --------------------------------------------------------
             ${playwrightBundle}
             if (typeof __PlaywrightExports !== 'undefined' && !window.__pwInjectedScript) {
-                window.__pwInjectedScript = new (__PlaywrightExports.InjectedScript())(globalThis, {
+                window.__pwInjectedScript = new __PlaywrightExports.InjectedScript(globalThis, {
                     isUnderTest: false,
                     testIdAttributeName: 'data-testid',
-                    browserName: 'chromium',
+                    sdkLanguage: 'javascript',
+                    frameSeq: 1,
                     customEngines: []
                 });
             }
+            ${locatorIntelligenceCode}
             // --------------------------------------------------------
+
 
             class ClientRingBuffer {
                 constructor(capacity = 128) {
@@ -146,6 +177,8 @@ export class ActionDispatcher extends EventEmitter {
                     payload.hlc = window.__lastHlc;
                     payload.timestamp = Date.now();
                     payload.captureTime = Date.now();
+                    payload.sourceEpoch = typeof window !== 'undefined' && window.__ANTIGRAVITY_EPOCH__ !== undefined ? window.__ANTIGRAVITY_EPOCH__ : 0;
+                    payload.epoch = payload.sourceEpoch;
                     payload.monotonicUs = Math.round(performance.now() * 1000);
                     payload.capturePerformanceTime = performance.now();
                     payload.payloadVersion = 3;
@@ -156,8 +189,8 @@ export class ActionDispatcher extends EventEmitter {
 
                     TelemetryCollector.recordLifecycleEvent({
                         traceId: payload.traceId || 'tr-unknown',
-                        spanId: 'sp-06',
-                        parentSpanId: 'sp-02',
+                        spanId: payload.interactionId + '-06',
+                        parentSpanId: payload.interactionId + '-02',
                         stageSequence: 6,
                         stageName: 'IPC_TRANSMITTED',
                         component: 'ActionDispatcher.mjs',
@@ -205,7 +238,7 @@ export class ActionDispatcher extends EventEmitter {
 
                     TelemetryCollector.recordLifecycleEvent({
                         traceId,
-                        spanId: 'sp-00',
+                        spanId: interactionId + '-00',
                         parentSpanId: null,
                         stageSequence: 0,
                         stageName: 'DOM_EVENT_CAPTURED',
@@ -225,8 +258,8 @@ export class ActionDispatcher extends EventEmitter {
                     }
                     TelemetryCollector.recordLifecycleEvent({
                         traceId,
-                        spanId: 'sp-01',
-                        parentSpanId: 'sp-00',
+                        spanId: interactionId + '-01',
+                        parentSpanId: interactionId + '-00',
                         stageSequence: 1,
                         stageName: 'INTERACTION_CAPTURED',
                         component: 'ActionDispatcher.mjs',
@@ -251,15 +284,30 @@ export class ActionDispatcher extends EventEmitter {
                     payload.interactionId = interactionId;
 
                     let eid = null;
-                    if (data.target && ['CLICK', 'DOUBLE_CLICK', 'DRAG', 'INPUT'].includes(type)) {
-                        if (window.__pwInjectedScript) {
-                            try {
-                                const pwResult = window.__pwInjectedScript.generateSelector(data.target, { testIdAttributeName: 'data-testid' });
-                                payload.playwrightSelector = pwResult.selector;
-                                eid = payload.playwrightSelector; // Provide a string as EID for telemetry hashing
-                            } catch (e) {
-                                console.error('Playwright selector generation failed', e);
+                    if (data.target && ['CLICK', 'DOUBLE_CLICK', 'DRAG', 'INPUT', 'HOVER'].includes(type)) {
+                        try {
+                            if (window.__pwInjectedScript && data.target.nodeType === 1) {
+                                const selectorObj = window.__pwInjectedScript.generateSelector(data.target, { testIdAttributeName: 'data-testid' });
+                                payload.playwrightSelector = selectorObj ? selectorObj.selector : null;
                             }
+                        } catch (pwErr) {
+                            console.error('Playwright generateSelector failed, attempting fallback', pwErr);
+                            try {
+                                if (window.__pwInjectedScript && data.target.nodeType === 1) {
+                                    const fallbackObj = window.__pwInjectedScript.generateSelectorSimple(data.target, { testIdAttributeName: 'data-testid' });
+                                    payload.playwrightSelector = fallbackObj ? fallbackObj.selector : null;
+                                }
+                            } catch (fallbackErr) {
+                                console.error('Playwright generateSelectorSimple also failed', fallbackErr);
+                                payload.playwrightSelector = null;
+                            }
+                        }
+
+                        if (window.__LI_SID_MODE_ENABLED__) {
+                            const sid = FeatureExtractor.extract(data.target);
+                            payload.sid = sid;
+                            payload.identityDocument = sid;
+                            eid = sid;
                             
                             let shadowPath = [];
                             if (data.composedPath && Array.isArray(data.composedPath)) {
@@ -286,15 +334,15 @@ export class ActionDispatcher extends EventEmitter {
 
                     let valRes2 = 'PASS';
                     let err2 = null;
-                    const isEidValid = eid && (eid.confidenceScore === undefined || eid.confidenceScore > 0) && (eid.identityHash || eid.fingerprint);
-                    if (data.target && ['CLICK', 'DOUBLE_CLICK', 'DRAG', 'INPUT'].includes(type) && !isEidValid) {
+                    const isEidValid = eid && (eid.tag || eid.role || eid.text);
+                    if (data.target && ['CLICK', 'DOUBLE_CLICK', 'DRAG', 'INPUT', 'HOVER'].includes(type) && !isEidValid) {
                         valRes2 = 'FAIL_LF602';
-                        err2 = { errorCode: 'LF-602', errorMessage: 'EID Generation Failed at Stage 2: missing or invalid probabilisticEID' };
+                        err2 = { errorCode: 'LF-602', errorMessage: 'EID Generation Failed at Stage 2: missing or invalid semantic fallback metadata' };
                     }
                     TelemetryCollector.recordLifecycleEvent({
                         traceId,
-                        spanId: 'sp-02',
-                        parentSpanId: 'sp-01',
+                        spanId: interactionId + '-02',
+                        parentSpanId: interactionId + '-01',
                         stageSequence: 2,
                         stageName: 'EID_GENERATED',
                         component: 'FeatureExtractor.mjs',
@@ -373,6 +421,8 @@ export class ActionDispatcher extends EventEmitter {
                                         consumed: [type],
                                         context: 'Pointer Context',
                                         coordinates: { x: e.clientX, y: e.clientY },
+                                        target: e.target,
+                                        composedPath: typeof e.composedPath === 'function' ? e.composedPath() : [],
                                         startTime: now
                                     });
                                     this.hoverTimeout = null;
@@ -554,6 +604,17 @@ export class ActionDispatcher extends EventEmitter {
                 handle(e) {
                     if (!e.isTrusted) return;
                     
+                    const overlays = ${JSON.stringify(overlayLocators)};
+                    if (e.target && typeof e.target.closest === 'function') {
+                        for (const loc of overlays) {
+                            try {
+                                if (e.target.closest(loc)) {
+                                    return; // Silently drop spontaneous overlay interaction
+                                }
+                            } catch (err) {}
+                        }
+                    }
+                    
                     if (['mousedown', 'mousemove', 'mouseup', 'click', 'dblclick'].includes(e.type)) {
                         this.recognizer.processPointerEvent(e);
                     } else if (['wheel', 'scroll'].includes(e.type)) {
@@ -586,6 +647,11 @@ export class ActionDispatcher extends EventEmitter {
         }
         await masterPage.addInitScript(this.cachedScriptContent);
         await masterPage.evaluate(this.cachedScriptContent).catch(err => logger.warn('Failed to immediately evaluate ActionDispatcher script: ' + err.message));
+
+        masterPage.on('popup', async (popup) => {
+            logger.info(`[ActionDispatcher] Master popup detected, injecting listeners...`);
+            await this.injectMasterListeners(popup).catch(() => {});
+        });
 
         try {
             const overlayConfigPath = path.join(__dirname, '..', '..', '..', 'config', 'overlays.json');
@@ -661,6 +727,23 @@ export class ActionDispatcher extends EventEmitter {
             const interactionId = p.interactionId || ('ia-' + crypto.randomUUID());
 
             try {
+                // Print Master Semantics for Observability
+                const pwSelector = p.playwrightSelector || 'NONE';
+                const tag = eid?.tag || 'unknown';
+                const role = eid?.role || 'unknown';
+                let text = 'none';
+                if (eid?.text) {
+                    text = typeof eid.text === 'string' ? eid.text.trim().slice(0, 30).replace(/\n/g, ' ') : String(eid.text).slice(0, 30);
+                }
+                const timeAgg = p.metadata?.aggregationDuration ? ` | Aggregation Time: ${p.metadata.aggregationDuration}ms` : '';
+                logger.info(`[Master Capture] Intercepted ${eventData.type} Interaction${timeAgg}`);
+                logger.info(`  --> [Semantics] Playwright Selector: ${pwSelector}`);
+                if (eid) {
+                    logger.info(`  --> [Semantics] Identity Doc: <${tag} role="${role}"> "${text}" (Hash: ${eidHash?.slice(0,8)})`);
+                } else {
+                    logger.info(`  --> [Semantics] Identity Doc: NONE`);
+                }
+
                 const framePathRaw = FramePathBuilder.build(frame);
                 const framePath = JSON.stringify(framePathRaw);
 
@@ -679,8 +762,8 @@ export class ActionDispatcher extends EventEmitter {
 
                 TelemetryCollector.recordLifecycleEvent({
                     traceId,
-                    spanId: 'sp-07',
-                    parentSpanId: 'sp-06',
+                    spanId: interactionId + '-07',
+                    parentSpanId: interactionId + '-06',
                     stageSequence: 7,
                     stageName: 'IPC_RECEIVED',
                     component: 'CommandReceiver.mjs',
@@ -696,8 +779,8 @@ export class ActionDispatcher extends EventEmitter {
                 logger.error(`[SYNC-500] [IPC Ingress Crash] Interaction ${interactionId} failed to process: ${error.message}\n${error.stack}`);
                 TelemetryCollector.recordLifecycleEvent({
                     traceId,
-                    spanId: 'sp-error',
-                    parentSpanId: null,
+                    spanId: interactionId + '-err',
+                    parentSpanId: interactionId + '-07',
                     stageSequence: 999,
                     stageName: 'IPC_CRASH',
                     component: 'ActionDispatcher.mjs',

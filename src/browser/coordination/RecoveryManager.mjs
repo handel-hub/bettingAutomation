@@ -101,6 +101,13 @@ export class RecoveryManager extends EventEmitter {
                 target: id,
                 source: 'RecoveryManager'
             }));
+            // Task 11: Emit NETWORK_IDLE post-reload to resolve pending wait-for-network barriers
+            this.emit('Command', new Command({
+                category: 'Network',
+                type: 'NETWORK_IDLE',
+                target: id,
+                source: 'RecoveryManager'
+            }));
             return;
         }
 

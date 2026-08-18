@@ -64,6 +64,7 @@ export class OverlayInterceptionError extends PlaywrightExecutionFailure { const
 export class ElementDetachedError extends PlaywrightExecutionFailure { constructor(msg) { super('LF-302', msg); } }
 export class NotReceivableError extends PlaywrightExecutionFailure { constructor(msg) { super('LF-303', msg); } }
 export class PlaywrightTimeoutError extends PlaywrightExecutionFailure { constructor(msg) { super('LF-304', msg); } }
+export class TerminalExecutionError extends PlaywrightExecutionFailure { constructor(msg) { super('LF-305', msg, 'FATAL'); } }
 
 // ----------------------------------------------------
 // 5. Browser Failure (Slave)

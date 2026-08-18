@@ -1,7 +1,6 @@
 import { logger } from '../../config.mjs';
 import EventEmitter from 'node:events';
-
-import { pageStateMonitor } from './locatorIntelligence/resolution/PageStateMonitor.mjs';
+import { LocatorResolver } from './LocatorResolver.mjs';
 import featureFlags from './locatorIntelligence/FeatureFlags.mjs';
 import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCollector.mjs';
 import { DeadlineBudget } from './time/DeadlineBudget.mjs';
@@ -19,7 +18,8 @@ import {
     GlobalTimeoutError,
     QueueDeadlineExceededError,
     CandidateGenerationError,
-    GenerationScriptMissingError
+    GenerationScriptMissingError,
+    TerminalExecutionError
 } from './errors.mjs';
 
 export class ActionSimulator extends EventEmitter {
@@ -28,8 +28,6 @@ export class ActionSimulator extends EventEmitter {
         this.MAX_EXECUTION_RETRIES = 3;
         this.attachedPages = new WeakSet();
     }
-
-    // Removed _ensureGenerationScriptInjected - Playwright's coreBundle auto-injects its own InjectedScript.
 
     async injectOverlayScript(page) {
         if (!this.attachedPages.has(page)) {
@@ -132,10 +130,7 @@ export class ActionSimulator extends EventEmitter {
         }
 
         let attempts = 0;
-        const selector = command.payload.playwrightSelector;
-        if (!selector) {
-            throw new Error(`[LF-501] No playwrightSelector found in command payload`);
-        }
+        let result = null;
 
         while (attempts < this.MAX_EXECUTION_RETRIES) {
             attempts++;
@@ -143,35 +138,85 @@ export class ActionSimulator extends EventEmitter {
                 deadlineBudget.checkOrThrow('ActionSimulator');
             }
             
-            // Phase 2: Resolve natively via Playwright
-            import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
-                observabilityCollector.emitTransition({
-                    commandId: command.id || command.commandId,
-                    traceId: command.traceId || null,
-                    interactionId: command.interactionId || null,
-                    prevState: 'ASSIGNED',
-                    newState: 'LOCATOR_STARTED',
-                    eventName: 'LOCATOR_STARTED',
-                    owner: 'ActionSimulator',
-                    browserId: browserObj?.id || command.target || 'slave'
-                });
-            }).catch(() => {});
+            // Phase 2: Hybrid Resolution (Fast Path -> Fallback Path)
+            const resolveOpts = {
+                browserId: browserObj?.id || command.metadata?.browserId || command.target,
+                msn: command.metadata?.msn || command.payload?.msn,
+                shadowPath: command.payload?.shadowPath || [],
+                identityDocument: command.payload?.identityDocument || command.metadata?.identityDocument,
+                playwrightSelector: command.payload?.playwrightSelector || command.metadata?.playwrightSelector || command.payload?.selector,
+                deadlineBudget,
+                traceId: command.traceId || command.payload?.traceId,
+                eidHash: command.eidHash || command.payload?.eidHash,
+                commandId: command.id,
+                interactionId: command.payload?.interactionId,
+                executionContext
+            };
 
-            const playwrightLocator = page.locator(selector);
+            const playwrightSelector = command.payload?.playwrightSelector || command.metadata?.playwrightSelector || command.payload?.selector;
 
-            import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
-                observabilityCollector.emitTransition({
-                    commandId: command.id || command.commandId,
-                    traceId: command.traceId || null,
-                    interactionId: command.interactionId || null,
-                    prevState: 'LOCATOR_STARTED',
-                    newState: 'LOCATOR_FINISHED',
-                    eventName: 'LOCATOR_FINISHED',
-                    owner: 'ActionSimulator',
-                    browserId: browserObj?.id || command.target || 'slave',
-                    metadata: { success: true }
-                });
-            }).catch(() => {});
+            if (playwrightSelector) {
+                try {
+                    // Fast Path: Try Playwright native strict selector first
+                    const loc = page.locator(playwrightSelector);
+                    // Fast fail to ensure it's attached and strict mode passes
+                    await loc.waitFor({ state: 'attached', timeout: 500 });
+                    
+                    result = {
+                        success: true,
+                        playwrightLocator: loc,
+                        locator: { value: playwrightSelector, strategy: 'playwright' },
+                        isFallback: false
+                    };
+                } catch (err) {
+                    logger.warn(`[ActionSimulator] [Cmd: ${command.id}] Fast path strict locator failed: ${err.message}. Falling back to probabilistic resolution.`);
+                    result = null;
+                }
+            }
+
+            if (!result && resolveOpts.identityDocument) {
+                // Fallback Path: Probabilistic Ranking
+                import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                    observabilityCollector.emitTransition({
+                        commandId: command.id || command.commandId,
+                        traceId: command.traceId || null,
+                        interactionId: command.interactionId || null,
+                        prevState: 'ASSIGNED',
+                        newState: 'LOCATOR_STARTED',
+                        eventName: 'LOCATOR_STARTED',
+                        owner: 'ActionSimulator',
+                        browserId: resolveOpts.browserId
+                    });
+                }).catch(() => {});
+
+                // We pass an empty locators array; LocatorResolver will pull candidates based on the identityDocument
+                result = await LocatorResolver.resolve(page, [], interactionType, undefined, resolveOpts);
+
+                import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                    observabilityCollector.emitTransition({
+                        commandId: command.id || command.commandId,
+                        traceId: command.traceId || null,
+                        interactionId: command.interactionId || null,
+                        prevState: 'LOCATOR_STARTED',
+                        newState: 'LOCATOR_FINISHED',
+                        eventName: 'LOCATOR_FINISHED',
+                        owner: 'ActionSimulator',
+                        browserId: resolveOpts.browserId,
+                        metadata: { success: result?.success }
+                    });
+                }).catch(() => {});
+            }
+            
+            if (!result || !result.success) {
+                const failureReason = result?.failureReason || 'Fast path and fallback path both failed.';
+                if (failureReason.includes('LF-702')) {
+                    const error = new QueueDeadlineExceededError(failureReason);
+                    throw error;
+                }
+                const error = new GlobalTimeoutError(failureReason);
+                error.addChain(`[LF-504] Resolution failed during execution attempt ${attempts}`);
+                throw error;
+            }
 
             // Phase 3: Physical Execution
             const execStart = Date.now();
@@ -189,7 +234,7 @@ export class ActionSimulator extends EventEmitter {
                     });
                 }).catch(() => {});
 
-                await actionFn(playwrightLocator);
+                await actionFn(result.playwrightLocator);
                 
                 import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
                     observabilityCollector.emitTransition({
@@ -356,12 +401,27 @@ export class ActionSimulator extends EventEmitter {
             return false;
         }
         
-        // Ensure PageStateMonitor is attached to this page to track DOM mutations
-        await pageStateMonitor.attach(page).catch(() => {});
-        
         await this.injectOverlayScript(page);
         const lifecycle = 'EXECUTING';
-        logger.info(`[Execute Start] Command ${command.id} on [${id}] | Latency (Receive->Start): ${startTime - command.creationTime}ms | Lifecycle: ${lifecycle}`);
+        
+        // Print Semantics and Latency for Observability
+        const pwSelector = command.payload?.playwrightSelector || command.metadata?.playwrightSelector || command.payload?.selector || 'NONE';
+        const eid = command.payload?.identityDocument || command.metadata?.identityDocument;
+        const tag = eid?.tag || 'unknown';
+        const role = eid?.role || 'unknown';
+        let text = 'none';
+        if (eid?.text) {
+            text = typeof eid.text === 'string' ? eid.text.trim().slice(0, 30).replace(/\n/g, ' ') : String(eid.text).slice(0, 30);
+        }
+        
+        logger.info(`[Execute Start] Command ${command.id} on [${id}] | Latency (Receive->Start): ${startTime - (command.creationTime || startTime)}ms | Lifecycle: ${lifecycle}`);
+        logger.info(`  --> [Semantics] Playwright Selector: ${pwSelector}`);
+        if (eid) {
+            logger.info(`  --> [Semantics] Identity Doc: <${tag} role="${role}"> "${text}" (Hash: ${eid.identityHash?.slice(0,8)})`);
+        } else {
+            logger.info(`  --> [Semantics] Identity Doc: NONE (Legacy/Macro execution)`);
+        }
+        
         try {
             let usedLocatorInfo = null;
             const { type, payload } = command;
@@ -411,7 +471,11 @@ export class ActionSimulator extends EventEmitter {
                     await page.keyboard.press(payload.key);
                 }
             } else if (type === 'HOVER') {
-                await page.mouse.move(payload.coordinates.x, payload.coordinates.y);
+                if (payload.playwrightSelector || payload.identityDocument) {
+                    usedLocatorInfo = await this._executeWithRecovery(command, page, 'hover', async (loc) => await loc.hover(tOpts), browserObj, deadlineBudget, options.executionContext);
+                } else if (payload.coordinates) {
+                    await page.mouse.move(payload.coordinates.x, payload.coordinates.y);
+                }
             } 
             // Legacy v2 types for fallback
             else if (type === 'pointermove') {
@@ -497,12 +561,12 @@ export class ActionSimulator extends EventEmitter {
             
             if (err instanceof QueueDeadlineExceededError || err instanceof GlobalTimeoutError || err instanceof OverlayInterceptionError || err instanceof ElementDetachedError || err instanceof PlaywrightTimeoutError || err instanceof LocatorResolutionError) {
                 logger.warn(`[Interaction Failure] Command ${command.id} on slave [${id}]: ${err.message} | Execution duration: ${Date.now() - startTime}ms | Lifecycle: ${lifecycle}`);
-                return false;
+                throw new TerminalExecutionError(err.message);
             }
 
             logger.error(`[Execute End] [Result: Failure] Command ${command.id} on slave [${id}]: ${err.message} | Execution duration: ${Date.now() - startTime}ms | Lifecycle: ${lifecycle}`);
             this.emit('ActionFailure', { id, command, error: err });
-            return false;
+            throw new TerminalExecutionError(err.message);
         }
     }
 }
