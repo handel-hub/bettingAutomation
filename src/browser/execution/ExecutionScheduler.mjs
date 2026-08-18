@@ -82,7 +82,7 @@ export class SchedulingPolicy {
                             target: existing.command.target,
                             source: existing.command.source,
                             executionMode: existing.command.executionMode,
-                            metadata: entry.command.metadata,
+                            metadata: existing.command.metadata,
                             version: existing.command.version,
                             lifecycle: existing.command.lifecycle,
                             id: existing.command.id,
@@ -124,11 +124,13 @@ export class QueueManager {
     }
 
     insert(queueClass, entry) {
-        if (queueClass === 'Discrete' && this.buckets.Discrete.length >= 100) {
+        const realDiscreteCount = this.buckets.Discrete.filter(e => e.command.type !== 'NOOP').length;
+        if (queueClass === 'Discrete' && realDiscreteCount >= 100) {
             throw new Error('Queue Limit Exceeded: Discrete Queue overflowed (max 100). FATAL_DESYNC.');
         }
         const dropped = SchedulingPolicy.apply(this.buckets[queueClass], queueClass, entry);
         
+        let sortRequired = false;
         for (const drop of dropped) {
             if (drop.command && drop.command.ges !== undefined && drop.command.ges !== null) {
                 this.buckets.Discrete.push({
@@ -146,7 +148,12 @@ export class QueueManager {
                     queueDelay: 0,
                     schedulerDecision: 'NOOP Gap Filler'
                 });
+                sortRequired = true;
             }
+        }
+
+        if (sortRequired) {
+            this.buckets.Discrete.sort((a, b) => (a.command.ges ?? 0) - (b.command.ges ?? 0));
         }
 
         if (entry.schedulerDecision && entry.schedulerDecision.includes('Overwrote')) {
@@ -196,17 +203,71 @@ export class QueueManager {
     }
     
     handleNavigation() {
+        const dropped = [
+            ...this.buckets.Continuous,
+            ...this.buckets.Aggregated,
+            ...this.buckets.Discrete.filter(entry => 
+                !(entry.command.type === 'navigate' || entry.command.type === 'CLICK' || entry.command.category === 'Navigation')
+            )
+        ];
+
         this.buckets.Continuous = [];
         this.buckets.Aggregated = [];
-        // Preserve discrete if navigation originated from it, otherwise flush
         this.buckets.Discrete = this.buckets.Discrete.filter(entry => 
             entry.command.type === 'navigate' || entry.command.type === 'CLICK' || entry.command.category === 'Navigation'
         );
+
+        for (const drop of dropped) {
+            if (drop.command && drop.command.ges !== undefined && drop.command.ges !== null) {
+                this.buckets.Discrete.push({
+                    command: new Command({
+                        category: 'Execution',
+                        type: 'NOOP',
+                        ges: drop.command.ges,
+                        captureTime: drop.command.captureTime,
+                        metadata: { reason: 'Skipped due to navigation queue purge' }
+                    }),
+                    enqueueTime: Date.now(),
+                    queueClass: 'Discrete',
+                    priority: 'High',
+                    dequeueTime: null,
+                    queueDelay: 0,
+                    schedulerDecision: 'NOOP Gap Filler (Nav)'
+                });
+            }
+        }
     }
 
     applyBackpressure() {
+        const dropped = [...this.buckets.Continuous, ...this.buckets.Aggregated];
         this.buckets.Continuous = [];
         this.buckets.Aggregated = [];
+        let sortRequired = false;
+        
+        for (const drop of dropped) {
+            if (drop.command && drop.command.ges !== undefined && drop.command.ges !== null) {
+                this.buckets.Discrete.push({
+                    command: new Command({
+                        category: 'Execution',
+                        type: 'NOOP',
+                        ges: drop.command.ges,
+                        captureTime: drop.command.captureTime,
+                        metadata: { reason: 'Skipped due to applyBackpressure' }
+                    }),
+                    enqueueTime: Date.now(),
+                    queueClass: 'Discrete',
+                    priority: 'High',
+                    dequeueTime: null,
+                    queueDelay: 0,
+                    schedulerDecision: 'NOOP Gap Filler'
+                });
+                sortRequired = true;
+            }
+        }
+        
+        if (sortRequired) {
+            this.buckets.Discrete.sort((a, b) => (a.command.ges ?? 0) - (b.command.ges ?? 0));
+        }
     }
 }
 
@@ -218,6 +279,13 @@ export class ExecutionScheduler {
         this.sequenceGate = sequenceGate || new SequenceGate(registry);
         if (this.simulator) {
             this.simulator.registry = this.registry;
+        }
+        
+        if (this.registry) {
+            this.registry.on('WORKER_FAILOVER', ({ browserId }) => {
+                logger.info(`[ExecutionScheduler] Clearing queue for [${browserId}] due to WORKER_FAILOVER to prevent stale execution`);
+                this.clearQueue(browserId);
+            });
         }
         
         this.browserQueues = new Map();
@@ -277,7 +345,7 @@ export class ExecutionScheduler {
         
         const { class: queueClass, priority } = ClassificationPolicy.classify(command);
         if (this.isBackpressureActive(browserId) && (queueClass === 'Continuous' || queueClass === 'Aggregated')) {
-            logger.debug(`[ExecutionScheduler] Backpressure active on [${browserId}]: dropping ${queueClass} command ${command.type}`);
+            logger.debug(`[ExecutionScheduler] Backpressure active on [${browserId}]: converting ${queueClass} command ${command.type} to NOOP`);
             import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
                 observabilityCollector.emitTransition({
                     commandId: command.id || command.commandId,
@@ -291,6 +359,17 @@ export class ExecutionScheduler {
                     metadata: { reason: 'Backpressure enqueue drop' }
                 });
             }).catch(() => {});
+            
+            const noopEntry = {
+                command: new Command({
+                    category: 'Execution', type: 'NOOP', ges: command.ges, captureTime: command.captureTime,
+                    metadata: { reason: 'Backpressure enqueue drop' }
+                }),
+                enqueueTime: Date.now(), queueClass: 'Discrete', priority: 'High', dequeueTime: null, queueDelay: 0,
+                schedulerDecision: 'NOOP Gap Filler (Backpressure)'
+            };
+            qManager.buckets.Discrete.push(noopEntry);
+            qManager.buckets.Discrete.sort((a, b) => (a.command.ges ?? 0) - (b.command.ges ?? 0));
             return;
         }
         
@@ -304,9 +383,7 @@ export class ExecutionScheduler {
             schedulerDecision: null
         };
 
-        if (command.type === 'navigate' || command.category === 'Navigation') {
-            this.handleNavigation(browserId, command);
-        }
+
 
         try {
             qManager.insert(queueClass, entry);
@@ -344,6 +421,9 @@ export class ExecutionScheduler {
             }).catch(() => {});
 
         } catch (err) {
+            if (err.message.includes('Queue Limit Exceeded')) {
+                this.registry.emit('WORKER_BROKEN', { id: browserId, error: err });
+            }
             logger.fatal(`[ExecutionScheduler] ${err.message} on slave [${browserId}]`);
             this.simulator.emit('ActionFailure', { id: browserId, command, error: err });
             return;
@@ -406,7 +486,7 @@ export class ExecutionScheduler {
                         });
                     }).catch(() => {});
                     if (nextEntry.command.ges !== undefined && nextEntry.command.ges !== null) {
-                        this.registry.incrementSlaveGes(browserId, true);
+                        this.registry.incrementSlaveGes(browserId, false);
                     }
                     continue;
                 }
@@ -521,6 +601,10 @@ export class ExecutionScheduler {
                         eidHash: nextEntry.command.eidHash || TelemetryCollector.computeEIDHash(eid)
                     });
 
+                    if (finalCommand.type === 'navigate' || finalCommand.category === 'Navigation') {
+                        this.handleNavigation(browserId, finalCommand);
+                    }
+
                     // Sequence Gate Evaluation (Phase 7 Integration)
                     const ges = finalCommand.ges ?? finalCommand.metadata?.ges ?? finalCommand.payload?.ges;
                     if (ges !== undefined && ges !== null) {
@@ -537,7 +621,6 @@ export class ExecutionScheduler {
                         
                         if (initialDecision === 'WAITING') {
                             logger.info(`[ExecutionScheduler] Command ${finalCommand.id} on [${browserId}] buffered waiting for GES alignment (target GES: ${ges})`);
-                            // Wait up to 5s for GES to align
                             const decisionObj = await this.sequenceGate.evaluateAsync(browserId, ges, 5000, {
                                 commandId: finalCommand.id || finalCommand.commandId,
                                 traceId: finalCommand.traceId
@@ -568,6 +651,14 @@ export class ExecutionScheduler {
                                 continue;
                             }
                         }
+                    }
+
+                    if (finalCommand.type === 'NOOP') {
+                        logger.debug(`[Scheduler] Fast-path NOOP execution for GES ${ges} on [${browserId}]`);
+                        if (ges !== undefined && ges !== null) {
+                            this.registry.incrementSlaveGes(browserId, false);
+                        }
+                        continue;
                     }
 
                     // Wrap in ExecutionContext
@@ -620,8 +711,6 @@ export class ExecutionScheduler {
                     try {
                         const success = await this.simulator.execute(currentState, finalCommand, { deadlineBudget, executionContext: context });
                         if (success === false) {
-                            // Command failed gracefully without throwing. We MUST increment the GES 
-                            // to prevent the Sequence Gate from blocking subsequent commands!
                             if (ges !== undefined && ges !== null) {
                                 this.registry.incrementSlaveGes(browserId, true);
                             }
