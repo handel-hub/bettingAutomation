@@ -39,6 +39,8 @@ export class NavigationTracker {
 
         const historyProxyScript = `
             (() => {
+                if (window.top !== window.self) return;
+
                 const notify = (method) => {
                     if (window.__notifyHistoryApi) {
                         window.__notifyHistoryApi(method, window.location.href);

@@ -20,10 +20,13 @@ export class FramePathBuilder {
                 break;
             }
             
+            const childIndex = parent.childFrames().indexOf(current);
+            
             path.unshift({
                 isMainFrame: false,
                 name: current.name(),
-                url: current.url()
+                url: current.url(),
+                childIndex: childIndex
             });
             
             current = parent;

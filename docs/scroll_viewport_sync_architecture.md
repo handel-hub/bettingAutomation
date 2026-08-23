@@ -672,3 +672,43 @@ By abandoning the obsolete paradigm of wheel-event input replay and embracing th
 This specification provides the definitive blueprint for building a distributed scroll and viewport synchronization engine that achieves absolute mathematical determinism, pristine 120Hz/240Hz compositor visual fluidity, and robust self-healing resilience across Chromium, WebKit, Gecko, and the most dynamic, virtualized web applications in production today.
 
 ***End of Design Review.***
+
+## 10. INTENTIONAL ARCHITECTURAL NON-CHANGES & RESOLVED INVARIANTS
+
+Following a rigorous forensic resilience audit, several theoretical vulnerabilities were mathematically and empirically disproven. The following architectural boundaries are strictly affirmed as intentional, required behavior. **Do NOT attempt to "fix" or refactor these mechanisms:**
+
+### 10.1 Item 6 — Navigation State Reset (False Positive)
+**Hypothesis:** Stale navigation state (\
+avigationContext\) survives worker replacement and blocks the new worker.
+**Verdict:** FALSE. \RecoveryManager\ cleanly garbage-collects the old state and generates a completely fresh \BrowserStateModel\ for the replacement worker upon \heal()\. Stale state resurrection is architecturally impossible.
+
+### 10.2 Item 3 — NOOP Accumulation (Bounded Backpressure)
+**Hypothesis:** NOOP generation bypasses queue limits and accumulates indefinitely.
+**Verdict:** FALSE. NOOPs are synchronously flushed through the event bus and never held in unbounded memory queues. The bounded backpressure invariant holds.
+
+### 10.3 Item 4 — Non-GES Priority Inversion (Control-Plane Authoritativeness)
+**Hypothesis:** Control commands lacking GES (Global Execution Sequence) cause unbounded starvation of data-plane commands.
+**Verdict:** INTENTIONAL. Control-Plane commands (e.g., \CORRECTIVE_NAV\, \HEARTBEAT\) intentionally omit GES to preempt sequential data-plane execution. This is a required mechanism for split-brain recovery and cluster leadership.
+
+### 10.4 Item 12 — Main-Thread Scroll vs CDP Compositor Injection
+**Hypothesis:** \window.scrollTo\ via \page.evaluate()\ is inferior to CDP compositor injection (\Input.dispatchMouseEvent\).
+**Verdict:** INTENTIONAL. \window.scrollTo()\ is the explicit authoritative mechanism for state reconciliation. Bypassing the main thread via CDP hides layout shifts from IntersectionObservers and breaks React/Vue virtualized lists that rely on synchronous DOM scroll events.
+
+### 10.5 Item 13 — Capability Dependency Model (Static vs DAG)
+**Hypothesis:** Refactoring the static capability array into a Directed Acyclic Graph (DAG) is necessary for performance.
+**Verdict:** REJECTED. The pipeline is a strict static cascade (NAV -> DOM -> VIEWPORT -> SCROLL -> FRAME). Parallelizing capability gating introduces race conditions during complex iframes loading. The static cascade is an enforced invariant.
+
+### 10.6 Item 16 — Double-Buffered Execution Pipeline
+**Hypothesis:** Single-pass execution via Playwright \page.evaluate()\ causes layout thrashing without double-buffering.
+**Verdict:** NON-ISSUE. Playwright's CDP IPC boundary natively provides command serialization and execution isolation. Explicit double-buffering introduces unnecessary latency.
+
+### 10.7 Item 15 — Staged Milestone Snapping
+**Hypothesis:** Node-side staged loops are required for multi-pass scroll clamping.
+**Verdict:** REJECTED. Node-side loops block the \ExecutionScheduler\ and cause deadlocks. This was rejected in favor of Semantic Scroll Anchoring (Item 11), which delegates target resolution and offset clamping entirely to the browser runtime.
+
+### 10.8 Item 9 — ObservabilityCollector Overflow
+**Hypothesis:** The 1000-event limit drops events silently during cascade failures.
+**Verdict:** INTENTIONAL. Dropping telemetry during cascading failures is an intentional load-shedding mechanism to prevent OOM crashes in the Node.js process. Telemetry fidelity is sacrificed to preserve control-plane liveness.
+
+### 10.9 Item 14 — Background Drift Scrubbing (Mode C)
+**Verdict:** DEFERRED. Background drift scrubbing is a valid architectural pattern but is deferred to the future roadmap to prioritize sequence execution correctness.

@@ -57,7 +57,22 @@ export class ScrollComparator {
                 return { result: ScrollComparisonResult.CONTAINER_ID_MISMATCH, confidence: 1 };
             }
 
-            // Normalized Coordinate Comparison
+            // Semantic Scroll Anchoring (Item 11)
+            if (expectedScroll.anchorHash && runtimeScrollContext.anchorHash) {
+                if (expectedScroll.anchorHash !== runtimeScrollContext.anchorHash) {
+                    return { result: ScrollComparisonResult.CONTAINER_POSITION_MISMATCH, confidence: 1 };
+                }
+                const dOffset = Math.abs((expectedScroll.anchorOffset || 0) - (runtimeScrollContext.anchorOffset || 0));
+                if (dOffset > this.policy.positionTolerancePx) {
+                    return { result: ScrollComparisonResult.CONTAINER_POSITION_MISMATCH, confidence: 1 };
+                }
+                return {
+                    result: dOffset > 0 ? ScrollComparisonResult.TOLERANCE_MATCH : ScrollComparisonResult.MATCH,
+                    confidence: 1
+                };
+            }
+
+            // Normalized Coordinate Comparison (Fallback)
             const dRhoX = Math.abs((expectedScroll.rhoX || 0) - (runtimeScrollContext.rhoX || 0));
             const dRhoY = Math.abs((expectedScroll.rhoY || 0) - (runtimeScrollContext.rhoY || 0));
 

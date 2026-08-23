@@ -29,6 +29,9 @@ export class ScrollTracker {
             (() => {
                 if (window.__scrollTrackerInitialized) return;
                 window.__scrollTrackerInitialized = true;
+                window.__pendingScrolls = new Map();
+                window.__rafId = null;
+                window.__fallbackTimerId = null;
 
                 let lastPageX = window.pageXOffset || document.documentElement.scrollLeft;
                 let lastPageY = window.pageYOffset || document.documentElement.scrollTop;
@@ -54,14 +57,19 @@ export class ScrollTracker {
                     if (el.getAttribute('aria-label')) return 'aria-label=' + el.getAttribute('aria-label');
                     if (el.getAttribute('role')) return 'role=' + el.getAttribute('role');
                     
-                    // 4. stable DOM path
+                    // 4. stable DOM path across Shadow boundaries
                     let path = '';
                     let current = el;
                     while (current && current !== document.body && current !== document.documentElement) {
-                        let tag = current.tagName.toLowerCase();
-                        let index = Array.from(current.parentNode.children).indexOf(current) + 1;
-                        path = '/' + tag + '[' + index + ']' + path;
-                        current = current.parentNode;
+                        if (current.nodeType === 11 && current.host) {
+                            current = current.host;
+                        }
+                        if (current.parentNode && current.parentNode.children) {
+                            let tag = current.tagName.toLowerCase();
+                            let index = Array.from(current.parentNode.children).indexOf(current) + 1;
+                            path = '/' + tag + '[' + index + ']' + path;
+                        }
+                        current = current.parentNode || (current.getRootNode && current.getRootNode().host);
                     }
                     return path;
                 }
@@ -129,6 +137,25 @@ export class ScrollTracker {
                         rhoX = limitX > 0 ? (sx / limitX) : 0;
                         rhoY = limitY > 0 ? (sy / limitY) : 0;
 
+                        // Semantic Scroll Anchoring (Item 11)
+                        let anchorHash = null;
+                        let anchorOffset = 0;
+                        try {
+                            const rect = target.getBoundingClientRect();
+                            const topY = rect.top + 10;
+                            const centerX = rect.left + (rect.width / 2);
+                            
+                            // Find the element at the top center of the container
+                            const elements = document.elementsFromPoint(centerX, topY);
+                            // Get the first element that is a descendant of the target container
+                            const anchorEl = elements.find(el => el !== target && target.contains(el));
+                            
+                            if (anchorEl) {
+                                anchorHash = identifyContainer(anchorEl);
+                                anchorOffset = topY - anchorEl.getBoundingClientRect().top;
+                            }
+                        } catch (e) {}
+
                         // FNV-1a hash of topological path
                         if (source === 'ELEMENT_SCROLL' && containerId) {
                             let hash = 2166136261;
@@ -156,13 +183,36 @@ export class ScrollTracker {
                         isScrollEnd: isEnd,
                         rhoX: rhoX,
                         rhoY: rhoY,
+                        anchorHash: anchorHash,
+                        anchorOffset: anchorOffset,
                         viewportLimitX: limitX,
                         viewportLimitY: limitY,
                         spatialHash: spatialHash
                     };
 
-                    if (window.dispatchProviderScrollEvent) {
-                        window.dispatchProviderScrollEvent(payload);
+                    const key = payload.activeContainerId || 'window';
+                    window.__pendingScrolls.set(key, payload);
+                    
+                    const flush = () => {
+                        if (window.__fallbackTimerId) {
+                            clearTimeout(window.__fallbackTimerId);
+                            window.__fallbackTimerId = null;
+                        }
+                        if (window.__rafId) {
+                            cancelAnimationFrame(window.__rafId);
+                            window.__rafId = null;
+                        }
+                        for (const p of window.__pendingScrolls.values()) {
+                            if (window.dispatchProviderScrollEvent) {
+                                window.dispatchProviderScrollEvent(p);
+                            }
+                        }
+                        window.__pendingScrolls.clear();
+                    };
+
+                    if (!window.__rafId && !window.__fallbackTimerId) {
+                        window.__rafId = requestAnimationFrame(flush);
+                        window.__fallbackTimerId = setTimeout(flush, 16);
                     }
                 }
 

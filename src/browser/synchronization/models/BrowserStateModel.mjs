@@ -181,6 +181,8 @@ export class BrowserStateModel {
             visualViewportHeight: 0
         };
 
+        this.scrollContexts = new Map();
+        
         this.scrollContext = {
             version: 0,
             lifecycle: ScrollLifecycle.UNKNOWN,

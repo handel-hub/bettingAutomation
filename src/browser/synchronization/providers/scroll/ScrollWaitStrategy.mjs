@@ -2,6 +2,7 @@ import { Capabilities } from '../../capabilities.mjs';
 import { ScrollComparisonResult } from './ScrollComparator.mjs';
 import { CapabilityResult } from '../../models/CapabilityResult.mjs';
 import { ScrollLifecycle } from '../../models/BrowserStateModel.mjs';
+import { CapabilityError } from './CapabilityError.mjs';
 
 /**
  * Handles concurrent evaluation of Scroll readiness by evaluating
@@ -68,7 +69,7 @@ export class ScrollWaitStrategy {
                             break;
                     }
 
-                    reject(new Error(`[${errorCode}] ${errorMsg}: expected ${JSON.stringify(expectedScroll)}, got ${JSON.stringify(scrollContext)}`));
+                    reject(new CapabilityError(errorCode, errorMsg, expectedScroll, scrollContext));
                     return true;
                 }
 

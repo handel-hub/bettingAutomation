@@ -114,8 +114,10 @@ export class TopologicalSpatialAddresser {
         const depth = TopologicalSpatialAddresser.computeDepth(el);
         const role = TopologicalSpatialAddresser.extractRole(el);
         const id = el.id || '';
-        const className = typeof el.className === 'string' ? el.className : '';
-        const str = `${depth}:${role}:${id}:${className}`;
+        
+        // Item 17: Removed className from hash to prevent volatile utility classes (e.g. hover:bg-gray-100) 
+        // from invalidating spatial identity.
+        const str = `${depth}:${role}:${id}`;
         return TopologicalSpatialAddresser.computeFNV1a(str);
     }
 

@@ -12,70 +12,87 @@ export class ScrollStateMachine extends EventEmitter {
         this.browserId = browserId;
         this.registry = registry;
         this.policy = policy;
+        this.containers = new Map();
+    }
+
+    getContainerState(containerId) {
+        if (!this.containers.has(containerId)) {
+            this.containers.set(containerId, {
+                stabilityTimeout: null,
+                virtualizationTimeout: null,
+                currentLifecycle: ScrollLifecycle.UNKNOWN,
+                lastEventData: null
+            });
+        }
+        return this.containers.get(containerId);
+    }
+
+    invalidate(containerId = 'window') {
+        const cState = this.getContainerState(containerId);
+        cState.currentLifecycle = ScrollLifecycle.UNKNOWN;
         
-        this.stabilityTimeout = null;
-        this.virtualizationTimeout = null;
-        this.currentLifecycle = ScrollLifecycle.UNKNOWN;
+        if (cState.stabilityTimeout) clearTimeout(cState.stabilityTimeout);
+        if (cState.virtualizationTimeout) clearTimeout(cState.virtualizationTimeout);
         
-        this.lastEventData = null;
+        this.updateRegistry(containerId, cState.lastEventData || {}, ScrollLifecycle.UNKNOWN);
+        this.emit('ScrollChanged', { browserId: this.browserId, containerId, scrollContext: cState.lastEventData });
     }
 
     processEvent(event) {
-        this.lastEventData = event;
+        const containerId = event.activeContainerId || 'window';
+        const cState = this.getContainerState(containerId);
+        cState.lastEventData = event;
 
-        if (this.currentLifecycle === ScrollLifecycle.UNKNOWN || this.currentLifecycle === ScrollLifecycle.READY || this.currentLifecycle === ScrollLifecycle.IDLE) {
-            this.setLifecycle(ScrollLifecycle.SCROLLING);
-            this.emit('ScrollStarted', { browserId: this.browserId, timestamp: event.timestamp });
+        if (cState.currentLifecycle === ScrollLifecycle.UNKNOWN || cState.currentLifecycle === ScrollLifecycle.READY || cState.currentLifecycle === ScrollLifecycle.IDLE) {
+            cState.currentLifecycle = ScrollLifecycle.SCROLLING;
+            this.emit('ScrollStarted', { browserId: this.browserId, containerId, timestamp: event.timestamp });
         }
 
-        // Clear existing timeouts
-        if (this.stabilityTimeout) clearTimeout(this.stabilityTimeout);
-        if (this.virtualizationTimeout) clearTimeout(this.virtualizationTimeout);
+        if (cState.stabilityTimeout) clearTimeout(cState.stabilityTimeout);
+        if (cState.virtualizationTimeout) clearTimeout(cState.virtualizationTimeout);
 
         const isSettling = event.velocity <= this.policy.velocityThreshold || event.isScrollEnd;
 
-        this.updateRegistry(event, isSettling ? ScrollLifecycle.SETTLING : ScrollLifecycle.SCROLLING);
-        this.emit('ScrollChanged', { browserId: this.browserId, scrollContext: this.lastEventData });
+        this.updateRegistry(containerId, event, isSettling ? ScrollLifecycle.SETTLING : ScrollLifecycle.SCROLLING);
+        this.emit('ScrollChanged', { browserId: this.browserId, containerId, scrollContext: cState.lastEventData });
 
         if (isSettling) {
-            this.setLifecycle(ScrollLifecycle.SETTLING);
-            this.stabilityTimeout = setTimeout(() => {
-                this.enterWaitingForContent();
+            cState.currentLifecycle = ScrollLifecycle.SETTLING;
+            cState.stabilityTimeout = setTimeout(() => {
+                this.enterWaitingForContent(containerId);
             }, this.policy.stabilityWindowMs);
         } else {
-            // Still in motion, checking momentum timeout could be done here if needed
-            this.setLifecycle(ScrollLifecycle.SCROLLING);
+            cState.currentLifecycle = ScrollLifecycle.SCROLLING;
         }
     }
 
-    enterWaitingForContent() {
-        this.setLifecycle(ScrollLifecycle.WAITING_FOR_CONTENT);
-        this.emit('ScrollSettling', { browserId: this.browserId });
-        this.updateRegistry(this.lastEventData, ScrollLifecycle.WAITING_FOR_CONTENT);
+    enterWaitingForContent(containerId) {
+        const cState = this.getContainerState(containerId);
+        cState.currentLifecycle = ScrollLifecycle.WAITING_FOR_CONTENT;
+        this.emit('ScrollSettling', { browserId: this.browserId, containerId });
+        this.updateRegistry(containerId, cState.lastEventData, ScrollLifecycle.WAITING_FOR_CONTENT);
 
-        this.virtualizationTimeout = setTimeout(() => {
-            this.finalizeScrollState();
+        cState.virtualizationTimeout = setTimeout(() => {
+            this.finalizeScrollState(containerId);
         }, this.policy.virtualizationTimeoutMs);
     }
 
-    finalizeScrollState() {
-        this.setLifecycle(ScrollLifecycle.VALIDATING);
-        this.updateRegistry(this.lastEventData, ScrollLifecycle.VALIDATING);
-        this.emit('ScrollValidated', { browserId: this.browserId });
+    finalizeScrollState(containerId) {
+        const cState = this.getContainerState(containerId);
+        cState.currentLifecycle = ScrollLifecycle.VALIDATING;
+        this.updateRegistry(containerId, cState.lastEventData, ScrollLifecycle.VALIDATING);
+        this.emit('ScrollValidated', { browserId: this.browserId, containerId });
 
-        this.setLifecycle(ScrollLifecycle.READY);
-        const finalContext = this.updateRegistry(this.lastEventData, ScrollLifecycle.READY);
+        cState.currentLifecycle = ScrollLifecycle.READY;
+        const finalContext = this.updateRegistry(containerId, cState.lastEventData, ScrollLifecycle.READY);
         
-        this.emit('ScrollReady', { browserId: this.browserId, scrollContext: finalContext });
+        this.emit('ScrollReady', { browserId: this.browserId, containerId, scrollContext: finalContext });
     }
 
-    setLifecycle(state) {
-        this.currentLifecycle = state;
-    }
-
-    updateRegistry(eventData, lifecycle) {
+    updateRegistry(containerId, eventData, lifecycle) {
         const state = this.registry.getState(this.browserId);
-        const currentVersion = state.scrollContext?.version || 0;
+        const existingCtx = state.scrollContexts ? state.scrollContexts.get(containerId) : null;
+        const currentVersion = existingCtx ? existingCtx.version : 0;
 
         const updatedScrollContext = {
             version: currentVersion + 1,
@@ -84,9 +101,11 @@ export class ScrollStateMachine extends EventEmitter {
             scrollId: eventData.scrollId || null,
             pageScrollX: eventData.pageScrollX,
             pageScrollY: eventData.pageScrollY,
-            activeContainerId: eventData.activeContainerId,
+            activeContainerId: containerId,
             containerScrollX: eventData.containerScrollX,
             containerScrollY: eventData.containerScrollY,
+            rhoX: eventData.rhoX,
+            rhoY: eventData.rhoY,
             direction: eventData.direction,
             velocity: eventData.velocity,
             lastScrollTime: eventData.timestamp

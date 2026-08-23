@@ -6,7 +6,6 @@ import { ScrollStateMachine } from './ScrollStateMachine.mjs';
 import { ScrollComparator } from './ScrollComparator.mjs';
 import { ScrollWaitStrategy } from './ScrollWaitStrategy.mjs';
 import { ScrollRecoveryStrategy } from './ScrollRecoveryStrategy.mjs';
-import { VsyncCoalescer } from './VsyncCoalescer.mjs';
 import { ScrollEvent } from './ScrollEvent.mjs';
 import EventEmitter from 'node:events';
 
@@ -35,18 +34,13 @@ export class ScrollCapabilityProvider extends CapabilityProvider {
             const waitStrategy = new ScrollWaitStrategy(browserId, this.registry, stateMachine, comparator, this.policy);
             const recoveryStrategy = new ScrollRecoveryStrategy(browserId, page);
             const tracker = new ScrollTracker(browserId, page);
-            const coalescer = new VsyncCoalescer();
             
-            coalescer.on('ScrollEvent', (eventData) => {
+            tracker.on('ScrollEvent', (eventData) => {
                 const scrollEvent = new ScrollEvent(eventData);
                 stateMachine.processEvent(scrollEvent);
             });
 
-            tracker.on('ScrollEvent', (eventData) => {
-                coalescer.pushEvent(browserId, eventData);
-            });
-
-            this.instances.set(browserId, { tracker, stateMachine, waitStrategy, comparator, recoveryStrategy, coalescer });
+            this.instances.set(browserId, { tracker, stateMachine, waitStrategy, comparator, recoveryStrategy });
 
             // Forward state machine events as provider events
             stateMachine.on('ScrollStarted', (e) => this.events.emit('ScrollStarted', e));
@@ -81,7 +75,16 @@ export class ScrollCapabilityProvider extends CapabilityProvider {
         return instance.waitStrategy.waitForScroll({ metadata: {} }, Date.now()); 
     }
 
-    invalidate() {
-        // No-op
+    invalidate(syncContext) {
+        if (!syncContext || !syncContext.browserId) {
+            for (const instance of this.instances.values()) {
+                instance.stateMachine.invalidate();
+            }
+        } else {
+            const instance = this.instances.get(syncContext.browserId);
+            if (instance) {
+                instance.stateMachine.invalidate();
+            }
+        }
     }
 }

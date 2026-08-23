@@ -94,7 +94,13 @@ export class BrowserStateRegistry extends EventEmitter {
         }
 
         if (updates.scrollContext) {
-            Object.assign(state.scrollContext, updates.scrollContext);
+            const containerId = updates.scrollContext.activeContainerId || 'window';
+            const existingCtx = state.scrollContexts.get(containerId) || {};
+            const newCtx = { ...existingCtx, ...updates.scrollContext };
+            state.scrollContexts.set(containerId, newCtx);
+            
+            // For backwards compatibility and the master command metadata
+            Object.assign(state.scrollContext, newCtx);
         }
 
         if (updates.executionContext) {
