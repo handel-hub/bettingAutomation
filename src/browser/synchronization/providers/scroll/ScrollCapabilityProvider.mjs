@@ -48,6 +48,7 @@ export class ScrollCapabilityProvider extends CapabilityProvider {
             stateMachine.on('ScrollSettling', (e) => this.events.emit('ScrollSettling', e));
             stateMachine.on('ScrollValidated', (e) => this.events.emit('ScrollValidated', e));
             stateMachine.on('ScrollReady', (e) => this.events.emit('ScrollReady', e));
+            stateMachine.on('ScrollConvergenceRequired', (e) => this.events.emit('ScrollConvergenceRequired', e));
 
             await tracker.initialize();
         }

@@ -87,6 +87,21 @@ export class ScrollStateMachine extends EventEmitter {
         const finalContext = this.updateRegistry(containerId, cState.lastEventData, ScrollLifecycle.READY);
         
         this.emit('ScrollReady', { browserId: this.browserId, containerId, scrollContext: finalContext });
+
+        // Convergence guarantee: emit authoritative final state for Slave reconciliation.
+        // The handler must filter to Master-only events (F-001).
+        this.emit('ScrollConvergenceRequired', {
+            browserId: this.browserId,
+            containerId,
+            rhoX: finalContext.rhoX,
+            rhoY: finalContext.rhoY,
+            pageScrollX: finalContext.pageScrollX,
+            pageScrollY: finalContext.pageScrollY,
+            containerScrollX: finalContext.containerScrollX,
+            containerScrollY: finalContext.containerScrollY,
+            scrollContextVersion: finalContext.version,
+            timestamp: Date.now()
+        });
     }
 
     updateRegistry(containerId, eventData, lifecycle) {

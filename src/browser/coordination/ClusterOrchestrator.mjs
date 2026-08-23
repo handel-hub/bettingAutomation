@@ -36,7 +36,18 @@ export class ClusterOrchestrator {
         this.capabilityRegistry.registerProvider(new ViewportCapabilityProvider(this.registry, this.syncManager));
 
         const { ScrollCapabilityProvider } = await import('../synchronization/providers/scroll/ScrollCapabilityProvider.mjs');
-        this.capabilityRegistry.registerProvider(new ScrollCapabilityProvider(this.registry, this.syncManager));
+        const scrollCapabilityProvider = new ScrollCapabilityProvider(this.registry, this.syncManager);
+        this.capabilityRegistry.registerProvider(scrollCapabilityProvider);
+
+        // Wire scroll convergence handler for trailing-edge Slave reconciliation
+        const { ScrollConvergenceHandler } = await import('../synchronization/providers/scroll/ScrollConvergenceHandler.mjs');
+        this.scrollConvergenceHandler = new ScrollConvergenceHandler(this.registry);
+        scrollCapabilityProvider.events.on('ScrollConvergenceRequired', (data) => {
+            this.scrollConvergenceHandler.handleScrollConvergenceRequired(data);
+        });
+        this.registry.on('WORKER_FAILOVER', ({ browserId }) => {
+            this.scrollConvergenceHandler.resetSlaveVersion(browserId);
+        });
 
         const { FrameCapabilityProvider } = await import('../synchronization/providers/frame/FrameCapabilityProvider.mjs');
         this.capabilityRegistry.registerProvider(new FrameCapabilityProvider(this.registry, this.syncManager));
