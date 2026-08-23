@@ -787,7 +787,7 @@ export class ExecutionScheduler {
                     }).catch(() => {});
                     if (this.syncManager && this.syncManager.recoveryCoordinator) {
                         try {
-                            const snapshot = this.registry.getSnapshot(browserId);
+                            const snapshot = this.registry.getState(browserId);
                             const plan = await this.syncManager.recoveryCoordinator.recover(snapshot, 'PHYSICAL_EXECUTION_FAILURE');
                             if (this.syncManager.recoveryActionExecutor) {
                                 await this.syncManager.recoveryActionExecutor.execute(plan);
