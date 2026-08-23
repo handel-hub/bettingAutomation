@@ -217,10 +217,13 @@ export class ActionDispatcher extends EventEmitter {
                 longPressWindow: 800
             };
 
+            const elementScrollStates = new WeakMap();
+
             class InteractionRecognizer {
                 constructor() {
                     this.pointerState = 'IDLE';
                     this.pointerData = { path: [], startTarget: null, composedPath: [], clickTimeout: null, consumed: [], startTime: 0 };
+
                     
                     this.scrollState = 'IDLE';
                     this.scrollData = { deltaX: 0, deltaY: 0, timeout: null, consumed: [], target: null };
@@ -375,9 +378,30 @@ export class ActionDispatcher extends EventEmitter {
                     this.pointerData = { path: [], startTarget: null, composedPath: [], clickTimeout: null, consumed: [], startTime: 0 };
                 }
 
+                flushScroll() {
+                    if (this.scrollState !== 'IDLE' && this.scrollData.timeout) {
+                        clearTimeout(this.scrollData.timeout);
+                        this.scrollData.timeout = null;
+                        this.emit('SCROLL', {
+                            originEvent: 'scroll',
+                            consumed: this.scrollData.consumed,
+                            context: 'Scroll Context',
+                            target: this.scrollData.target,
+                            deltas: { deltaX: this.scrollData.deltaX, deltaY: this.scrollData.deltaY },
+                            startTime: this.scrollData.startTime
+                        });
+                        this.scrollState = 'IDLE';
+                        this.scrollData = { deltaX: 0, deltaY: 0, timeout: null, consumed: [], target: null };
+                    }
+                }
+
                 processPointerEvent(e) {
                     const type = e.type;
                     const now = Date.now();
+
+                    if (type === 'mousedown' || type === 'pointerdown' || type === 'click' || type === 'dblclick') {
+                        this.flushScroll();
+                    }
 
                     if (type === 'mousedown' || type === 'pointerdown') {
                         if (this.pointerState === 'CLICK_PENDING') {
@@ -513,27 +537,35 @@ export class ActionDispatcher extends EventEmitter {
                         this.scrollData.target = e.target;
                     }
                     
+                    let currentScrollLeft = 0;
+                    let currentScrollTop = 0;
+                    
+                    if (e.target === document || e.target === window) {
+                        currentScrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+                        currentScrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                    } else if (e.target && e.target.nodeType === 1) {
+                        currentScrollLeft = e.target.scrollLeft;
+                        currentScrollTop = e.target.scrollTop;
+                    }
+                    
+                    let lastState = elementScrollStates.get(e.target) || { scrollLeft: currentScrollLeft, scrollTop: currentScrollTop };
+                    
                     if (e.type === 'wheel') {
                         this.scrollData.deltaX += e.deltaX;
                         this.scrollData.deltaY += e.deltaY;
                         if (!this.scrollData.consumed.includes('wheel')) this.scrollData.consumed.push('wheel');
                     } else if (e.type === 'scroll') {
+                        this.scrollData.deltaX += (currentScrollLeft - lastState.scrollLeft);
+                        this.scrollData.deltaY += (currentScrollTop - lastState.scrollTop);
                         if (!this.scrollData.consumed.includes('scroll')) this.scrollData.consumed.push('scroll');
                     }
+                    
+                    elementScrollStates.set(e.target, { scrollLeft: currentScrollLeft, scrollTop: currentScrollTop });
 
                     if (this.scrollData.timeout) clearTimeout(this.scrollData.timeout);
 
                     this.scrollData.timeout = setTimeout(() => {
-                        this.emit('SCROLL', {
-                            originEvent: e.type,
-                            consumed: this.scrollData.consumed,
-                            context: 'Scroll Context',
-                            target: this.scrollData.target,
-                            deltas: { deltaX: this.scrollData.deltaX, deltaY: this.scrollData.deltaY },
-                            startTime: this.scrollData.startTime
-                        });
-                        this.scrollState = 'IDLE';
-                        this.scrollData = { deltaX: 0, deltaY: 0, timeout: null, consumed: [], target: null };
+                        this.flushScroll();
                     }, AggregationConfig.scrollWindow);
                 }
 
@@ -680,15 +712,15 @@ export class ActionDispatcher extends EventEmitter {
 
                     // Native sub-millisecond DOM mutation observation
                     const observer = new MutationObserver((mutations) => {
-                        let shouldCheck = false;
+                        const checkedNodes = new Set();
                         for (const m of mutations) {
                             if (m.addedNodes.length > 0 || m.attributeName === 'class' || m.attributeName === 'style') {
-                                shouldCheck = true;
-                                break;
+                                let target = m.target;
+                                if (target && target.nodeType === 1 && !checkedNodes.has(target)) {
+                                    checkAndDismiss(target);
+                                    checkedNodes.add(target);
+                                }
                             }
-                        }
-                        if (shouldCheck) {
-                            checkAndDismiss(document);
                         }
                     });
                     
@@ -720,6 +752,11 @@ export class ActionDispatcher extends EventEmitter {
         });
 
         await masterPage.exposeBinding('dispatchExecutionEvent', async ({ frame }, eventData) => {
+            if (frame.isDetached()) {
+                logger.warn(`[SYNC-WARN] Ignored execution event from detached frame.`);
+                return;
+            }
+
             const p = eventData.payload || {};
             const traceId = p.traceId || ('tr-' + crypto.randomUUID());
             const eid = p.identityDocument || p.probabilisticEID || null;
@@ -843,16 +880,18 @@ export class ActionDispatcher extends EventEmitter {
                 visualScale: viewCtx.visualViewportScale,
                 capturedAt: Date.now()
             } : null,
-            scroll: scrollCtx ? {
-                scrollId: scrollCtx.scrollId,
-                source: scrollCtx.source,
-                pageX: scrollCtx.pageScrollX,
-                pageY: scrollCtx.pageScrollY,
-                containerId: scrollCtx.activeContainerId,
-                containerX: scrollCtx.containerScrollX,
-                containerY: scrollCtx.containerScrollY,
-                direction: scrollCtx.direction,
-                velocity: scrollCtx.velocity,
+            scroll: (scrollCtx && scrollCtx.version > 0) ? {
+                scrollId: scrollCtx.scrollId || 'unknown',
+                source: scrollCtx.source || 'UNKNOWN',
+                pageX: scrollCtx.pageScrollX !== undefined ? scrollCtx.pageScrollX : 0,
+                pageY: scrollCtx.pageScrollY !== undefined ? scrollCtx.pageScrollY : 0,
+                containerId: scrollCtx.activeContainerId || null,
+                containerX: scrollCtx.containerScrollX !== undefined ? scrollCtx.containerScrollX : 0,
+                containerY: scrollCtx.containerScrollY !== undefined ? scrollCtx.containerScrollY : 0,
+                rhoX: scrollCtx.rhoX !== undefined ? scrollCtx.rhoX : 0,
+                rhoY: scrollCtx.rhoY !== undefined ? scrollCtx.rhoY : 0,
+                direction: scrollCtx.direction || 'none',
+                velocity: scrollCtx.velocity !== undefined ? scrollCtx.velocity : 0,
                 capturedAt: Date.now()
             } : null,
             executionContext: {

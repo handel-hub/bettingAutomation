@@ -1,13 +1,20 @@
 import { SynchronizationDiagnostics } from './telemetry/SynchronizationDiagnostics.mjs';
 import { logger } from '../../config.mjs';
+import { CapabilityPhases } from './SynchronizationLevel.mjs';
 
 /**
  * A stateless execution gate that coordinates with the SynchronizationManager.
  */
 export class SynchronizationBarrier {
     static async wait(syncContext) {
-        const { browserId, profile, context: executionContext, deadline, syncManager } = syncContext;
-        const capabilities = profile.level;
+        const { browserId, profile, context: executionContext, deadline, syncManager, phase } = syncContext;
+        let capabilities = profile.level || [];
+
+        if (phase === 'PRE') {
+            capabilities = capabilities.filter(c => CapabilityPhases.PRE_EXECUTION.includes(c));
+        } else if (phase === 'POST') {
+            capabilities = capabilities.filter(c => CapabilityPhases.POST_EXECUTION.includes(c));
+        }
 
         if (!capabilities || capabilities.length === 0) {
             return { status: 'PASSED', satisfiedCapabilities: [], missingCapabilities: [], blockingCapability: null, elapsed: 0, providerTelemetry: [] };

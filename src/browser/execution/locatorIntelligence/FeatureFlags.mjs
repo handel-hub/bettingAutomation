@@ -28,7 +28,8 @@ export class FeatureFlagsRegistry {
             FEATURE_TRACE_BARRIER: { default: true, dependsOn: [], description: 'Enable SynchronizationBarrier telemetry transitions' },
             FEATURE_TRACE_SIMULATOR: { default: true, dependsOn: [], description: 'Enable ActionSimulator telemetry transitions' },
             FEATURE_TRACE_PLAYWRIGHT: { default: true, dependsOn: [], description: 'Enable Playwright layer telemetry transitions' },
-            FEATURE_TRACE_CDP_NETWORK: { default: true, dependsOn: [], description: 'Enable verbose CDP network interception for Playwright' }
+            FEATURE_TRACE_CDP_NETWORK: { default: true, dependsOn: [], description: 'Enable verbose CDP network interception for Playwright' },
+            V4_SPATIAL_SCROLL: { default: true, dependsOn: [], description: 'Enable V4 spatial scroll feature flag for deterministic latest-wins coalescing' }
         };
         this.init();
     }

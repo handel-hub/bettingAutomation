@@ -3,14 +3,18 @@ import { TelemetryCollector } from '../execution/locatorIntelligence/telemetry/T
 export class SequenceGate {
     constructor(registry) {
         this.registry = registry;
+        this.watchdogs = new Map(); // browserId -> timeoutId
+        
+        if (this.registry) {
+            const clearForBrowser = (event) => {
+                const browserId = event.browserId || event.id;
+                if (browserId) this.cancelWatchdog(browserId);
+            };
+            this.registry.on('WORKER_FAILOVER', clearForBrowser);
+            this.registry.on('WORKER_BROKEN', clearForBrowser);
+        }
     }
 
-    /**
-     * Evaluates if a command can be executed based on GES.
-     * @param {string} browserId 
-     * @param {number} commandGes 
-     * @returns {string} ALIGNED | WAITING | STALE
-     */
     evaluate(browserId, commandGes) {
         if (commandGes === undefined || commandGes === null) {
             // Commands without GES bypass sequencing (e.g. out of band control)
@@ -29,19 +33,9 @@ export class SequenceGate {
         }
     }
 
-    /**
-     * Asynchronously waits for a command to become ALIGNED.
-     * @param {string} browserId 
-     * @param {number} commandGes 
-     * @param {number} timeoutMs 
-     * @param {object} [commandContext] - Optional context for observability
-     * @returns {Promise<object>} { status: 'ALIGNED' | 'STALE' | 'TIMEOUT' }
-     */
-    async evaluateAsync(browserId, commandGes, timeoutMs, commandContext = null) {
-        if (commandGes === undefined || commandGes === null) {
-            return { status: 'ALIGNED' };
-        }
-
+    startWatchdog(browserId, targetGes, timeoutMs, onTimeout, commandContext = null) {
+        this.cancelWatchdog(browserId);
+        
         if (commandContext) {
             import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
                 observabilityCollector.emitTransition({
@@ -52,38 +46,13 @@ export class SequenceGate {
                     eventName: 'SEQUENCE_GATE_ENTERED',
                     owner: 'SequenceGate',
                     browserId: browserId,
-                    metadata: { expectedGes: commandGes }
+                    metadata: { expectedGes: targetGes }
                 });
             }).catch(() => {});
         }
 
-        const start = Date.now();
-        while (Date.now() - start < timeoutMs) {
-            const status = this.evaluate(browserId, commandGes);
-            if (status === 'ALIGNED' || status === 'STALE') {
-                if (commandContext && status === 'ALIGNED') {
-                    import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
-                        observabilityCollector.emitTransition({
-                            commandId: commandContext.commandId,
-                            traceId: commandContext.traceId,
-                            prevState: 'WAITING_GES',
-                            newState: 'SEQUENCE_PASSED',
-                            eventName: 'SEQUENCE_GATE_RELEASED',
-                            owner: 'SequenceGate',
-                            browserId: browserId
-                        });
-                    }).catch(() => {});
-                }
-                return { status };
-            }
-            await new Promise(r => setTimeout(r, 50));
-        }
-        
-        const finalStatus = this.evaluate(browserId, commandGes);
-        if (finalStatus === 'WAITING') {
-            const state = this.registry.getState(browserId);
-            const slaveGes = state ? (state.currentGes || 0) : 0;
-            TelemetryCollector.recordSyncGap(browserId, slaveGes + 1, commandGes);
+        const timeoutId = setTimeout(() => {
+            this.watchdogs.delete(browserId);
             
             if (commandContext) {
                 import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
@@ -98,9 +67,31 @@ export class SequenceGate {
                     });
                 }).catch(() => {});
             }
-            return { status: 'TIMEOUT' };
-        }
+
+            if (onTimeout) onTimeout();
+        }, timeoutMs);
         
-        return { status: finalStatus };
+        this.watchdogs.set(browserId, timeoutId);
+    }
+    
+    cancelWatchdog(browserId, commandContext = null) {
+        if (this.watchdogs.has(browserId)) {
+            clearTimeout(this.watchdogs.get(browserId));
+            this.watchdogs.delete(browserId);
+            
+            if (commandContext) {
+                import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                    observabilityCollector.emitTransition({
+                        commandId: commandContext.commandId,
+                        traceId: commandContext.traceId,
+                        prevState: 'WAITING_GES',
+                        newState: 'SEQUENCE_PASSED',
+                        eventName: 'SEQUENCE_GATE_RELEASED',
+                        owner: 'SequenceGate',
+                        browserId: browserId
+                    });
+                }).catch(() => {});
+            }
+        }
     }
 }

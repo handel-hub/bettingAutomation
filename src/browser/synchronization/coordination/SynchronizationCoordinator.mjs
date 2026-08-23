@@ -11,6 +11,25 @@ export class SynchronizationCoordinator extends EventEmitter {
         this.registry = registry;
         this.cdpMutex = cdpMutex;
         this.capabilityStates = new Map(); // browserId -> { [capability]: boolean }
+        this.pendingUpdates = new WeakMap(); // stateModel -> Map<capability, isReady>
+        
+        if (this.cdpMutex) {
+            this.cdpMutex.on('RecoveryLockReleased', ({ browserId }) => {
+                const stateModel = this.registry.getState(browserId);
+                if (!stateModel) return;
+                
+                const pending = this.pendingUpdates.get(stateModel);
+                if (pending && pending.size > 0) {
+                    logger.debug(`[SynchronizationCoordinator] Draining ${pending.size} pending capability updates for [${browserId}] post-mutex release`);
+                    const updatesToApply = Array.from(pending.entries());
+                    pending.clear();
+                    
+                    for (const [capability, isReady] of updatesToApply) {
+                        this.handleCapabilityUpdate(browserId, capability, isReady);
+                    }
+                }
+            });
+        }
     }
 
     initializeBrowser(browserId) {
@@ -22,6 +41,15 @@ export class SynchronizationCoordinator extends EventEmitter {
     handleCapabilityUpdate(browserId, capability, isReady) {
         if (this.cdpMutex && this.cdpMutex.locks.has(browserId)) {
             logger.debug(`[SynchronizationCoordinator] Suppressing capability update for [${browserId}] (${capability}=${isReady}) due to active CDP Mutex lock`);
+            const stateModel = this.registry.getState(browserId);
+            if (stateModel) {
+                let pending = this.pendingUpdates.get(stateModel);
+                if (!pending) {
+                    pending = new Map();
+                    this.pendingUpdates.set(stateModel, pending);
+                }
+                pending.set(capability, isReady);
+            }
             return;
         }
 

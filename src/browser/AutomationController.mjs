@@ -110,6 +110,11 @@ export class AutomationController {
         this.syncManager.setTelemetry(this.syncTelemetry);
         this.syncManager.setTimeline(this.syncTimeline);
 
+        this.registry.on('WORKER_BROKEN', () => {
+            logger.error('[AutomationController] FATAL: Worker Broken. Freezing SynchronizationTimeline to preserve forensic state.');
+            this.syncTimeline.freeze();
+        });
+
         attachSyncTelemetryAdapter(this.syncManager);
 
         this.eventBusRegistrar = new EventBusRegistrar({

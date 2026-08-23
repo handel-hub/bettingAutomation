@@ -164,6 +164,31 @@ export class QueueManager {
         }
     }
 
+    peekNext() {
+        const order = ['Critical', 'Discrete', 'Aggregated', 'Continuous'];
+        const candidates = [];
+        for (const qClass of order) {
+            if (this.buckets[qClass].length > 0) {
+                candidates.push({ queueClass: qClass, entry: this.buckets[qClass][0] });
+            }
+        }
+
+        if (candidates.length === 0) return null;
+
+        candidates.sort((a, b) => {
+            const aGes = a.entry.command.ges;
+            const bGes = b.entry.command.ges;
+            const aHasGes = aGes !== undefined && aGes !== null;
+            const bHasGes = bGes !== undefined && bGes !== null;
+            if (!aHasGes && bHasGes) return -1;
+            if (aHasGes && !bHasGes) return 1;
+            if (!aHasGes && !bHasGes) return order.indexOf(a.queueClass) - order.indexOf(b.queueClass);
+            return aGes - bGes;
+        });
+
+        return candidates[0].entry;
+    }
+
     dequeueNext() {
         const order = ['Critical', 'Discrete', 'Aggregated', 'Continuous'];
         
@@ -466,25 +491,28 @@ export class ExecutionScheduler {
 
         try {
             while (true) {
-                const nextEntry = qManager.dequeueNext();
+                const nextEntry = qManager.peekNext();
                 if (!nextEntry) {
                     break;
                 }
+
                 if (this.isBackpressureActive(browserId) && (nextEntry.queueClass === 'Continuous' || nextEntry.queueClass === 'Aggregated')) {
                     logger.debug(`[ExecutionScheduler] Backpressure active on [${browserId}] during drain: dropping ${nextEntry.queueClass} command ${nextEntry.command.type}`);
+                    
                     import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
                         observabilityCollector.emitTransition({
                             commandId: nextEntry.command.id || nextEntry.command.commandId,
                             traceId: nextEntry.command.traceId || null,
                             interactionId: nextEntry.command.interactionId || null,
                             prevState: 'ENQUEUED',
-                            newState: 'EVICTED',
-                            eventName: 'COMMAND_EVICTED',
+                            newState: 'DROPPED',
+                            eventName: 'COMMAND_DROPPED_BACKPRESSURE',
                             owner: 'ExecutionScheduler',
-                            browserId: browserId,
-                            metadata: { reason: 'Backpressure dequeue drop' }
+                            browserId: browserId
                         });
                     }).catch(() => {});
+                    
+                    qManager.dequeueNext();
                     if (nextEntry.command.ges !== undefined && nextEntry.command.ges !== null) {
                         this.registry.incrementSlaveGes(browserId, false);
                     }
@@ -536,7 +564,7 @@ export class ExecutionScheduler {
                     }).catch(() => {});
 
                     // Task 2.3: Enforce Queue TTL using DeadlineBudget before processing
-                    const deadlineBudget = DeadlineBudget.fromCommand(nextEntry.command, 1500);
+                    const deadlineBudget = DeadlineBudget.fromCommand(nextEntry.command, 15000);
                     if (deadlineBudget.isExpired()) {
                         const errorMsg = `[LF-702] Queue deadline exceeded for Command ${nextEntry.command.id || 'unknown'} on [${browserId}] (QueueDelay: ${nextEntry.queueDelay}ms)`;
                         logger.warn(`[ExecutionScheduler] ${errorMsg}`);
@@ -559,13 +587,17 @@ export class ExecutionScheduler {
                             });
                         }).catch(() => {});
                         
+                        qManager.dequeueNext();
                         if (nextEntry.command.ges !== undefined && nextEntry.command.ges !== null) {
                             this.registry.incrementSlaveGes(browserId, true);
                         }
                         continue;
                     }
 
+                    logger.info(`[Scheduler] Dispatching [${nextEntry.queueClass}] Command ${nextEntry.command.id} on [${browserId}] | QueueDelay: ${nextEntry.queueDelay}ms | Decision: ${nextEntry.schedulerDecision}`);
+
                     const currentState = this.registry.get(browserId);
+
                     if (!currentState || !currentState.page) {
                         logger.error(`[Scheduler] Dropping command ${nextEntry.command.id} on [${browserId}]: Browser/Page no longer exists in registry.`);
                         continue;
@@ -616,44 +648,59 @@ export class ExecutionScheduler {
                                 TelemetryCollector.registry.recordFailureCode('LF-604');
                             }
                             this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new StaleCommandError(currentState.currentGes + 1, ges) });
+                            qManager.dequeueNext();
                             continue;
                         }
                         
                         if (initialDecision === 'WAITING') {
                             logger.info(`[ExecutionScheduler] Command ${finalCommand.id} on [${browserId}] buffered waiting for GES alignment (target GES: ${ges})`);
-                            const decisionObj = await this.sequenceGate.evaluateAsync(browserId, ges, 5000, {
+                            
+                            const commandContext = {
                                 commandId: finalCommand.id || finalCommand.commandId,
                                 traceId: finalCommand.traceId
-                            });
+                            };
                             
-                            if (decisionObj.status === 'STALE') {
-                                const errorMsg = `[LF-604] Stale command ${finalCommand.id || 'unknown'} on [${browserId}] after barrier wait: GES ${ges} is now STALE`;
-                                logger.warn(`[ExecutionScheduler] ${errorMsg}`);
-                                if (TelemetryCollector && TelemetryCollector.registry && typeof TelemetryCollector.registry.recordFailureCode === 'function') {
-                                    TelemetryCollector.registry.recordFailureCode('LF-604');
-                                }
-                                this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new StaleCommandError(currentState.currentGes + 1, ges) });
-                                continue;
-                            } else if (decisionObj.status === 'TIMEOUT') {
+                            this.sequenceGate.startWatchdog(browserId, ges, 5000, () => {
                                 const errorMsg = `[SYNC-100] Command ${finalCommand.id || 'unknown'} on [${browserId}] timed out waiting for GES alignment. Expected GES: ${ges}`;
                                 logger.error(`[ExecutionScheduler] ${errorMsg}`);
                                 logger.error(`[Telemetry] {"event":"SEQUENCE_GATE_TIMEOUT","commandId":"${finalCommand.id}","browserId":"${browserId}","expectedGes":${ges},"traceId":"${finalCommand.traceId}"}`);
+                                
                                 if (TelemetryCollector && TelemetryCollector.registry && typeof TelemetryCollector.registry.recordFailureCode === 'function') {
                                     TelemetryCollector.registry.recordFailureCode('SYNC-100');
                                 }
-                                this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new SequenceGapError(currentState.currentGes + 1, ges) });
-                                // SPEC-01b: Gap skip on timeout
+                                
+                                if (typeof TelemetryCollector.recordSyncGap === 'function') {
+                                    TelemetryCollector.recordSyncGap(browserId, (currentState?.currentGes||0) + 1, ges);
+                                }
+                                
+                                this.simulator.emit('ActionFailure', { id: browserId, command: finalCommand, error: new SequenceGapError((currentState?.currentGes||0) + 1, ges) });
                                 if (ges !== undefined && ges !== null) {
                                     this.registry.incrementSlaveGes(browserId, true);
                                 }
-                                // Task 4.8: Alert on TIMEOUT
+                                
                                 this.simulator.emit('SYSTEM_ALERT', { type: 'SEQUENCE_TIMEOUT', browserId, expectedGes: ges, commandId: finalCommand.id });
-                                continue;
-                            }
+                                
+                                this._drain(browserObj);
+                            }, commandContext);
+                            
+                            this.drainLocks.delete(browserId);
+                            return; // Break out of drain loop, will be re-awoken by enqueue
                         }
+                        
+                        // ALIGNED: Cancel watchdog BEFORE execution to prevent race condition
+                        const commandContext = {
+                            commandId: finalCommand.id || finalCommand.commandId,
+                            traceId: finalCommand.traceId
+                        };
+                        this.sequenceGate.cancelWatchdog(browserId, commandContext);
                     }
 
+                    // Proceeding to execution, remove from queue
+                    qManager.dequeueNext();
+
                     if (finalCommand.type === 'NOOP') {
+
+
                         logger.debug(`[Scheduler] Fast-path NOOP execution for GES ${ges} on [${browserId}]`);
                         if (ges !== undefined && ges !== null) {
                             this.registry.incrementSlaveGes(browserId, false);
@@ -788,3 +835,7 @@ export class ExecutionScheduler {
         logger.info(`[Scheduler Telemetry] AvgWait: ${avgWait}ms | MaxWait: ${this.telemetry.maxQueueWait}ms | Enqueued: ${this.telemetry.totalEnqueued} | Dequeued: ${this.telemetry.totalDequeued} | DroppedHovers: ${totalDroppedHovers} | CoalescedScrolls: ${totalCoalescedScrolls}`);
     }
 }
+
+
+
+

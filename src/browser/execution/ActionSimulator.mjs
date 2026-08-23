@@ -449,9 +449,37 @@ export class ActionSimulator extends EventEmitter {
                     await page.mouse.up();
                 }
             } else if (type === 'SCROLL' || type === 'wheel') {
-                const dx = payload.deltas ? payload.deltas.deltaX : payload.deltaX;
-                const dy = payload.deltas ? payload.deltas.deltaY : payload.deltaY;
-                await page.mouse.wheel(dx, dy);
+                const scrollMeta = command.metadata?.scroll;
+                if (scrollMeta && (scrollMeta.rhoX !== undefined && scrollMeta.rhoY !== undefined)) {
+                    await page.evaluate(async ({rhoX, rhoY, containerId}) => {
+                        let target = document.documentElement;
+                        if (containerId && containerId !== 'window') {
+                            if (containerId.includes('=')) {
+                                target = document.querySelector(`[${containerId}]`);
+                            } else {
+                                target = document.querySelector(containerId); // e.g. path
+                            }
+                        }
+                        
+                        if (target) {
+                            const limitX = Math.max(0, target.scrollWidth - target.clientWidth);
+                            const limitY = Math.max(0, target.scrollHeight - target.clientHeight);
+                            if (rhoX !== undefined && limitX > 0) target.scrollLeft = Math.round(rhoX * limitX);
+                            if (rhoY !== undefined && limitY > 0) target.scrollTop = Math.round(rhoY * limitY);
+                            
+                            if (target === document.documentElement) {
+                                window.scrollTo(
+                                    rhoX !== undefined && limitX > 0 ? Math.round(rhoX * limitX) : window.pageXOffset,
+                                    rhoY !== undefined && limitY > 0 ? Math.round(rhoY * limitY) : window.pageYOffset
+                                );
+                            }
+                        }
+                    }, { rhoX: scrollMeta.rhoX, rhoY: scrollMeta.rhoY, containerId: scrollMeta.containerId });
+                } else {
+                    const dx = payload.deltas ? payload.deltas.deltaX : payload.deltaX;
+                    const dy = payload.deltas ? payload.deltas.deltaY : payload.deltaY;
+                    await page.mouse.wheel(dx, dy);
+                }
             } else if (type === 'INPUT' || type === 'input') {
                 usedLocatorInfo = await this._executeWithRecovery(command, page, 'input', async (loc) => {
                     await loc.fill('', tOpts);

@@ -26,3 +26,17 @@ export const SynchronizationLevel = {
         Capabilities.SESSION_READY
     ]
 };
+
+export const CapabilityPhases = {
+    PRE_EXECUTION: [
+        Capabilities.CONNECTED,
+        Capabilities.NAVIGATION_READY,
+        Capabilities.DOM_READY,
+        Capabilities.VIEWPORT_READY,
+        Capabilities.FRAME_READY,
+        Capabilities.SESSION_READY
+    ],
+    POST_EXECUTION: [
+        Capabilities.SCROLL_READY
+    ]
+};

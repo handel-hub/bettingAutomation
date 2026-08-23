@@ -18,13 +18,13 @@ export class RecoveryManager extends EventEmitter {
         this.cdpMutex = options.cdpMutex ?? new CDPMutex();
     }
 
-    initiateCorrectiveNavigation(browserId, url) {
-        logger.info(`[RecoveryManager] Issuing CORRECTIVE_NAV to ${browserId} for url: ${url}`);
+    initiateCorrectiveNavigation(browserId, url, baselineGes = undefined) {
+        logger.info(`[RecoveryManager] Issuing CORRECTIVE_NAV to ${browserId} for url: ${url} (BaselineGES: ${baselineGes})`);
         this.emit('Command', new Command({
             category: 'Navigation',
             type: 'navigate',
             target: browserId,
-            payload: { url, navClass: 'CORRECTIVE_NAV' },
+            payload: { url, navClass: 'CORRECTIVE_NAV', baselineGes },
             source: 'RecoveryManager'
         }));
     }
@@ -53,6 +53,13 @@ export class RecoveryManager extends EventEmitter {
                 try {
                     await this.respawn(browserId, role, proxyUrl, username);
                     logger.info(`Healed browser [${browserId}] on attempt ${attempt}/${this.maxAttempts}.`);
+                    
+                    if (role !== 'master') {
+                        const masterState = this.registry.getMaster();
+                        if (masterState) {
+                            this.initiateCorrectiveNavigation(browserId, masterState.url || 'about:blank', masterState.currentGes || 0);
+                        }
+                    }
                     return;
                 } catch (err) {
                     logger.error(`Heal attempt ${attempt}/${this.maxAttempts} failed for [${browserId}]: ${err.message}`);
