@@ -36,10 +36,28 @@ export const SynchronizationProfiles = Object.freeze({
         retryPolicy: { retries: 1, backoff: 1000 }
     }),
     scroll: Object.freeze({
-        level: SynchronizationLevel.LEVEL_4,
-        timeoutMs: 5000,
-        domQuietPeriod: 100,
-        retryPolicy: { retries: 2, backoff: 500 }
+        level: SynchronizationLevel.LEVEL_3,
+        timeoutMs: 3000,
+        domQuietPeriod: 0,
+        retryPolicy: { retries: 1, backoff: 200 }
+    }),
+    wheel: Object.freeze({
+        level: SynchronizationLevel.LEVEL_3,
+        timeoutMs: 3000,
+        domQuietPeriod: 0,
+        retryPolicy: { retries: 1, backoff: 200 }
+    }),
+    window_scroll: Object.freeze({
+        level: SynchronizationLevel.LEVEL_3,
+        timeoutMs: 3000,
+        domQuietPeriod: 0,
+        retryPolicy: { retries: 1, backoff: 200 }
+    }),
+    element_scroll: Object.freeze({
+        level: SynchronizationLevel.LEVEL_3,
+        timeoutMs: 3000,
+        domQuietPeriod: 0,
+        retryPolicy: { retries: 1, backoff: 200 }
     }),
     drag: Object.freeze({
         level: SynchronizationLevel.LEVEL_4,

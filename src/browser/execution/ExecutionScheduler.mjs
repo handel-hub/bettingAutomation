@@ -82,14 +82,14 @@ export class SchedulingPolicy {
                             target: existing.command.target,
                             source: existing.command.source,
                             executionMode: existing.command.executionMode,
-                            metadata: existing.command.metadata,
+                            metadata: entry.command.metadata,
                             version: existing.command.version,
                             lifecycle: existing.command.lifecycle,
                             id: existing.command.id,
                             captureTime: existing.command.captureTime,
                             creationTime: existing.command.creationTime,
                             payload: {
-                               ...existing.command.payload,
+                               ...entry.command.payload,
                                deltas: { deltaX: edx + ndx, deltaY: edy + ndy }
                             },
                             ges: existing.command.ges
@@ -810,6 +810,42 @@ export class ExecutionScheduler {
         while (this.drainLocks.has(browserId)) {
             await new Promise(r => setTimeout(r, 10));
         }
+    }
+
+    purgeAggregated(browserId) {
+        const qManager = this.browserQueues.get(browserId);
+        if (!qManager) return 0;
+        
+        const dropped = [...qManager.buckets.Aggregated];
+        qManager.buckets.Aggregated = [];
+        
+        let sortRequired = false;
+        for (const drop of dropped) {
+            if (drop.command?.ges !== undefined && drop.command?.ges !== null) {
+                qManager.buckets.Discrete.push({
+                    command: new Command({
+                        category: 'Execution',
+                        type: 'NOOP',
+                        ges: drop.command.ges,
+                        captureTime: drop.command.captureTime,
+                        metadata: { reason: 'CONVERGENCE_PURGE' }
+                    }),
+                    enqueueTime: Date.now(),
+                    queueClass: 'Discrete',
+                    priority: 'High',
+                    dequeueTime: null,
+                    queueDelay: 0,
+                    schedulerDecision: 'NOOP Gap Filler (Convergence Purge)'
+                });
+                sortRequired = true;
+            }
+        }
+        
+        if (sortRequired) {
+            qManager.buckets.Discrete.sort((a, b) => (a.command.ges ?? 0) - (b.command.ges ?? 0));
+        }
+        
+        return dropped.length;
     }
 
     clearQueue(browserId) {

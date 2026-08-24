@@ -224,17 +224,28 @@ export class ScrollConvergenceHandler {
      * Bounded: max 1 timer per Slave. Self-cleaning on fire.
      * Cancelled: when a newer convergence event arrives (version supersedes).
      */
-    _scheduleReverify(slaveBrowserId, masterRhoX, masterRhoY, version) {
+    _scheduleReverify(slaveBrowserId, masterRhoX, masterRhoY, version, attempt = 0) {
         // Cancel any existing timer for this Slave
         const existingTimer = this.reverifyTimers.get(slaveBrowserId);
         if (existingTimer) {
             clearTimeout(existingTimer);
         }
 
+        const MAX_REVERIFY_ATTEMPTS = 2;
+        if (attempt >= MAX_REVERIFY_ATTEMPTS) return;
+
+        const delay = this.REVERIFY_DELAY_MS * (attempt + 1);
+
         const timerId = setTimeout(async () => {
             this.reverifyTimers.delete(slaveBrowserId);
-            await this._delayedReverify(slaveBrowserId, masterRhoX, masterRhoY, version);
-        }, this.REVERIFY_DELAY_MS);
+            const lastVersion = this.lastAppliedVersion.get(slaveBrowserId) || 0;
+            if (version < lastVersion) return;
+
+            const corrected = await this._delayedReverify(slaveBrowserId, masterRhoX, masterRhoY, version);
+            if (corrected) {
+                this._scheduleReverify(slaveBrowserId, masterRhoX, masterRhoY, version, attempt + 1);
+            }
+        }, delay);
 
         this.reverifyTimers.set(slaveBrowserId, timerId);
     }
@@ -250,17 +261,17 @@ export class ScrollConvergenceHandler {
             this._emitTelemetry('SCROLL_CONVERGENCE_REVERIFY_SUPERSEDED', {
                 slaveBrowserId, timerVersion: version, currentVersion: lastVersion
             });
-            return;
+            return false;
         }
 
         // Guard: skip if lifecycle changed
         const slave = this.registry.getState(slaveBrowserId);
         if (!slave || slave.lifecycleState !== LifecycleState.READY) {
-            return;
+            return false;
         }
 
         const page = slave.page;
-        if (!page) return;
+        if (!page) return false;
 
         try {
             // Atomic read + compare + correct in single page.evaluate
@@ -300,6 +311,7 @@ export class ScrollConvergenceHandler {
                 this._emitTelemetry('SCROLL_CONVERGENCE_REVERIFY_CONFIRMED', {
                     slaveBrowserId, deltaX: result.deltaX, deltaY: result.deltaY
                 });
+                return false;
             } else {
                 this._emitTelemetry('SCROLL_CONVERGENCE_REVERIFY_CORRECTED', {
                     slaveBrowserId,
@@ -307,10 +319,12 @@ export class ScrollConvergenceHandler {
                     postRhoX: result.postRhoX, postRhoY: result.postRhoY,
                     driftX: result.deltaX, driftY: result.deltaY
                 });
+                return true;
             }
         } catch (error) {
             // Navigation or crash during re-verify — safe to ignore
             logger.debug(`[ScrollConvergence] Re-verify failed for ${slaveBrowserId}: ${error.message}`);
+            return false;
         }
     }
 

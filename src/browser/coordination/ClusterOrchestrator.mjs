@@ -43,6 +43,16 @@ export class ClusterOrchestrator {
         const { ScrollConvergenceHandler } = await import('../synchronization/providers/scroll/ScrollConvergenceHandler.mjs');
         this.scrollConvergenceHandler = new ScrollConvergenceHandler(this.registry);
         scrollCapabilityProvider.events.on('ScrollConvergenceRequired', (data) => {
+            // Purge stale scroll commands from all Slave queues BEFORE convergence
+            if (data.browserId === this.registry.getMaster()?.id) {
+                for (const slave of this.registry.getReadySlaves()) {
+                    const slaveId = slave.id || slave.browserId;
+                    const purged = this.scheduler.purgeAggregated(slaveId);
+                    if (purged > 0) {
+                        logger.info(`[ScrollConvergence] Purged ${purged} stale scroll commands from ${slaveId}`);
+                    }
+                }
+            }
             this.scrollConvergenceHandler.handleScrollConvergenceRequired(data);
         });
         this.registry.on('WORKER_FAILOVER', ({ browserId }) => {
