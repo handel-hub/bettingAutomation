@@ -3,7 +3,6 @@ export class FeatureFlagsRegistry {
         this._flags = new Map();
         this._initialized = false;
         this.definitions = {
-            V3_SCHEMA_ENFORCEMENT_MODE: { default: 'STRICT', dependsOn: [], description: 'Schema enforcement mode: DISABLED, SHADOW, or STRICT' },
             V3_ENABLE_STANDBY_POOL: { default: false, dependsOn: [], description: 'Enable WARM_STANDBY browser failover pool' },
             V4_SPATIAL_SCROLL: { default: true, dependsOn: [], description: 'Enable V4 spatial scroll feature flag for deterministic latest-wins coalescing' }
         };

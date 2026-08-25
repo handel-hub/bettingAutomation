@@ -1,5 +1,5 @@
 import { ContractViolationError } from '../errors.mjs';
-import featureFlags from '../locatorIntelligence/FeatureFlags.mjs';
+
 import { TelemetryCollector } from '../locatorIntelligence/telemetry/TelemetryCollector.mjs';
 
 /**
@@ -29,8 +29,14 @@ export class CommandPayloadSchema {
         if (!eid || typeof eid !== 'object') {
             return false;
         }
-        if (!eid.tag && !eid.role && !eid.text) {
+        if (!eid.tag && !eid.tagName && !eid.role && !eid.text) {
             return false;
+        }
+        if (eid.boundingBox) {
+            const bb = eid.boundingBox;
+            if (typeof bb.x !== 'number' || typeof bb.y !== 'number' || typeof bb.width !== 'number' || typeof bb.height !== 'number') {
+                return false;
+            }
         }
         return true;
     }
@@ -57,7 +63,7 @@ export class CommandPayloadSchema {
 
         const errors = [];
         let coercedTimestamp = false;
-        const enforcementMode = mode || (featureFlags ? featureFlags.get('V3_SCHEMA_ENFORCEMENT_MODE') : 'DISABLED') || 'DISABLED';
+        const enforcementMode = mode || 'STRICT';
 
         if (!command || typeof command !== 'object') {
             errors.push('Command must be a non-null object.');

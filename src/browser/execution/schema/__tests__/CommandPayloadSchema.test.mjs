@@ -10,7 +10,6 @@ import { RollingWindow } from '../../locatorIntelligence/telemetry/RollingWindow
 describe('Milestone 1: Authoritative Ingress Contract & Schema Gating Tests', () => {
     beforeEach(() => {
         TelemetryCollector.reset();
-        featureFlags.resetForTesting({ V3_SCHEMA_ENFORCEMENT_MODE: 'SHADOW' });
     });
 
     describe('CommandPayloadSchema Unit & v3 Specification Tests', () => {
@@ -56,6 +55,7 @@ describe('Milestone 1: Authoritative Ingress Contract & Schema Gating Tests', ()
                 }
             };
             const result = CommandPayloadSchema.validate(validV3Command);
+
             expect(result.valid).toBe(true);
             expect(result.errors).toHaveLength(0);
         });
@@ -182,26 +182,7 @@ describe('Milestone 1: Authoritative Ingress Contract & Schema Gating Tests', ()
             router.register('Execution', 'CLICK', mockHandler);
         });
 
-        it('routes command normally without throwing in SHADOW mode, logging violation and telemetry', async () => {
-            featureFlags.resetForTesting({ V3_SCHEMA_ENFORCEMENT_MODE: 'SHADOW' });
-            const invalidCommand = {
-                id: 'cmd-shadow-fail',
-                type: 'click',
-                category: 'Execution',
-                timestamp: Date.now(),
-                payload: {} // invalid payload
-            };
-
-            await expect(router.route(invalidCommand)).resolves.toBe(true);
-            expect(mockHandler).toHaveBeenCalledTimes(1);
-            expect(TelemetryCollector.registry.failures.get('LF-701')).toBe(1);
-            const metrics = router.getIngressMetrics();
-            expect(metrics.received).toBe(1);
-            expect(metrics.routed).toBe(1);
-        });
-
-        it('throws ContractViolationError and increments rejected metric in STRICT mode', async () => {
-            featureFlags.resetForTesting({ V3_SCHEMA_ENFORCEMENT_MODE: 'STRICT' });
+        it('throws ContractViolationError and increments rejected metric (STRICT by default)', async () => {
             const invalidCommand = {
                 id: 'cmd-strict-fail',
                 type: 'click',
@@ -219,9 +200,8 @@ describe('Milestone 1: Authoritative Ingress Contract & Schema Gating Tests', ()
             expect(metrics.routed).toBe(0);
         });
 
-        it('supports setEnforcementMode overriding feature flag defaults', async () => {
-            featureFlags.resetForTesting({ V3_SCHEMA_ENFORCEMENT_MODE: 'DISABLED' });
-            router.setEnforcementMode('STRICT');
+        it('supports setEnforcementMode("DISABLED") to bypass STRICT schema validation', async () => {
+            router.setEnforcementMode('DISABLED');
             const invalidCommand = {
                 id: 'cmd-override-fail',
                 type: 'click',
@@ -230,8 +210,8 @@ describe('Milestone 1: Authoritative Ingress Contract & Schema Gating Tests', ()
                 payload: {}
             };
 
-            await expect(router.route(invalidCommand)).rejects.toThrow(ContractViolationError);
-            expect(mockHandler).not.toHaveBeenCalled();
+            await expect(router.route(invalidCommand)).resolves.toBe(true);
+            expect(mockHandler).toHaveBeenCalledTimes(1);
         });
 
         it('parses raw string JSON payloads safely and negotiates v3 protocol version from headers', async () => {

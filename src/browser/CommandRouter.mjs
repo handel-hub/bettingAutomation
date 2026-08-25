@@ -138,8 +138,8 @@ export class CommandRouter extends EventEmitter {
             this._metrics.rejected++;
             const errorMsg = '[LF-701] Ingress Contract Violation: Malformed JSON or non-object payload';
             this._emitViolation(errorMsg, { id: 'unparseable' });
-            const enforcementMode = this._mode || (this.featureFlagManager ? this.featureFlagManager.getSchemaMode() : featureFlags.get('V3_SCHEMA_ENFORCEMENT_MODE')) || 'DISABLED';
-            if (enforcementMode === 'STRICT') {
+            
+            if (this._mode !== 'DISABLED') {
                 logger.error(`[CommandRouter] STRICT mode rejecting unparseable payload: ${errorMsg}`);
                 throw new ContractViolationError(errorMsg);
             }
@@ -171,20 +171,16 @@ export class CommandRouter extends EventEmitter {
         }
 
         // v3 Ingress Contract Gating
-        const enforcementMode = this._mode || (this.featureFlagManager ? this.featureFlagManager.getSchemaMode() : featureFlags.get('V3_SCHEMA_ENFORCEMENT_MODE')) || 'DISABLED';
-        if (enforcementMode === 'STRICT' || enforcementMode === 'SHADOW') {
-            const validation = CommandPayloadSchema.validate(command, enforcementMode);
+        if (this._mode !== 'DISABLED') {
+            const validation = CommandPayloadSchema.validate(command, 'STRICT');
             if (!validation.valid) {
                 const errorMsg = `[LF-701] Ingress Contract Violation (${command.id || command.commandId || 'unknown'}): ${validation.errors.join('; ')}`;
                 this._emitViolation(errorMsg, command);
-                if (enforcementMode === 'STRICT') {
-                    this._metrics.rejected++;
-                    logger.error(`[CommandRouter] STRICT mode rejecting command: ${errorMsg}`);
-                    this.emit('rejected', { command, reason: 'Schema Validation Failed (STRICT)', headers });
-                    throw new ContractViolationError(errorMsg);
-                } else if (enforcementMode === 'SHADOW') {
-                    logger.warn(`[CommandRouter] SHADOW mode violation logged (proceeding with route): ${errorMsg}`);
-                }
+                
+                this._metrics.rejected++;
+                logger.error(`[CommandRouter] STRICT mode rejecting command: ${errorMsg}`);
+                this.emit('rejected', { command, reason: 'Schema Validation Failed (STRICT)', headers });
+                throw new ContractViolationError(errorMsg);
             }
         }
 

@@ -8,16 +8,7 @@ import { TimeConstants } from '../time/TimeConstants.mjs';
 import featureFlags from '../locatorIntelligence/FeatureFlags.mjs';
 
 describe('Milestone 5: Bounded Fast-Fail Resolution & Watchdog State Isolation', () => {
-    beforeEach(() => {
-        featureFlags.resetForTesting({
-            V3_SCHEMA_ENFORCEMENT_MODE: 'STRICT'
-        });
-    });
-
     afterEach(() => {
-        featureFlags.resetForTesting({
-            V3_SCHEMA_ENFORCEMENT_MODE: 'SHADOW'
-        });
         vi.restoreAllMocks();
     });
 

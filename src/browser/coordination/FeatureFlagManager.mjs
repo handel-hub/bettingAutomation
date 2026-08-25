@@ -72,17 +72,7 @@ export class FeatureFlagManager {
         return Boolean(val);
     }
 
-    /**
-     * Returns the schema enforcement mode ('STRICT', 'SHADOW', or 'DISABLED').
-     * @returns {'STRICT' | 'SHADOW' | 'DISABLED'}
-     */
-    getSchemaMode() {
-        const val = this._cache.get('V3_SCHEMA_ENFORCEMENT_MODE');
-        if (val === 'STRICT' || val === 'SHADOW' || val === 'DISABLED') {
-            return val;
-        }
-        return 'DISABLED';
-    }
+
 
     /**
      * Returns the raw cached value of a flag.
@@ -127,7 +117,6 @@ export class FeatureFlagManager {
         logger.warn(`[FeatureFlagManager] EMERGENCY ROLLBACK BROADCAST RECEIVED. Reverting cluster node to legacy V2 paths.`);
         
         const rollbackConfig = {
-            V3_SCHEMA_ENFORCEMENT_MODE: 'DISABLED',
             V3_ENABLE_STANDBY_POOL: false
         };
 
