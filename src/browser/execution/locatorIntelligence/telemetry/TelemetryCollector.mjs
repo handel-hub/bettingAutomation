@@ -143,20 +143,6 @@ class TelemetryCollectorImpl {
         }
     }
 
-    /**
-     * Records telemetry from the CandidateValidator.
-     * @param {string} status e.g., UNIQUE, AMBIGUOUS, NOT_VERIFIABLE
-     */
-    recordValidation(status) {
-        try {
-            if (featureFlags.isEnabled('LI_REMOVE_VALIDATOR')) return;
-            if (this.registry.validation[status] !== undefined) {
-                this.registry.validation[status]++;
-            }
-        } catch (e) {
-            // Passive
-        }
-    }
 
     /**
      * Records telemetry from the LocatorResolver.

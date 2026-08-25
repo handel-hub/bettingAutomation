@@ -17,8 +17,6 @@ describe('FeatureFlagsRegistry', () => {
     it('should initialize all flags to default false', () => {
         expect(registry.isEnabled('LI_EXTENDED_FEATURES')).toBe(false);
         expect(registry.isEnabled('LI_IDENTITY_DOCUMENT')).toBe(false);
-        expect(registry.isEnabled('LI_REMOVE_VALIDATOR')).toBe(false);
-        expect(registry.isEnabled('LI_ADDITIVE_SCORING')).toBe(false);
         expect(registry.isEnabled('LI_SERIALIZE_FEATURES')).toBe(false);
         expect(registry.isEnabled('LI_EPOCH_GATING')).toBe(false);
         expect(registry.isEnabled('LI_BATCH_RESOLVER')).toBe(false);
@@ -26,8 +24,6 @@ describe('FeatureFlagsRegistry', () => {
         expect(registry.isEnabled('LI_VERIFICATION')).toBe(false);
         expect(registry.isEnabled('LI_CONFIDENCE_GATE')).toBe(false);
         expect(registry.isEnabled('LI_RECOVERY_HIERARCHY')).toBe(false);
-        expect(registry.isEnabled('LI_RESOLUTION_MEMORY')).toBe(false);
-        expect(registry.isEnabled('LI_SHADOW_MODE')).toBe(false);
     });
 
     it('should return false for unknown flags', () => {

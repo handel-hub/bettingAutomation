@@ -27,14 +27,6 @@ export class MetricsRegistry {
         // Strategy Metrics (Map of Strategy Name -> Counters)
         this.strategies = new Map();
 
-        // Validation Metrics
-        this.validation = {
-            UNIQUE: 0,
-            AMBIGUOUS: 0,
-            NOT_VERIFIABLE: 0,
-            MISSING: 0,
-            INVALID: 0
-        };
 
         // Phase 2: EID Metrics
         this.extraction = {
@@ -188,7 +180,7 @@ export class MetricsRegistry {
                 averageCorroborationCount: this.ranking.corroborationCount.average
             },
             strategies: Object.fromEntries(this.strategies),
-            validation: { ...this.validation },
+
             sampling: { ...this.sampling },
             confidence: { ...this.confidence },
             recovery: { ...this.recovery },
