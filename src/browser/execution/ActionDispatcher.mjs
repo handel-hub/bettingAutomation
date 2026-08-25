@@ -176,7 +176,7 @@ export class ActionDispatcher extends EventEmitter {
                     window.__lastHlc = HybridLogicalClock.generate(window.__lastHlc);
                     payload.hlc = window.__lastHlc;
                     payload.timestamp = Date.now();
-                    payload.captureTime = Date.now();
+                    payload.captureTime = payload.captureTime || Date.now();
                     payload.sourceEpoch = typeof window !== 'undefined' && window.__ANTIGRAVITY_EPOCH__ !== undefined ? window.__ANTIGRAVITY_EPOCH__ : 0;
                     payload.epoch = payload.sourceEpoch;
                     payload.monotonicUs = Math.round(performance.now() * 1000);
@@ -365,6 +365,7 @@ export class ActionDispatcher extends EventEmitter {
                     if (data.value !== undefined) payload.value = data.value;
                     if (data.key) payload.key = data.key;
 
+                    payload.captureTime = data.startTime;
                     payload.metadata = { aggregationDuration: Date.now() - data.startTime };
                     sendExecution(type, payload);
                 }

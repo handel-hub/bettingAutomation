@@ -572,9 +572,15 @@ export class ActionSimulator extends EventEmitter {
                 await page.addStyleTag({ content: payload.content });
             }
             
+            const executeEndMs = Date.now();
             const lifecycle = 'COMPLETED';
             const locatorStr = usedLocatorInfo ? ` | Used Locator: [${usedLocatorInfo.strategy}] ${usedLocatorInfo.locator}` : '';
-            logger.info(`[Execute End] [Result: Success] Command ${command.id} [${command.type}] on [${id}] | Total Time: ${Date.now() - startTime}ms${locatorStr} | Lifecycle: ${lifecycle}`);
+            logger.info(`[Execute End] [Result: Success] Command ${command.id} [${command.type}] on [${id}] | Total Time: ${executeEndMs - startTime}ms${locatorStr} | Lifecycle: ${lifecycle}`);
+
+            if (command.captureTime && (type === 'SCROLL' || type === 'wheel')) {
+                const captureToExecuteMs = executeEndMs - command.captureTime;
+                logger.info(`[Phase 1 Instrumentation] capture_to_execute_ms = ${captureToExecuteMs}ms (Command: ${command.id})`);
+            }
 
 
 
