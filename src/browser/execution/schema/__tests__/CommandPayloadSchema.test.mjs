@@ -200,19 +200,6 @@ describe('Milestone 1: Authoritative Ingress Contract & Schema Gating Tests', ()
             expect(metrics.routed).toBe(0);
         });
 
-        it('supports setEnforcementMode("DISABLED") to bypass STRICT schema validation', async () => {
-            router.setEnforcementMode('DISABLED');
-            const invalidCommand = {
-                id: 'cmd-override-fail',
-                type: 'click',
-                category: 'Execution',
-                timestamp: Date.now(),
-                payload: {}
-            };
-
-            await expect(router.route(invalidCommand)).resolves.toBe(true);
-            expect(mockHandler).toHaveBeenCalledTimes(1);
-        });
 
         it('parses raw string JSON payloads safely and negotiates v3 protocol version from headers', async () => {
             const validV3Command = {
@@ -233,7 +220,6 @@ describe('Milestone 1: Authoritative Ingress Contract & Schema Gating Tests', ()
         });
 
         it('rejects unparseable JSON string payloads with LF-701 violation in STRICT mode', async () => {
-            router.setEnforcementMode('STRICT');
             const unparseable = '{"commandId": "550e8400...", broken_json: true';
 
             await expect(router.route(unparseable)).rejects.toThrow(ContractViolationError);

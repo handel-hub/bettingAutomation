@@ -56,14 +56,13 @@ export class CommandPayloadSchema {
      * @param {object} command - The incoming command object to validate
      * @returns {{ valid: boolean, errors: string[] }}
      */
-    static validate(command, mode) {
+    static validate(command) {
         if (!this._compiled) {
             this.compileSchema();
         }
 
         const errors = [];
         let coercedTimestamp = false;
-        const enforcementMode = mode || 'STRICT';
 
         if (!command || typeof command !== 'object') {
             errors.push('Command must be a non-null object.');
@@ -161,13 +160,11 @@ export class CommandPayloadSchema {
                 }
             }
 
-            if (enforcementMode === 'STRICT') {
-                if (p.locators !== undefined && p.locators !== null) {
-                    errors.push('STRICT mode: payload.locators is deprecated. Use payload.sid.');
-                }
-                if (p.probabilisticEID !== undefined && p.probabilisticEID !== null) {
-                    errors.push('STRICT mode: payload.probabilisticEID is deprecated. Use payload.sid.');
-                }
+            if (p.locators !== undefined && p.locators !== null) {
+                errors.push('STRICT mode: payload.locators is deprecated. Use payload.sid.');
+            }
+            if (p.probabilisticEID !== undefined && p.probabilisticEID !== null) {
+                errors.push('STRICT mode: payload.probabilisticEID is deprecated. Use payload.sid.');
             }
 
             // If coordinates are provided in payload or top level, they must be numeric x and y

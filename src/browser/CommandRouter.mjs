@@ -17,7 +17,6 @@ export class CommandRouter extends EventEmitter {
     constructor(scheduler = null, flagManager = null, telemetryCollector = null) {
         super();
         this.handlers = new Map();
-        this._mode = null; // Can override feature flag if explicitly set via setEnforcementMode
         this._metrics = {
             received: 0,
             rejected: 0,
@@ -41,19 +40,7 @@ export class CommandRouter extends EventEmitter {
         attachCommandRouterAdapter(this);
     }
 
-    /**
-     * Sets the schema enforcement mode explicitly, overriding feature flag defaults.
-     * @param {'STRICT' | 'SHADOW' | 'DISABLED'} mode - The enforcement mode
-     */
-    setEnforcementMode(mode) {
-        const validModes = ['STRICT', 'SHADOW', 'DISABLED'];
-        if (validModes.includes(mode)) {
-            this._mode = mode;
-            logger.info(`[CommandRouter] Enforcement mode set to: ${mode}`);
-        } else {
-            logger.warn(`[CommandRouter] Attempted to set invalid enforcement mode: ${mode}`);
-        }
-    }
+
 
     /**
      * Returns a snapshot of ingress metrics.
@@ -138,12 +125,8 @@ export class CommandRouter extends EventEmitter {
             this._metrics.rejected++;
             const errorMsg = '[LF-701] Ingress Contract Violation: Malformed JSON or non-object payload';
             this._emitViolation(errorMsg, { id: 'unparseable' });
-            
-            if (this._mode !== 'DISABLED') {
-                logger.error(`[CommandRouter] STRICT mode rejecting unparseable payload: ${errorMsg}`);
-                throw new ContractViolationError(errorMsg);
-            }
-            return false;
+            logger.error(`[CommandRouter] STRICT mode rejecting unparseable payload: ${errorMsg}`);
+            throw new ContractViolationError(errorMsg);
         }
 
         const protocolVersion = this._negotiateVersion(headers || command);
@@ -171,17 +154,15 @@ export class CommandRouter extends EventEmitter {
         }
 
         // v3 Ingress Contract Gating
-        if (this._mode !== 'DISABLED') {
-            const validation = CommandPayloadSchema.validate(command, 'STRICT');
-            if (!validation.valid) {
-                const errorMsg = `[LF-701] Ingress Contract Violation (${command.id || command.commandId || 'unknown'}): ${validation.errors.join('; ')}`;
-                this._emitViolation(errorMsg, command);
-                
-                this._metrics.rejected++;
-                logger.error(`[CommandRouter] STRICT mode rejecting command: ${errorMsg}`);
-                this.emit('rejected', { command, reason: 'Schema Validation Failed (STRICT)', headers });
-                throw new ContractViolationError(errorMsg);
-            }
+        const validation = CommandPayloadSchema.validate(command);
+        if (!validation.valid) {
+            const errorMsg = `[LF-701] Ingress Contract Violation (${command.id || command.commandId || 'unknown'}): ${validation.errors.join('; ')}`;
+            this._emitViolation(errorMsg, command);
+            
+            this._metrics.rejected++;
+            logger.error(`[CommandRouter] STRICT mode rejecting command: ${errorMsg}`);
+            this.emit('rejected', { command, reason: 'Schema Validation Failed (STRICT)', headers });
+            throw new ContractViolationError(errorMsg);
         }
 
         const category = command.category || (command.type === 'NAVIGATE' || command.type === 'navigate' ? 'Navigation' : 'Execution');
