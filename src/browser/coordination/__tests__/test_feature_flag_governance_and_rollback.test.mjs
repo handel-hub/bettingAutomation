@@ -60,8 +60,7 @@ describe('Milestone 6: Feature Flag Governance & Production Cutover', () => {
         const manager = new FeatureFlagManager({
             V3_SCHEMA_ENFORCEMENT_MODE: 'STRICT',
             V3_DECOUPLE_HEALTH_MONITOR: true,
-            V3_ENABLE_STANDBY_POOL: true,
-            V3_ENABLE_GLOBAL_TTL: true
+            V3_ENABLE_STANDBY_POOL: true
         });
 
         expect(manager.isFlagEnabled('V3_ENABLE_STANDBY_POOL')).toBe(true);
@@ -74,7 +73,6 @@ describe('Milestone 6: Feature Flag Governance & Production Cutover', () => {
         expect(durationMs).toBeLessThan(50);
         expect(manager.isFlagEnabled('V3_ENABLE_STANDBY_POOL')).toBe(false);
         expect(manager.isFlagEnabled('V3_DECOUPLE_HEALTH_MONITOR')).toBe(false);
-        expect(manager.isFlagEnabled('V3_ENABLE_GLOBAL_TTL')).toBe(false);
         expect(manager.getSchemaMode()).toBe('DISABLED');
         expect(featureFlags.isEnabled('V3_ENABLE_STANDBY_POOL')).toBe(false);
     });

@@ -47,9 +47,6 @@ export class DeadlineBudget {
      * @returns {boolean} True if expired under V3_ENABLE_GLOBAL_TTL
      */
     isExpired() {
-        if (!featureFlags.isEnabled('V3_ENABLE_GLOBAL_TTL')) {
-            return false;
-        }
         if (this.ttlMs === null) {
             return false;
         }

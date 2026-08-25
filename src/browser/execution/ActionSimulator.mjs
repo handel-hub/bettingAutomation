@@ -94,28 +94,26 @@ export class ActionSimulator extends EventEmitter {
             this.attachedPages.add(page);
             import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
                 const bId = browserObj?.id || command.target || 'unknown';
-                if (featureFlags.isEnabled('FEATURE_TRACE_CDP_NETWORK')) {
-                    try {
-                        page.context().newCDPSession(page).then(cdp => {
-                            cdp.send('Network.enable').catch(() => {});
-                            cdp.on('Network.requestWillBeSent', (e) => {
-                                if (e.type === 'Document' || e.type === 'XHR' || e.type === 'Fetch') {
-                                    observabilityCollector.emitTransition({
-                                        commandId: 'async-network',
-                                        traceId: null,
-                                        prevState: 'NETWORK_IDLE',
-                                        newState: 'NETWORK_REQUEST',
-                                        eventName: 'CDP_REQUEST',
-                                        owner: 'Playwright',
-                                        browserId: bId,
-                                        metadata: { url: e.request.url, type: e.type }
-                                    });
-                                }
-                            });
-                        }).catch(() => {});
-                    } catch (e) {
-                        logger.warn(`[ActionSimulator] Failed to attach CDP session: ${e.message}`);
-                    }
+                try {
+                    page.context().newCDPSession(page).then(cdp => {
+                        cdp.send('Network.enable').catch(() => {});
+                        cdp.on('Network.requestWillBeSent', (e) => {
+                            if (e.type === 'Document' || e.type === 'XHR' || e.type === 'Fetch') {
+                                observabilityCollector.emitTransition({
+                                    commandId: 'async-network',
+                                    traceId: null,
+                                    prevState: 'NETWORK_IDLE',
+                                    newState: 'NETWORK_REQUEST',
+                                    eventName: 'CDP_REQUEST',
+                                    owner: 'Playwright',
+                                    browserId: bId,
+                                    metadata: { url: e.request.url, type: e.type }
+                                });
+                            }
+                        });
+                    }).catch(() => {});
+                } catch (e) {
+                    logger.warn(`[ActionSimulator] Failed to attach CDP session: ${e.message}`);
                 }
 
                 page.on('framenavigated', (frame) => {

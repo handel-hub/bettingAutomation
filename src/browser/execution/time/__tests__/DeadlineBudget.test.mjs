@@ -11,7 +11,7 @@ describe('Milestone 2: NTP Time Synchronization & TTL Eviction Engine Tests', ()
     beforeEach(() => {
         NTPClockSync.reset();
         TelemetryCollector.reset();
-        featureFlags.resetForTesting({ V3_ENABLE_GLOBAL_TTL: true });
+
     });
 
     afterEach(() => {
@@ -145,21 +145,12 @@ describe('Milestone 2: NTP Time Synchronization & TTL Eviction Engine Tests', ()
             expect(budget.getRemainingMs()).toBe(0);
         });
 
-        it('isExpired() returns true when expired and V3_ENABLE_GLOBAL_TTL is enabled', () => {
-            featureFlags.resetForTesting({ V3_ENABLE_GLOBAL_TTL: true });
+        it('isExpired() returns true when expired', () => {
             const budget = new DeadlineBudget(NTPClockSync.now() - 2000, 1500);
             expect(budget.isExpired()).toBe(true);
         });
 
-        it('isExpired() returns false when V3_ENABLE_GLOBAL_TTL is disabled, even if remaining ms is 0', () => {
-            featureFlags.resetForTesting({ V3_ENABLE_GLOBAL_TTL: false });
-            const budget = new DeadlineBudget(NTPClockSync.now() - 2000, 1500);
-            expect(budget.getRemainingMs()).toBe(0);
-            expect(budget.isExpired()).toBe(false);
-        });
-
         it('checkOrThrow() throws QueueDeadlineExceededError (LF-702) and records telemetry when owner is ExecutionScheduler', () => {
-            featureFlags.resetForTesting({ V3_ENABLE_GLOBAL_TTL: true });
             const budget = new DeadlineBudget(NTPClockSync.now() - 2000, 1500);
             expect(() => budget.checkOrThrow('ExecutionScheduler')).toThrow(QueueDeadlineExceededError);
             expect(() => budget.checkOrThrow('ExecutionScheduler')).toThrow(/LF-702/);
@@ -167,7 +158,6 @@ describe('Milestone 2: NTP Time Synchronization & TTL Eviction Engine Tests', ()
         });
 
         it('checkOrThrow() throws GlobalTimeoutError (LF-504) and records telemetry when owner is LocatorResolver or ActionSimulator', () => {
-            featureFlags.resetForTesting({ V3_ENABLE_GLOBAL_TTL: true });
             const budget = new DeadlineBudget(NTPClockSync.now() - 2000, 1500);
             expect(() => budget.checkOrThrow('LocatorResolver')).toThrow(GlobalTimeoutError);
             expect(() => budget.checkOrThrow('ActionSimulator')).toThrow(/LF-504/);
@@ -190,6 +180,7 @@ describe('Milestone 2: NTP Time Synchronization & TTL Eviction Engine Tests', ()
         let simulator;
         let registry;
         let scheduler;
+        let syncManager;
 
         beforeEach(() => {
             simulator = new EventEmitter();
@@ -198,15 +189,17 @@ describe('Milestone 2: NTP Time Synchronization & TTL Eviction Engine Tests', ()
                 get: vi.fn().mockReturnValue({ page: {} }),
                 on: vi.fn()
             };
-            scheduler = new ExecutionScheduler(simulator, registry, {});
+            syncManager = {
+                awaitCapabilities: vi.fn().mockResolvedValue(true)
+            };
+            scheduler = new ExecutionScheduler(simulator, registry, syncManager);
         });
 
         afterEach(() => {
             scheduler.dispose();
         });
 
-        it('drops expired Discrete command in _drain() and emits ActionFailure with LF-702 when V3_ENABLE_GLOBAL_TTL is enabled', async () => {
-            featureFlags.resetForTesting({ V3_ENABLE_GLOBAL_TTL: true });
+        it('drops expired Discrete command in _drain() and emits ActionFailure with LF-702', async () => {
             const failureListener = vi.fn();
             simulator.on('ActionFailure', failureListener);
 
@@ -214,6 +207,7 @@ describe('Milestone 2: NTP Time Synchronization & TTL Eviction Engine Tests', ()
                 id: 'cmd-expired',
                 type: 'CLICK',
                 category: 'Execution',
+                ttlMs: 1500,
                 captureTime: Date.now() - 2000, // 2000ms ago (> 1500ms TTL)
                 creationTime: Date.now() - 2000,
                 payload: { locators: ['.btn'] }
@@ -227,32 +221,6 @@ describe('Milestone 2: NTP Time Synchronization & TTL Eviction Engine Tests', ()
             expect(failureListener.mock.calls[0][0].error).toBeInstanceOf(QueueDeadlineExceededError);
             expect(failureListener.mock.calls[0][0].error.message).toContain('LF-702');
             expect(TelemetryCollector.registry.failures.get('LF-702')).toBe(1);
-        });
-
-        it('does NOT drop expired Discrete command when V3_ENABLE_GLOBAL_TTL is disabled', async () => {
-            featureFlags.resetForTesting({ V3_ENABLE_GLOBAL_TTL: false });
-            const failureListener = vi.fn();
-            simulator.on('ActionFailure', failureListener);
-
-            const expiredCommand = {
-                id: 'cmd-legacy',
-                type: 'CLICK',
-                category: 'Execution',
-                captureTime: Date.now() - 2000,
-                creationTime: Date.now() - 2000,
-                payload: { locators: ['.btn'] }
-            };
-
-            // Mock Barrier wait to pass immediately
-            const { SynchronizationBarrier } = await import('../../../synchronization/SynchronizationBarrier.mjs');
-            vi.spyOn(SynchronizationBarrier, 'wait').mockResolvedValue({ status: 'PASSED' });
-
-            scheduler.enqueue({ id: 'browser-2' }, expiredCommand);
-            await scheduler.waitForIdle('browser-2');
-
-            expect(failureListener).not.toHaveBeenCalled();
-            expect(simulator.execute).toHaveBeenCalledTimes(1);
-            expect(TelemetryCollector.registry.failures.get('LF-702')).toBeUndefined();
         });
     });
 });

@@ -6,8 +6,6 @@ export class FeatureFlagsRegistry {
             V3_SCHEMA_ENFORCEMENT_MODE: { default: 'STRICT', dependsOn: [], description: 'Schema enforcement mode: DISABLED, SHADOW, or STRICT' },
             V3_DECOUPLE_HEALTH_MONITOR: { default: true, dependsOn: [], description: 'Decouple HealthMonitor from command execution failure state' },
             V3_ENABLE_STANDBY_POOL: { default: false, dependsOn: [], description: 'Enable WARM_STANDBY browser failover pool' },
-            V3_ENABLE_GLOBAL_TTL: { default: true, dependsOn: [], description: 'Enable 1,500ms global distributed deadline budgeting' },
-            FEATURE_TRACE_CDP_NETWORK: { default: true, dependsOn: [], description: 'Enable verbose CDP network interception for Playwright' },
             V4_SPATIAL_SCROLL: { default: true, dependsOn: [], description: 'Enable V4 spatial scroll feature flag for deterministic latest-wins coalescing' }
         };
         this.init();
