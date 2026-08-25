@@ -3,16 +3,6 @@ export class FeatureFlagsRegistry {
         this._flags = new Map();
         this._initialized = false;
         this.definitions = {
-            LI_EXTENDED_FEATURES: { default: true, dependsOn: [], description: 'Enable extended feature extraction' },
-            LI_IDENTITY_DOCUMENT: { default: true, dependsOn: ['LI_EXTENDED_FEATURES'], description: 'Enable EID generation and transmission' },
-            LI_SERIALIZE_FEATURES: { default: true, dependsOn: ['LI_IDENTITY_DOCUMENT'], description: 'Include features/EID in serialized output' },
-            LI_EPOCH_GATING: { default: true, dependsOn: [], description: 'Enable navigation epoch checks' },
-            LI_BATCH_RESOLVER: { default: true, dependsOn: ['LI_SERIALIZE_FEATURES'], description: 'Use batch resolution via page.evaluate' },
-            LI_DISAMBIGUATION: { default: true, dependsOn: ['LI_IDENTITY_DOCUMENT'], description: 'Enable disambiguation engine for count>1' },
-            LI_VERIFICATION: { default: true, dependsOn: ['LI_IDENTITY_DOCUMENT'], description: 'Enable post-resolution EID verification' },
-            LI_CONFIDENCE_GATE: { default: true, dependsOn: ['LI_VERIFICATION', 'LI_DISAMBIGUATION'], description: 'Enable threshold-based execution gating' },
-            LI_RECOVERY_HIERARCHY: { default: true, dependsOn: ['LI_CONFIDENCE_GATE'], description: 'Use tiered recovery instead of flat retry' },
-            LI_SID_MODE: { default: true, dependsOn: ['LI_IDENTITY_DOCUMENT'], description: 'Use SID-based cross-machine contract instead of locator strings' },
             V3_SCHEMA_ENFORCEMENT_MODE: { default: 'STRICT', dependsOn: [], description: 'Schema enforcement mode: DISABLED, SHADOW, or STRICT' },
             V3_DECOUPLE_HEALTH_MONITOR: { default: true, dependsOn: [], description: 'Decouple HealthMonitor from command execution failure state' },
             V3_ENABLE_STANDBY_POOL: { default: false, dependsOn: [], description: 'Enable WARM_STANDBY browser failover pool' },

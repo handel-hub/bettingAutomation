@@ -131,15 +131,6 @@ export class FeatureFlagManager {
             V3_DECOUPLE_HEALTH_MONITOR: false,
             V3_ENABLE_STANDBY_POOL: false,
             V3_ENABLE_GLOBAL_TTL: false,
-            LI_EPOCH_GATING: false,
-            LI_RECOVERY_HIERARCHY: false,
-            LI_CONFIDENCE_GATE: false,
-            LI_DISAMBIGUATION: false,
-            LI_VERIFICATION: false,
-            LI_BATCH_RESOLVER: false,
-            LI_SERIALIZE_FEATURES: false,
-            LI_IDENTITY_DOCUMENT: false,
-            LI_EXTENDED_FEATURES: false
         };
 
         featureFlags.init(rollbackConfig);

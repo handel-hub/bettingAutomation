@@ -8,8 +8,7 @@ describe('Milestone 6: Feature Flag Governance & Production Cutover', () => {
         featureFlags.resetForTesting({
             V3_SCHEMA_ENFORCEMENT_MODE: 'SHADOW',
             V3_DECOUPLE_HEALTH_MONITOR: false,
-            V3_ENABLE_STANDBY_POOL: false,
-            LI_EPOCH_GATING: false
+            V3_ENABLE_STANDBY_POOL: false
         });
     });
 
@@ -62,12 +61,10 @@ describe('Milestone 6: Feature Flag Governance & Production Cutover', () => {
             V3_SCHEMA_ENFORCEMENT_MODE: 'STRICT',
             V3_DECOUPLE_HEALTH_MONITOR: true,
             V3_ENABLE_STANDBY_POOL: true,
-            V3_ENABLE_GLOBAL_TTL: true,
-            LI_EPOCH_GATING: true
+            V3_ENABLE_GLOBAL_TTL: true
         });
 
         expect(manager.isFlagEnabled('V3_ENABLE_STANDBY_POOL')).toBe(true);
-        expect(manager.isFlagEnabled('LI_EPOCH_GATING')).toBe(true);
         expect(manager.getSchemaMode()).toBe('STRICT');
 
         const start = performance.now();
@@ -78,7 +75,6 @@ describe('Milestone 6: Feature Flag Governance & Production Cutover', () => {
         expect(manager.isFlagEnabled('V3_ENABLE_STANDBY_POOL')).toBe(false);
         expect(manager.isFlagEnabled('V3_DECOUPLE_HEALTH_MONITOR')).toBe(false);
         expect(manager.isFlagEnabled('V3_ENABLE_GLOBAL_TTL')).toBe(false);
-        expect(manager.isFlagEnabled('LI_EPOCH_GATING')).toBe(false);
         expect(manager.getSchemaMode()).toBe('DISABLED');
         expect(featureFlags.isEnabled('V3_ENABLE_STANDBY_POOL')).toBe(false);
     });
