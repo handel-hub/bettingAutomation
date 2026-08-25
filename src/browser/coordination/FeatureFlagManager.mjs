@@ -128,7 +128,6 @@ export class FeatureFlagManager {
         
         const rollbackConfig = {
             V3_SCHEMA_ENFORCEMENT_MODE: 'DISABLED',
-            V3_DECOUPLE_HEALTH_MONITOR: false,
             V3_ENABLE_STANDBY_POOL: false
         };
 

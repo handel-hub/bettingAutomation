@@ -7,7 +7,6 @@ describe('Milestone 6: Feature Flag Governance & Production Cutover', () => {
     beforeEach(() => {
         featureFlags.resetForTesting({
             V3_SCHEMA_ENFORCEMENT_MODE: 'SHADOW',
-            V3_DECOUPLE_HEALTH_MONITOR: false,
             V3_ENABLE_STANDBY_POOL: false
         });
     });
@@ -19,18 +18,18 @@ describe('Milestone 6: Feature Flag Governance & Production Cutover', () => {
 
     it('test_flag_evaluation_caching: evaluates flags in under 0.01ms via in-memory caching', () => {
         const manager = new FeatureFlagManager({
-            V3_DECOUPLE_HEALTH_MONITOR: true,
+            V4_SPATIAL_SCROLL: true,
             V3_SCHEMA_ENFORCEMENT_MODE: 'STRICT'
         });
 
-        expect(manager.isFlagEnabled('V3_DECOUPLE_HEALTH_MONITOR')).toBe(true);
+        expect(manager.isFlagEnabled('V4_SPATIAL_SCROLL')).toBe(true);
         expect(manager.getSchemaMode()).toBe('STRICT');
         expect(manager.getVersionHash()).not.toBe('');
 
         // Measure evaluation latency over 10,000 iterations to verify < 0.01ms per lookup
         const start = performance.now();
         for (let i = 0; i < 10000; i++) {
-            manager.isFlagEnabled('V3_DECOUPLE_HEALTH_MONITOR');
+            manager.isFlagEnabled('V4_SPATIAL_SCROLL');
             manager.getSchemaMode();
         }
         const totalDurationMs = performance.now() - start;
@@ -59,7 +58,6 @@ describe('Milestone 6: Feature Flag Governance & Production Cutover', () => {
     it('test_emergency_rollback_reverts_to_v2_paths: reverts all v3 resilient flags in under 50ms', () => {
         const manager = new FeatureFlagManager({
             V3_SCHEMA_ENFORCEMENT_MODE: 'STRICT',
-            V3_DECOUPLE_HEALTH_MONITOR: true,
             V3_ENABLE_STANDBY_POOL: true
         });
 
@@ -72,7 +70,6 @@ describe('Milestone 6: Feature Flag Governance & Production Cutover', () => {
 
         expect(durationMs).toBeLessThan(50);
         expect(manager.isFlagEnabled('V3_ENABLE_STANDBY_POOL')).toBe(false);
-        expect(manager.isFlagEnabled('V3_DECOUPLE_HEALTH_MONITOR')).toBe(false);
         expect(manager.getSchemaMode()).toBe('DISABLED');
         expect(featureFlags.isEnabled('V3_ENABLE_STANDBY_POOL')).toBe(false);
     });

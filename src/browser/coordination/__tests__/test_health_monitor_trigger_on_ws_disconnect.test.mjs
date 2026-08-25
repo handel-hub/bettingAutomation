@@ -11,7 +11,7 @@ describe('Task 3.2: Watchdog Reboots Strictly Restricted to Physical Crashes & H
     let mockBrowser;
 
     beforeEach(() => {
-        featureFlags.resetForTesting({ V3_DECOUPLE_HEALTH_MONITOR: true });
+
         registry = new BrowserStateRegistry();
         healthMonitor = new HealthMonitor(registry);
         healCommands = [];

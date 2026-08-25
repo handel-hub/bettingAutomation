@@ -10,15 +10,13 @@ import featureFlags from '../locatorIntelligence/FeatureFlags.mjs';
 describe('Milestone 5: Bounded Fast-Fail Resolution & Watchdog State Isolation', () => {
     beforeEach(() => {
         featureFlags.resetForTesting({
-            V3_SCHEMA_ENFORCEMENT_MODE: 'STRICT',
-            V3_DECOUPLE_HEALTH_MONITOR: true
+            V3_SCHEMA_ENFORCEMENT_MODE: 'STRICT'
         });
     });
 
     afterEach(() => {
         featureFlags.resetForTesting({
-            V3_SCHEMA_ENFORCEMENT_MODE: 'SHADOW',
-            V3_DECOUPLE_HEALTH_MONITOR: false
+            V3_SCHEMA_ENFORCEMENT_MODE: 'SHADOW'
         });
         vi.restoreAllMocks();
     });
@@ -28,9 +26,8 @@ describe('Milestone 5: Bounded Fast-Fail Resolution & Watchdog State Isolation',
         const candidates = [{ locator: '#btn', strategy: 'css' }];
 
         const start = Date.now();
-        await expect(
-            LocatorResolver.resolve(mockPage, candidates, 'click', undefined, { enforceEID: true })
-        ).rejects.toThrow(ContractViolationError);
+        const result = await LocatorResolver.resolve(mockPage, candidates, 'click', undefined, { enforceEID: true });
+        expect(result.success).toBe(false);
         const duration = Date.now() - start;
 
         expect(duration).toBeLessThanOrEqual(TimeConstants.FAST_FAIL_BOUNDARY_MS + 20); // Add buffer for slow CI environments

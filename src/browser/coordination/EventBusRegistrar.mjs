@@ -192,14 +192,7 @@ export class EventBusRegistrar {
         this.recoveryManager.on('Command', routeFn);
         this.syncRecoveryActionExecutor.on('Command', routeFn);
 
-        // Bridge: Simulator Success/Failure -> Registry Metadata
-        this.simulator.on('ActionFailure', ({ id, error }) => {
-            if (!featureFlags.isEnabled('V3_DECOUPLE_HEALTH_MONITOR')) {
-                this.registry.updateState(id, 'Error');
-            } else {
-                logger.debug(`[EventBusRegistrar] V3_DECOUPLE_HEALTH_MONITOR enabled: preserving ONLINE/READY state for [${id}] on ActionFailure.`);
-            }
-        });
+        // ActionFailure no longer marks the browser as Error (V3 Health Monitor Decoupling is permanent).
 
         // SPEC-03: Catch failover promotion and inject necessary master capabilities
         this.registry.on('WORKER_FAILOVER', async ({ newMasterId, previousMasterId }) => {

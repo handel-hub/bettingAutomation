@@ -13,7 +13,7 @@ describe('Task 3.1 & 3.2: HealthMonitor Decoupled from Command Execution Failure
     let healCommands;
 
     beforeEach(() => {
-        featureFlags.resetForTesting({ V3_DECOUPLE_HEALTH_MONITOR: true });
+
         registry = new BrowserStateRegistry();
         healthMonitor = new HealthMonitor(registry);
         simulator = new EventEmitter();
@@ -56,7 +56,7 @@ describe('Task 3.1 & 3.2: HealthMonitor Decoupled from Command Execution Failure
         healthMonitor.stopMonitoring();
     });
 
-    it('should ignore 50 consecutive LF-505 command execution failures when V3_DECOUPLE_HEALTH_MONITOR is true', () => {
+    it('should ignore 50 consecutive LF-505 command execution failures', () => {
         for (let i = 0; i < 50; i++) {
             simulator.emit('ActionFailure', {
                 id: 'slave-1',

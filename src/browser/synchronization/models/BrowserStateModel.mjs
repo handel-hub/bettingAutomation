@@ -241,12 +241,10 @@ export class BrowserStateModel {
     }
 
     set state(val) {
-        if (featureFlags.isEnabled('V3_DECOUPLE_HEALTH_MONITOR')) {
-            if (val === 'LOGICAL_FAULT' || val === 'Error' || (typeof val === 'string' && val.startsWith('LF-5'))) {
-                this.lastLogicalFault = val;
-                if (this._state === 'Ready' || this._state === 'READY' || this._state === 'Executing' || this._state === 'EXECUTING' || this._state === 'IDLE' || this._state === 'Ready/Idle') {
-                    return;
-                }
+        if (val === 'LOGICAL_FAULT' || val === 'Error' || (typeof val === 'string' && val.startsWith('LF-5'))) {
+            this.lastLogicalFault = val;
+            if (this._state === 'Ready' || this._state === 'READY' || this._state === 'Executing' || this._state === 'EXECUTING' || this._state === 'IDLE' || this._state === 'Ready/Idle') {
+                return;
             }
         }
         this._state = val;
