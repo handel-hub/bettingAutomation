@@ -198,7 +198,7 @@ export class ActionDispatcher extends EventEmitter {
                         timestamp: Date.now(),
                         interactionId: payload.interactionId,
                         interactionType: type,
-                        payloadSize: JSON.stringify(payload).length,
+                        payloadSize: payload ? Object.keys(payload).length * 50 : 0,
                         eidPresent: !!(payload.identityDocument || payload.probabilisticEID),
                         eidHash: payload.eidHash || TelemetryCollector.computeEIDHash(payload.identityDocument || payload.probabilisticEID)
                     });
@@ -378,10 +378,18 @@ export class ActionDispatcher extends EventEmitter {
                     this.pointerData = { path: [], startTarget: null, composedPath: [], clickTimeout: null, consumed: [], startTime: 0 };
                 }
 
+                _stopScrollThrottle() {
+                    if (this.scrollData.throttleInterval) {
+                        clearInterval(this.scrollData.throttleInterval);
+                        this.scrollData.throttleInterval = null;
+                    }
+                    this.scrollData.throttleActive = false;
+                    this.scrollState = 'IDLE';
+                    this.scrollData = { deltaX: 0, deltaY: 0, timeout: null, consumed: [], target: null, throttleActive: false, throttleInterval: null, startTime: 0 };
+                }
+
                 flushScroll() {
-                    if (this.scrollState !== 'IDLE' && this.scrollData.timeout) {
-                        clearTimeout(this.scrollData.timeout);
-                        this.scrollData.timeout = null;
+                    if (this.scrollState !== 'IDLE' && (this.scrollData.deltaX !== 0 || this.scrollData.deltaY !== 0)) {
                         this.emit('SCROLL', {
                             originEvent: 'scroll',
                             consumed: this.scrollData.consumed,
@@ -390,8 +398,9 @@ export class ActionDispatcher extends EventEmitter {
                             deltas: { deltaX: this.scrollData.deltaX, deltaY: this.scrollData.deltaY },
                             startTime: this.scrollData.startTime
                         });
-                        this.scrollState = 'IDLE';
-                        this.scrollData = { deltaX: 0, deltaY: 0, timeout: null, consumed: [], target: null };
+                        this.scrollData.deltaX = 0;
+                        this.scrollData.deltaY = 0;
+                        this.scrollData.consumed = [];
                     }
                 }
 
@@ -401,6 +410,7 @@ export class ActionDispatcher extends EventEmitter {
 
                     if (type === 'mousedown' || type === 'pointerdown' || type === 'click' || type === 'dblclick') {
                         this.flushScroll();
+                        this._stopScrollThrottle();
                     }
 
                     if (type === 'mousedown' || type === 'pointerdown') {
@@ -535,6 +545,8 @@ export class ActionDispatcher extends EventEmitter {
                         this.scrollState = 'SCROLLING';
                         this.scrollData.startTime = now;
                         this.scrollData.target = e.target;
+                        this.scrollData.throttleActive = false;
+                        this.scrollData.throttleInterval = null;
                     }
                     
                     let currentScrollLeft = 0;
@@ -562,11 +574,18 @@ export class ActionDispatcher extends EventEmitter {
                     
                     elementScrollStates.set(e.target, { scrollLeft: currentScrollLeft, scrollTop: currentScrollTop });
 
-                    if (this.scrollData.timeout) clearTimeout(this.scrollData.timeout);
+                    if (!this.scrollData.throttleActive) {
+                        this.scrollData.throttleActive = true;
+                        this.flushScroll(); // Immediate dispatch
 
-                    this.scrollData.timeout = setTimeout(() => {
-                        this.flushScroll();
-                    }, AggregationConfig.scrollWindow);
+                        this.scrollData.throttleInterval = setInterval(() => {
+                            if (this.scrollData.deltaX !== 0 || this.scrollData.deltaY !== 0) {
+                                this.flushScroll();
+                            } else {
+                                this._stopScrollThrottle();
+                            }
+                        }, 50);
+                    }
                 }
 
                 processInputEvent(e) {

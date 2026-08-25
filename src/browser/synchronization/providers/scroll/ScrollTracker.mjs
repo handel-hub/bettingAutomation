@@ -6,9 +6,10 @@ import featureFlags from '../../../execution/locatorIntelligence/FeatureFlags.mj
  * and emits normalized ScrollEvent payloads.
  */
 export class ScrollTracker {
-    constructor(browserId, page) {
+    constructor(browserId, page, options = {}) {
         this.browserId = browserId;
         this.page = page;
+        this.options = options;
         this.started = false;
         this.onScrollEvent = null;
     }
@@ -17,7 +18,9 @@ export class ScrollTracker {
         if (this.started) return;
         this.started = true;
 
-        const v4SpatialScroll = featureFlags.isEnabled('V4_SPATIAL_SCROLL');
+        const v4SpatialScroll = this.options.v4SpatialScroll !== undefined 
+            ? this.options.v4SpatialScroll 
+            : featureFlags.isEnabled('V4_SPATIAL_SCROLL');
 
         await this.page.exposeFunction('dispatchProviderScrollEvent', (eventData) => {
             if (this.onScrollEvent) {

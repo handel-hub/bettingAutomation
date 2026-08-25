@@ -87,7 +87,7 @@ class EventMinHeap {
 }
 
 export class TemporalSequencer extends EventEmitter {
-    constructor(deltaMs = 50) {
+    constructor(deltaMs = 25) {
         super();
         this.deltaMs = deltaMs;
         this.buffer = new EventMinHeap();

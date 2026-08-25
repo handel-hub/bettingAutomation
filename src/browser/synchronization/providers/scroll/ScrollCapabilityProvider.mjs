@@ -33,7 +33,12 @@ export class ScrollCapabilityProvider extends CapabilityProvider {
             const comparator = new ScrollComparator(this.policy);
             const waitStrategy = new ScrollWaitStrategy(browserId, this.registry, stateMachine, comparator, this.policy);
             const recoveryStrategy = new ScrollRecoveryStrategy(browserId, page);
-            const tracker = new ScrollTracker(browserId, page);
+            const isMaster = this.registry.getMaster()?.id === browserId;
+            const tracker = new ScrollTracker(browserId, page, {
+                v4SpatialScroll: isMaster,
+                enableAnchorHash: isMaster,
+                enableElementsFromPoint: isMaster
+            });
             
             tracker.on('ScrollEvent', (eventData) => {
                 const scrollEvent = new ScrollEvent(eventData);

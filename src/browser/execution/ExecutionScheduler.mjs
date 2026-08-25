@@ -9,6 +9,15 @@ import { QueueDeadlineExceededError } from './errors.mjs';
 import { SequenceGapError, StaleCommandError } from '../../common/errors/ProtocolErrors.mjs';
 import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCollector.mjs';
 
+let _cachedCollector = null;
+async function getCollector() {
+    if (!_cachedCollector) {
+        const mod = await import('../telemetry/ObservabilityCollector.mjs');
+        _cachedCollector = mod.observabilityCollector;
+    }
+    return _cachedCollector;
+}
+
 
 export class ClassificationPolicy {
     static classify(command) {
@@ -371,7 +380,7 @@ export class ExecutionScheduler {
         const { class: queueClass, priority } = ClassificationPolicy.classify(command);
         if (this.isBackpressureActive(browserId) && (queueClass === 'Continuous' || queueClass === 'Aggregated')) {
             logger.debug(`[ExecutionScheduler] Backpressure active on [${browserId}]: converting ${queueClass} command ${command.type} to NOOP`);
-            import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+            getCollector().then((observabilityCollector) => {
                 observabilityCollector.emitTransition({
                     commandId: command.id || command.commandId,
                     traceId: command.traceId || null,
@@ -431,7 +440,7 @@ export class ExecutionScheduler {
                 eidHash: command.eidHash || TelemetryCollector.computeEIDHash(eid)
             });
 
-            import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+            getCollector().then((observabilityCollector) => {
                 observabilityCollector.emitTransition({
                     commandId: command.id || command.commandId,
                     traceId: command.traceId || null,
@@ -499,7 +508,7 @@ export class ExecutionScheduler {
                 if (this.isBackpressureActive(browserId) && (nextEntry.queueClass === 'Continuous' || nextEntry.queueClass === 'Aggregated')) {
                     logger.debug(`[ExecutionScheduler] Backpressure active on [${browserId}] during drain: dropping ${nextEntry.queueClass} command ${nextEntry.command.type}`);
                     
-                    import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                    getCollector().then((observabilityCollector) => {
                         observabilityCollector.emitTransition({
                             commandId: nextEntry.command.id || nextEntry.command.commandId,
                             traceId: nextEntry.command.traceId || null,
@@ -549,7 +558,7 @@ export class ExecutionScheduler {
                         eidHash
                     });
 
-                    import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                    getCollector().then((observabilityCollector) => {
                         observabilityCollector.emitTransition({
                             commandId: nextEntry.command.id || nextEntry.command.commandId,
                             traceId: nextEntry.command.traceId || null,
@@ -573,7 +582,7 @@ export class ExecutionScheduler {
                         }
                         this.simulator.emit('ActionFailure', { id: browserId, command: nextEntry.command, error: new QueueDeadlineExceededError(errorMsg) });
                         
-                        import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                        getCollector().then((observabilityCollector) => {
                             observabilityCollector.emitTransition({
                                 commandId: nextEntry.command.id || nextEntry.command.commandId,
                                 traceId: nextEntry.command.traceId || null,
@@ -742,7 +751,7 @@ export class ExecutionScheduler {
                         continue;
                     }
 
-                    import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                    getCollector().then((observabilityCollector) => {
                         observabilityCollector.emitTransition({
                             commandId: finalCommand.id || finalCommand.commandId,
                             traceId: finalCommand.traceId || null,
@@ -763,7 +772,7 @@ export class ExecutionScheduler {
                             }
                         }
                     } finally {
-                        import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                        getCollector().then((observabilityCollector) => {
                             observabilityCollector.emitTransition({
                                 commandId: finalCommand.id || finalCommand.commandId,
                                 traceId: finalCommand.traceId || null,
@@ -779,7 +788,7 @@ export class ExecutionScheduler {
                 } catch(e) {
                     const cId = nextEntry?.command?.id || 'unknown';
                     logger.error(`[Scheduler] Failed to process entry for ${cId}: ${e.message}`);
-                    import('../telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
+                    getCollector().then((observabilityCollector) => {
                         if (cId !== 'unknown') {
                             const traceDump = observabilityCollector.dumpTimeline(cId);
                             logger.error(`[Scheduler] Terminal Failure Trace for [${cId}]: ${traceDump}`);
