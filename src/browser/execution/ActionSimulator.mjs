@@ -462,14 +462,20 @@ export class ActionSimulator extends EventEmitter {
                         if (target) {
                             const limitX = Math.max(0, target.scrollWidth - target.clientWidth);
                             const limitY = Math.max(0, target.scrollHeight - target.clientHeight);
-                            if (rhoX !== undefined && limitX > 0) target.scrollLeft = Math.round(rhoX * limitX);
-                            if (rhoY !== undefined && limitY > 0) target.scrollTop = Math.round(rhoY * limitY);
                             
                             if (target === document.documentElement) {
-                                window.scrollTo(
-                                    rhoX !== undefined && limitX > 0 ? Math.round(rhoX * limitX) : window.pageXOffset,
-                                    rhoY !== undefined && limitY > 0 ? Math.round(rhoY * limitY) : window.pageYOffset
-                                );
+                                window.scrollTo({
+                                    left: rhoX !== undefined && limitX > 0 ? Math.round(rhoX * limitX) : window.pageXOffset,
+                                    top: rhoY !== undefined && limitY > 0 ? Math.round(rhoY * limitY) : window.pageYOffset,
+                                    behavior: 'instant'
+                                });
+                            } else {
+                                const opts = { behavior: 'instant' };
+                                if (rhoX !== undefined && limitX > 0) opts.left = Math.round(rhoX * limitX);
+                                if (rhoY !== undefined && limitY > 0) opts.top = Math.round(rhoY * limitY);
+                                if (opts.left !== undefined || opts.top !== undefined) {
+                                    target.scrollTo(opts);
+                                }
                             }
                         }
                     }, { rhoX: scrollMeta.rhoX, rhoY: scrollMeta.rhoY, containerId: scrollMeta.containerId });
@@ -520,12 +526,15 @@ export class ActionSimulator extends EventEmitter {
             } else if (type === 'blur') {
                 usedLocatorInfo = await this._executeWithRecovery(command, page, 'blur', async (loc) => await loc.blur(tOpts), browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'window_scroll') {
-                await page.evaluate(({x, y}) => window.scrollTo(x, y), { x: payload.scrollX, y: payload.scrollY });
+                await page.evaluate(({x, y}) => window.scrollTo({ left: x, top: y, behavior: 'instant' }), { x: payload.scrollX, y: payload.scrollY });
             } else if (type === 'element_scroll') {
                 usedLocatorInfo = await this._executeWithRecovery(command, page, 'element_scroll', async (loc) => {
                     await loc.evaluate((node, data) => {
-                        node.scrollTop = data.scrollTop;
-                        node.scrollLeft = data.scrollLeft;
+                        node.scrollTo({
+                            top: data.scrollTop,
+                            left: data.scrollLeft,
+                            behavior: 'instant'
+                        });
                     }, { scrollTop: payload.scrollTop, scrollLeft: payload.scrollLeft });
                 }, browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'navigate') {
