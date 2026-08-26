@@ -16,6 +16,11 @@ import {
     VerificationEngine
 } from './coordination/index.mjs';
 
+import { AuthorizationGateway } from './coordination/AuthorizationGateway.mjs';
+import { SequenceOrchestrator } from './coordination/SequenceOrchestrator.mjs';
+import { ReconciliationDaemon } from './coordination/ReconciliationDaemon.mjs';
+
+
 import {
     CommandReceiver,
     ActionDispatcher,
@@ -95,6 +100,23 @@ export class AutomationController {
 
         this.commandRouter = new CommandRouter();
         this.targetResolver = new TargetResolver(this.registry, this.lockManager);
+
+        // --- Initialize Autonomous Pricing Execution Plane ---
+        this.sequenceMap = new Map();
+        // Stub PolicyManager and API Adapter for the architectural baseline
+        this.policyManager = {
+            getPolicy: (id) => ({
+                id, version: 1, targetProfit: 100000, maxStake: 500000, minStake: 10000,
+                minAcceptableProfit: 10000, resolutionStrategy: 'CLAMP', behavioralFunctions: ['PREFER_ROUND'],
+                rebetTrigger: 'ON_WIN', maxRebetCount: 3
+            })
+        };
+        this.platformApiAdapter = { getRecentHistory: async () => [] };
+
+        this.authorizationGateway = new AuthorizationGateway(this.sequenceMap, this.policyManager, this.commandRouter);
+        this.sequenceOrchestrator = new SequenceOrchestrator(this.sequenceMap, this.policyManager, this.commandRouter);
+        this.reconciliationDaemon = new ReconciliationDaemon(this.sequenceMap, this.platformApiAdapter);
+        this.reconciliationDaemon.start();
 
         // --- Initialize Synchronization Orchestration ---
         this.consistencyEvaluator = new ConsistencyEvaluator(ConsistencyPolicy.DEFAULT);
