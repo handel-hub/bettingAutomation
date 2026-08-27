@@ -74,7 +74,7 @@ describe('Milestone 6: Feature Flag Governance & Production Cutover', () => {
 
         // Send UPDATE_CONFIG command
         const updateCmd = {
-            id: 'cfg-1',
+            id: 'cmd-cfg-1',
             category: 'Configuration',
             type: 'UPDATE_CONFIG',
             timestamp: Date.now(),

@@ -27,7 +27,12 @@ describe('Scroll Determinism Test', () => {
 
         for (let run = 0; run < 10; run++) {
             // New scheduler for each run to test determinism
-            const dummyRegistry = { get: () => ({}) };
+            const dummyRegistry = { 
+                get: () => ({}),
+                on: () => {},
+                emit: () => {},
+                removeListener: () => {}
+            };
             const runScheduler = new ExecutionScheduler(null, dummyRegistry);
             const browserObj = { id: `browser-run-${run}` };
             runScheduler.drainLocks.add(browserObj.id);

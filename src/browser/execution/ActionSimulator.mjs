@@ -19,7 +19,8 @@ import {
     QueueDeadlineExceededError,
     CandidateGenerationError,
     GenerationScriptMissingError,
-    TerminalExecutionError
+    TerminalExecutionError,
+    UncertainStateError
 } from './errors.mjs';
 
 export class ActionSimulator extends EventEmitter {
@@ -335,6 +336,10 @@ export class ActionSimulator extends EventEmitter {
                     throw err;
                 }
 
+                if (automationError instanceof PlaywrightTimeoutError && command.idempotent === false) {
+                    throw new UncertainStateError(`[LF-306] Timeout on non-idempotent command: ${automationError.message}`);
+                }
+
                 logger.warn(`[ActionSimulator] [Cmd: ${command.id}] ${automationError.code} Execution failed on attempt ${attempts}: ${automationError.message}. Triggering re-resolution.`);
                 
                 import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
@@ -429,7 +434,16 @@ export class ActionSimulator extends EventEmitter {
             const getTimeout = (budget) => budget ? Math.max(10, budget.timeRemaining()) : 30000;
             const tOpts = { timeout: getTimeout(deadlineBudget) };
 
-            if (type === 'CLICK' || type === 'click') {
+            if (type === 'EVENT_BURST') {
+                usedLocatorInfo = await this._executeWithRecovery(command, page, 'event_burst', async (loc) => {
+                    const events = payload.events || ['touchstart', 'touchend', 'mousedown', 'mouseup', 'click'];
+                    for (const ev of events) {
+                        await loc.dispatchEvent(ev, payload.eventInit || {});
+                    }
+                }, browserObj, deadlineBudget, options.executionContext);
+            } else if (type === 'MACRO_DELAY') {
+                await new Promise(r => setTimeout(r, payload.ms || 250));
+            } else if (type === 'CLICK' || type === 'click') {
                 usedLocatorInfo = await this._executeWithRecovery(command, page, 'click', async (loc) => await loc.click(tOpts), browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'DOUBLE_CLICK' || type === 'dblclick') {
                 usedLocatorInfo = await this._executeWithRecovery(command, page, 'dblclick', async (loc) => await loc.dblclick(tOpts), browserObj, deadlineBudget, options.executionContext);
@@ -462,14 +476,20 @@ export class ActionSimulator extends EventEmitter {
                         if (target) {
                             const limitX = Math.max(0, target.scrollWidth - target.clientWidth);
                             const limitY = Math.max(0, target.scrollHeight - target.clientHeight);
-                            if (rhoX !== undefined && limitX > 0) target.scrollLeft = Math.round(rhoX * limitX);
-                            if (rhoY !== undefined && limitY > 0) target.scrollTop = Math.round(rhoY * limitY);
                             
                             if (target === document.documentElement) {
-                                window.scrollTo(
-                                    rhoX !== undefined && limitX > 0 ? Math.round(rhoX * limitX) : window.pageXOffset,
-                                    rhoY !== undefined && limitY > 0 ? Math.round(rhoY * limitY) : window.pageYOffset
-                                );
+                                window.scrollTo({
+                                    left: rhoX !== undefined && limitX > 0 ? Math.round(rhoX * limitX) : window.pageXOffset,
+                                    top: rhoY !== undefined && limitY > 0 ? Math.round(rhoY * limitY) : window.pageYOffset,
+                                    behavior: 'instant'
+                                });
+                            } else {
+                                const opts = { behavior: 'instant' };
+                                if (rhoX !== undefined && limitX > 0) opts.left = Math.round(rhoX * limitX);
+                                if (rhoY !== undefined && limitY > 0) opts.top = Math.round(rhoY * limitY);
+                                if (opts.left !== undefined || opts.top !== undefined) {
+                                    target.scrollTo(opts);
+                                }
                             }
                         }
                     }, { rhoX: scrollMeta.rhoX, rhoY: scrollMeta.rhoY, containerId: scrollMeta.containerId });
@@ -520,12 +540,15 @@ export class ActionSimulator extends EventEmitter {
             } else if (type === 'blur') {
                 usedLocatorInfo = await this._executeWithRecovery(command, page, 'blur', async (loc) => await loc.blur(tOpts), browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'window_scroll') {
-                await page.evaluate(({x, y}) => window.scrollTo(x, y), { x: payload.scrollX, y: payload.scrollY });
+                await page.evaluate(({x, y}) => window.scrollTo({ left: x, top: y, behavior: 'instant' }), { x: payload.scrollX, y: payload.scrollY });
             } else if (type === 'element_scroll') {
                 usedLocatorInfo = await this._executeWithRecovery(command, page, 'element_scroll', async (loc) => {
                     await loc.evaluate((node, data) => {
-                        node.scrollTop = data.scrollTop;
-                        node.scrollLeft = data.scrollLeft;
+                        node.scrollTo({
+                            top: data.scrollTop,
+                            left: data.scrollLeft,
+                            behavior: 'instant'
+                        });
                     }, { scrollTop: payload.scrollTop, scrollLeft: payload.scrollLeft });
                 }, browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'navigate') {
@@ -591,6 +614,12 @@ export class ActionSimulator extends EventEmitter {
         } catch (err) {
             const lifecycle = 'FAILED';
             
+            if (err instanceof UncertainStateError) {
+                logger.warn(`[Interaction Uncertain] Command ${command.id} on slave [${id}]: ${err.message} | Execution duration: ${Date.now() - startTime}ms | Lifecycle: UNCERTAIN`);
+                this.emit('ActionUncertain', { id, command, error: err });
+                throw err;
+            }
+
             if (err instanceof QueueDeadlineExceededError || err instanceof GlobalTimeoutError || err instanceof OverlayInterceptionError || err instanceof ElementDetachedError || err instanceof PlaywrightTimeoutError || err instanceof LocatorResolutionError) {
                 logger.warn(`[Interaction Failure] Command ${command.id} on slave [${id}]: ${err.message} | Execution duration: ${Date.now() - startTime}ms | Lifecycle: ${lifecycle}`);
                 throw new TerminalExecutionError(err.message);

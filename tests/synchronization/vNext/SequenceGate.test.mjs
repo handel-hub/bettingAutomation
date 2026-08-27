@@ -7,7 +7,10 @@ describe('SequenceGate', () => {
 
     beforeEach(() => {
         registry = {
-            getState: vi.fn()
+            getState: vi.fn(),
+            on: vi.fn(),
+            removeListener: vi.fn(),
+            emit: vi.fn()
         };
         gate = new SequenceGate(registry);
         vi.useFakeTimers();
@@ -34,37 +37,22 @@ describe('SequenceGate', () => {
         expect(gate.evaluate('slave-1', 4)).toBe('STALE');
     });
 
-    it('evaluateAsync resolves ALIGNED when aligned', async () => {
-        registry.getState.mockReturnValue({ currentGes: 5 });
-        const resultPromise = gate.evaluateAsync('slave-1', 6, 1000);
-        await vi.advanceTimersByTimeAsync(0);
-        const result = await resultPromise;
-        expect(result.status).toBe('ALIGNED');
-    });
-
-    it('evaluateAsync waits and resolves when state updates', async () => {
-        registry.getState.mockReturnValue({ currentGes: 5 });
-        
-        const resultPromise = gate.evaluateAsync('slave-1', 7, 1000);
-        
-        // Wait 100ms, then state updates
-        await vi.advanceTimersByTimeAsync(100);
-        registry.getState.mockReturnValue({ currentGes: 6 });
-        
-        // Wait another 50ms (polling interval)
-        await vi.advanceTimersByTimeAsync(50);
-        
-        const result = await resultPromise;
-        expect(result.status).toBe('ALIGNED');
-    });
-
-    it('evaluateAsync resolves TIMEOUT if deadline exceeded', async () => {
-        registry.getState.mockReturnValue({ currentGes: 5 });
-        const resultPromise = gate.evaluateAsync('slave-1', 7, 100);
+    it('startWatchdog triggers callback on timeout', async () => {
+        const onTimeout = vi.fn();
+        gate.startWatchdog('slave-1', 7, 100, onTimeout);
         
         await vi.advanceTimersByTimeAsync(150);
         
-        const result = await resultPromise;
-        expect(result.status).toBe('TIMEOUT');
+        expect(onTimeout).toHaveBeenCalled();
+    });
+
+    it('cancelWatchdog prevents callback', async () => {
+        const onTimeout = vi.fn();
+        gate.startWatchdog('slave-1', 7, 100, onTimeout);
+        
+        gate.cancelWatchdog('slave-1');
+        await vi.advanceTimersByTimeAsync(150);
+        
+        expect(onTimeout).not.toHaveBeenCalled();
     });
 });
