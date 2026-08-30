@@ -14,10 +14,11 @@ import { observabilityCollector } from './telemetry/ObservabilityCollector.mjs';
  * and tracks ingress telemetry metrics.
  */
 export class CommandRouter extends EventEmitter {
+    #metrics
     constructor(scheduler = null, flagManager = null, telemetryCollector = null) {
         super();
         this.handlers = new Map();
-        this._metrics = {
+        this.#metrics = {
             received: 0,
             rejected: 0,
             routed: 0
@@ -47,7 +48,7 @@ export class CommandRouter extends EventEmitter {
      * @returns {{ received: number, rejected: number, routed: number }}
      */
     getIngressMetrics() {
-        return { ...this._metrics };
+        return { ...this.#metrics };
     }
 
     /**
@@ -56,7 +57,7 @@ export class CommandRouter extends EventEmitter {
      * @returns {object | null} Parsed object or null if parsing fails
      * @private
      */
-    _parsePayload(raw) {
+    #parsePayload(raw) {
         if (!raw) return null;
         if (typeof raw === 'object') return raw;
         if (typeof raw === 'string') {
@@ -76,7 +77,7 @@ export class CommandRouter extends EventEmitter {
      * @param {object} payload - The offending command payload
      * @private
      */
-    _emitViolation(errorMsg, payload) {
+    #emitViolation(errorMsg, payload) {
         TelemetryCollector.registry.recordFailureCode('LF-701');
         logger.warn(`[CommandRouter] [LF-701] Violation emitted for command [${payload?.id || payload?.commandId || 'unknown'}]: ${errorMsg}`);
     }
@@ -87,7 +88,7 @@ export class CommandRouter extends EventEmitter {
      * @returns {string} Protocol version ('3.0' or '2.0')
      * @private
      */
-    _negotiateVersion(headersOrPayload) {
+    #negotiateVersion(headersOrPayload) {
         if (!headersOrPayload || typeof headersOrPayload !== 'object') return '2.0';
         const version = headersOrPayload['X-AGY-Protocol-Version'] || 
                         headersOrPayload._protocolVersion || 
@@ -118,22 +119,22 @@ export class CommandRouter extends EventEmitter {
      * @returns {Promise<boolean>} true if routed successfully, false if rejected or unhandled
      */
     async route(rawCommand, headers = null) {
-        this._metrics.received++;
+        this.#metrics.received++;
 
-        let command = this._parsePayload(rawCommand);
+        let command = this.#parsePayload(rawCommand);
         if (!command || typeof command !== 'object') {
-            this._metrics.rejected++;
+            this.#metrics.rejected++;
             const errorMsg = '[LF-701] Ingress Contract Violation: Malformed JSON or non-object payload';
-            this._emitViolation(errorMsg, { id: 'unparseable' });
+            this.#emitViolation(errorMsg, { id: 'unparseable' });
             logger.error(`[CommandRouter] STRICT mode rejecting unparseable payload: ${errorMsg}`);
             throw new ContractViolationError(errorMsg);
         }
 
-        const protocolVersion = this._negotiateVersion(headers || command);
+        const protocolVersion = this.#negotiateVersion(headers || command);
         logger.debug(`[CommandRouter] Negotiated protocol version: ${protocolVersion}`);
 
         if (!command.category && !command.type) {
-            this._metrics.rejected++;
+            this.#metrics.rejected++;
             logger.warn('Received invalid command object without category or type');
             this.emit('rejected', { command, reason: 'Missing category and type', headers });
             return false;
@@ -157,9 +158,9 @@ export class CommandRouter extends EventEmitter {
         const validation = CommandPayloadSchema.validate(command);
         if (!validation.valid) {
             const errorMsg = `[LF-701] Ingress Contract Violation (${command.id || command.commandId || 'unknown'}): ${validation.errors.join('; ')}`;
-            this._emitViolation(errorMsg, command);
+            this.#emitViolation(errorMsg, command);
             
-            this._metrics.rejected++;
+            this.#metrics.rejected++;
             logger.error(`[CommandRouter] STRICT mode rejecting command: ${errorMsg}`);
             this.emit('rejected', { command, reason: 'Schema Validation Failed (STRICT)', headers });
             throw new ContractViolationError(errorMsg);
@@ -211,7 +212,7 @@ export class CommandRouter extends EventEmitter {
         });
 
         await Promise.allSettled(promises);
-        this._metrics.routed++;
+        this.#metrics.routed++;
         return true;
     }
 }

@@ -87,14 +87,34 @@ export class EdgeStateMachine {
                 if (event === 'RECEIPT_OK') {
                     this.ipc.send('SUBMISSION_RESULT', { sequenceId: this.context.sequenceId, status: 'SUCCESS' });
                     this.transition('SUBMITTED');
-                } else if (event === 'TIMEOUT' || event === 'RECEIPT_FAIL') {
-                    this.ipc.send('SUBMISSION_RESULT', { sequenceId: this.context.sequenceId, status: 'TIMEOUT' });
-                    this.transition('ABORTED');
+                } else if (event === 'RECEIPT_FAIL') {
+                    this.ipc.send('SUBMISSION_RESULT', { sequenceId: this.context.sequenceId, status: 'FAILED' });
+                    this.transition('FAILED');
+                } else if (event === 'ACTION_UNCERTAIN' || event === 'TIMEOUT') {
+                    this.ipc.send('SUBMISSION_UNCERTAIN', { sequenceId: this.context.sequenceId, status: 'UNCERTAIN' });
+                    this.transition('UNCERTAIN');
+                } else if (event === 'DOM_INTERRUPT') {
+                    if (payload && payload.type === 'PRICE_CHANGE') {
+                        this.transition('INTERRUPTED_PRICE');
+                    } else if (payload && payload.type === 'CONFIRM_MODAL') {
+                        this.transition('INTERRUPTED_CONFIRM');
+                    }
+                }
+                break;
+
+            case 'INTERRUPTED_PRICE':
+            case 'INTERRUPTED_CONFIRM':
+                if (event === 'AUTHORIZE_INTERRUPT_ACCEPT') {
+                    this.transition('PRE_FLIGHT');
+                } else if (event === 'AUTHORIZE_INTERRUPT_REJECT') {
+                    this.transition('OBSERVING');
                 }
                 break;
 
             case 'SUBMITTED':
             case 'ABORTED':
+            case 'FAILED':
+            case 'UNCERTAIN':
                 if (event === 'RESET') {
                     this.observer.stop();
                     this.clearContext(true); // Hard clear
@@ -173,6 +193,15 @@ export class EdgeStateMachine {
                 // In a real implementation, we would attach a listener or poll for the receipt element
                 // We'll simulate receiving a receipt for this specification skeleton
                 setTimeout(() => this.handleEvent('RECEIPT_OK'), 1000);
+                break;
+            }
+
+            case 'INTERRUPTED_PRICE':
+            case 'INTERRUPTED_CONFIRM': {
+                this.ipc.send('AUTHORIZE_INTERRUPT', {
+                    sequenceId: this.context.sequenceId,
+                    type: this.state
+                });
                 break;
             }
         }

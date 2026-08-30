@@ -24,8 +24,9 @@ import {
 } from './errors.mjs';
 
 export class ActionSimulator extends EventEmitter {
-    constructor() {
+    constructor(runOrchestrator = null) {
         super();
+        this.runOrchestrator = runOrchestrator;
         this.MAX_EXECUTION_RETRIES = 3;
         this.attachedPages = new WeakSet();
     }
@@ -394,6 +395,21 @@ export class ActionSimulator extends EventEmitter {
     async execute(browserObj, command, options = {}) {
         const startTime = Date.now();
         const { id, page } = browserObj;
+        
+        // Transactional Safety Guard (Phase 1)
+        if (command && command.idempotent === false) {
+            if (!this.runOrchestrator) {
+                logger.error(`[Security] Simulator lacks RunOrchestrator to validate transactional command ${command.id}`);
+                return false;
+            }
+            if (!this.runOrchestrator.validateActiveCycle(command.cycleId)) {
+                const err = new Error(`Transaction Rejected: Command lacks valid cycle lease.`);
+                logger.error(`[Security] [${id}] Rejected command ${command.id}. ${err.message}`);
+                this.emit('ActionFailure', { id, command, error: err });
+                return false;
+            }
+        }
+
         const deadlineBudget = options.deadlineBudget || DeadlineBudget.fromCommand(command, 1500);
 
         try {
@@ -437,12 +453,35 @@ export class ActionSimulator extends EventEmitter {
             if (type === 'EVENT_BURST') {
                 usedLocatorInfo = await this._executeWithRecovery(command, page, 'event_burst', async (loc) => {
                     const events = payload.events || ['touchstart', 'touchend', 'mousedown', 'mouseup', 'click'];
-                    for (const ev of events) {
-                        await loc.dispatchEvent(ev, payload.eventInit || {});
-                    }
+                    await loc.evaluate((el, evs) => {
+                        evs.forEach(evName => {
+                            if (evName.startsWith('touch')) {
+                                // Must use real TouchEvent for mobile Vue.js components
+                                el.dispatchEvent(new TouchEvent(evName, { bubbles: true, cancelable: true }));
+                            } else if (evName.startsWith('mouse') || evName === 'click') {
+                                el.dispatchEvent(new MouseEvent(evName, { bubbles: true, cancelable: true, view: window }));
+                            } else {
+                                el.dispatchEvent(new Event(evName, { bubbles: true }));
+                            }
+                        });
+                    }, events);
                 }, browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'MACRO_DELAY') {
                 await new Promise(r => setTimeout(r, payload.ms || 250));
+            } else if (type === 'ATOMIC_PLACE_BET') {
+                usedLocatorInfo = await this._executeWithRecovery(command, page, 'atomic_place', async (loc) => {
+                    await loc.evaluate((el, data) => {
+                        const oddsEl = document.querySelector(data.oddsSelector);
+                        let currentOdds = null;
+                        if (oddsEl) {
+                            currentOdds = parseFloat(oddsEl.innerText);
+                        }
+                        if (currentOdds !== data.expectedOdds) {
+                            throw new Error(`[ATOMIC-ABORT] Expected odds ${data.expectedOdds} but found ${currentOdds}`);
+                        }
+                        el.click();
+                    }, command.payload);
+                }, browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'CLICK' || type === 'click') {
                 usedLocatorInfo = await this._executeWithRecovery(command, page, 'click', async (loc) => await loc.click(tOpts), browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'DOUBLE_CLICK' || type === 'dblclick') {

@@ -1,12 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { logger } from '../../config.mjs';
-import { CashoutWorkflow } from '../workflows/index.mjs';
+import { AutomationRun } from '../workflows/AutomationRun.mjs';
+import { SportyBetAdapter } from '../adapters/sportybet/SportyBetAdapter.mjs';
 
 export class WorkflowEngine {
-    constructor(lockManager, registry) {
+    constructor({ lockManager, registry, policyManager, simulator, runOrchestrator }) {
         this.lockManager = lockManager;
         this.registry = registry;
+        this.policyManager = policyManager;
+        this.simulator = simulator;
+        this.runOrchestrator = runOrchestrator;
         
         try {
             const selectorsPath = path.resolve(process.cwd(), 'sequences', 'selectors.json');
@@ -17,33 +21,66 @@ export class WorkflowEngine {
             this.selectors = {};
         }
 
-        if (!this.selectors.cashout) {
-            logger.fatal('selectors.json is missing a "cashout" section — cashout workflow cannot function. Fix sequences/selectors.json before starting.');
-            throw new Error('Missing cashout section in selectors.json');
-        }
-
-        this.workflows = {
-            'cashout': new CashoutWorkflow(this.selectors.cashout)
-        };
+        // Keep active runs mapped by their RunId
+        this.activeRuns = new Map();
     }
 
     async execute(command, targetBrowsers) {
-        const workflow = this.workflows[command.type];
-        
-        if (!workflow) {
-            logger.error(`WorkflowEngine: No workflow registered for type '${command.type}'`);
+        if (command.type !== 'placebet') {
+            logger.error(`WorkflowEngine: Unsupported workflow type '${command.type}'`);
             return;
         }
 
-        logger.info(`Executing workflow '${command.type}' on ${targetBrowsers.length} target(s)...`);
+        logger.info(`[WorkflowEngine] Starting AutomationRun on ${targetBrowsers.length} target(s)...`);
 
         const promises = targetBrowsers.map(async (b) => {
+            const runId = command.runId;
+            if (!runId) {
+                logger.error(`[WorkflowEngine] Cannot execute placebet without a valid runId.`);
+                return;
+            }
+
             try {
                 this.registry.updateState(b.id, 'Busy');
-                await workflow.execute(b, command.payload, this.lockManager, this.registry);
+                
+                // AutomationRun instantiated per-target
+                const adapter = new SportyBetAdapter();
+                const run = new AutomationRun(
+                    runId,
+                    b.id,
+                    this.policyManager,
+                    adapter,
+                    this.simulator,
+                    this.runOrchestrator
+                );
+
+                this.activeRuns.set(runId, run);
+
+                // Start the run execution loop
+                const result = await run.start(b);
+                
+                logger.info(`[WorkflowEngine] AutomationRun [${runId}] terminated with status: ${result.status} after ${result.cycles} cycles.`);
+                
+                if (this.runOrchestrator) {
+                    if (result.status === 'UNCERTAIN') {
+                        // Phase 6: Handoff to Reconciliation
+                        // Do NOT release ownership. The account must remain locked.
+                        this.runOrchestrator.markUncertain(b.id);
+                    } else {
+                        // Status is COMPLETED or ABORTED
+                        this.runOrchestrator.releaseOwnership(b.id, result.status);
+                    }
+                }
+
             } catch (err) {
-                logger.error(`WorkflowEngine: Unhandled error in '${command.type}' on [${b.id}]: ${err.message}`);
+                logger.error(`[WorkflowEngine] Unhandled error in AutomationRun [${runId}] on [${b.id}]: ${err.message}`);
+                // On total crash, default to uncertain to prevent double-spending
+                if (this.runOrchestrator) {
+                    this.runOrchestrator.markUncertain(b.id);
+                }
             } finally {
+                this.activeRuns.delete(runId);
+                
                 const currentState = this.registry.get(b.id);
                 if (currentState && currentState.state === 'Busy') {
                     this.registry.updateState(b.id, 'Ready');
@@ -52,6 +89,5 @@ export class WorkflowEngine {
         });
 
         await Promise.allSettled(promises);
-        logger.info(`Workflow '${command.type}' execution complete.`);
     }
 }

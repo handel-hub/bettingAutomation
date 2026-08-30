@@ -17,8 +17,13 @@ import {
 } from './coordination/index.mjs';
 
 import { AuthorizationGateway } from './coordination/AuthorizationGateway.mjs';
-import { SequenceOrchestrator } from './coordination/SequenceOrchestrator.mjs';
 import { ReconciliationDaemon } from './coordination/ReconciliationDaemon.mjs';
+import { RunLedger } from './coordination/wal/RunLedger.mjs';
+import { RunOrchestrator } from './coordination/RunOrchestrator.mjs';
+import { PassiveShadowDaemon } from './coordination/PassiveShadowDaemon.mjs';
+import { TriggerRouter } from './execution/TriggerRouter.mjs';
+import { StrategyPolicyLoader } from './execution/StrategyPolicyLoader.mjs';
+import { FilePolicyProvider } from './execution/FilePolicyProvider.mjs';
 
 
 import {
@@ -85,7 +90,21 @@ export class AutomationController {
         this.scheduler = new ExecutionScheduler(this.simulator, this.registry, this.syncManager);
         this.macroEngine = new MacroEngine(this.simulator, this.scheduler);
         this.lockManager = new AccountLockManager();
-        this.workflowEngine = new WorkflowEngine(this.lockManager, this.registry);
+
+        // --- P1 Fix: Initialize Policies and Orchestrators FIRST ---
+        this.policyManager = new FilePolicyProvider();
+        this.commandRouter = new CommandRouter();
+        this.runLedger = new RunLedger();
+        this.runOrchestrator = new RunOrchestrator(this.runLedger, this.registry, this.commandRouter);
+
+
+        this.workflowEngine = new WorkflowEngine({
+            lockManager: this.lockManager,
+            registry: this.registry,
+            policyManager: this.policyManager,
+            simulator: this.simulator,
+            runOrchestrator: this.runOrchestrator
+        });
 
         const credentialsMap = new Map(accounts.map(a => [a.username, a.password]));
         this.cdpMutex = new CDPMutex();
@@ -98,23 +117,19 @@ export class AutomationController {
             { cdpMutex: this.cdpMutex }
         );
 
-        this.commandRouter = new CommandRouter();
         this.targetResolver = new TargetResolver(this.registry, this.lockManager);
 
         // --- Initialize Autonomous Pricing Execution Plane ---
         this.sequenceMap = new Map();
-        // Stub PolicyManager and API Adapter for the architectural baseline
-        this.policyManager = {
-            getPolicy: (id) => ({
-                id, version: 1, targetProfit: 100000, maxStake: 500000, minStake: 10000,
-                minAcceptableProfit: 10000, resolutionStrategy: 'CLAMP', behavioralFunctions: ['PREFER_ROUND'],
-                rebetTrigger: 'ON_WIN', maxRebetCount: 3
-            })
-        };
         this.platformApiAdapter = { getRecentHistory: async () => [] };
 
         this.authorizationGateway = new AuthorizationGateway(this.sequenceMap, this.policyManager, this.commandRouter);
-        this.sequenceOrchestrator = new SequenceOrchestrator(this.sequenceMap, this.policyManager, this.commandRouter);
+        
+        // --- PHASE 1 WIRING ---
+        this.triggerRouter = new TriggerRouter(this.runOrchestrator, this.workflowEngine);
+        this.simulator.runOrchestrator = this.runOrchestrator;
+        // ---------------------------
+        
         this.reconciliationDaemon = new ReconciliationDaemon(this.sequenceMap, this.platformApiAdapter);
         this.reconciliationDaemon.start();
 
@@ -158,8 +173,19 @@ export class AutomationController {
             lifecycleManager: this.lifecycleManager,
             simulator: this.simulator,
             stateObserver: this.stateObserver,
-            convergenceEngine: this.convergenceEngine
+            convergenceEngine: this.convergenceEngine,
+            triggerRouter: this.triggerRouter,
+            runOrchestrator: this.runOrchestrator
         });
+
+        // --- Initialize Phase 1 Passive Shadow Daemon ---
+        this.passiveShadowDaemon = new PassiveShadowDaemon(
+            this.runOrchestrator,
+            this.simulator,
+            this.policyManager,
+            this.registry
+        );
+        this.triggerRouter.passiveShadowDaemon = this.passiveShadowDaemon;
 
         this.clusterOrchestrator = new ClusterOrchestrator({
             settings: this.settings,
@@ -176,7 +202,8 @@ export class AutomationController {
             healthMonitor: this.healthMonitor,
             commandReceiver: this.commandReceiver,
             scheduler: this.scheduler,
-            stateObserver: this.stateObserver
+            stateObserver: this.stateObserver,
+            passiveShadowDaemon: this.passiveShadowDaemon
         });
 
         this.eventBusRegistrar.registerAll();

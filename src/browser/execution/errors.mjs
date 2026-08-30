@@ -65,6 +65,8 @@ export class ElementDetachedError extends PlaywrightExecutionFailure { construct
 export class NotReceivableError extends PlaywrightExecutionFailure { constructor(msg) { super('LF-303', msg); } }
 export class PlaywrightTimeoutError extends PlaywrightExecutionFailure { constructor(msg) { super('LF-304', msg); } }
 export class TerminalExecutionError extends PlaywrightExecutionFailure { constructor(msg) { super('LF-305', msg, 'FATAL'); } }
+export class UncertainStateError extends PlaywrightExecutionFailure { constructor(msg) { super('LF-306', msg, 'CRITICAL'); } }
+
 
 // ----------------------------------------------------
 // 5. Browser Failure (Slave)

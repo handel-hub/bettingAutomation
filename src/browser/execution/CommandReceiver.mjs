@@ -3,7 +3,7 @@ import { logger } from '../../config.mjs';
 import EventEmitter from 'node:events';
 import { Command } from './Command.mjs';
 
-const WORKFLOW_HOTKEY_KEYS = ['cashout'];
+const WORKFLOW_HOTKEY_KEYS = ['cashout', 'placebet'];
 
 export class CommandReceiver extends EventEmitter {
     constructor(settings) {

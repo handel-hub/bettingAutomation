@@ -17,6 +17,7 @@ export class ClusterOrchestrator {
         this.commandReceiver = deps.commandReceiver;
         this.scheduler = deps.scheduler;
         this.stateObserver = deps.stateObserver;
+        this.passiveShadowDaemon = deps.passiveShadowDaemon;
     }
 
     async start() {
@@ -119,6 +120,9 @@ export class ClusterOrchestrator {
         const master = this.registry.getMaster();
         if (master && master.page) {
             await this.stateObserver.injectObservers(master.id, master.page);
+            if (this.passiveShadowDaemon) {
+                await this.passiveShadowDaemon.attachToPage(master.id, master.page);
+            }
         }
         for (const slave of this.registry.getReadySlaves()) {
              await this.stateObserver.injectObservers(slave.id, slave.page);

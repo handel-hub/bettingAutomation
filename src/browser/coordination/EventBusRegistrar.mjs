@@ -19,6 +19,8 @@ export class EventBusRegistrar {
         this.syncRecoveryActionExecutor = deps.syncRecoveryActionExecutor;
         this.simulator = deps.simulator;
         this.convergenceEngine = deps.convergenceEngine;
+        this.triggerRouter = deps.triggerRouter;
+        this.runOrchestrator = deps.runOrchestrator;
     }
 
     registerAll() {
@@ -185,8 +187,35 @@ export class EventBusRegistrar {
 
         const routeFn = (cmd) => this.commandRouter.route(cmd);
         
-        this.commandReceiver.on('Command', routeFn);
-        this.actionDispatcher.on('Command', routeFn);
+        // Causal Suppression: Intercept Hotkeys
+        this.commandReceiver.on('Command', (cmd) => {
+            if (this.triggerRouter) {
+                const intercepted = this.triggerRouter.interceptHotkey(cmd, 'master');
+                if (intercepted) this.commandRouter.route(intercepted);
+            } else {
+                routeFn(cmd);
+            }
+        });
+
+        // Causal Suppression: Intercept DOM Sync (Feedback Loop Guard)
+        this.actionDispatcher.on('Command', (cmd) => {
+            const masterId = cmd.metadata?.browserId || 'master';
+            // 1. If currently executing an Automation Run, drop ALL Master DOM Syncs 
+            // to prevent the ActionSimulator's physical clicks from echoing as user intent.
+            if (this.runOrchestrator && this.runOrchestrator.isExecuting(masterId)) {
+                logger.debug(`[EventBusRegistrar] Dropped DOM_SYNC command [${cmd.type}] because Master [${masterId}] is EXECUTING.`);
+                return;
+            }
+
+            // 2. If PASSIVE, check if this click is a Place Bet trigger.
+            if (this.triggerRouter) {
+                const intercepted = this.triggerRouter.interceptDomSync(cmd, masterId);
+                if (intercepted) this.commandRouter.route(intercepted);
+            } else {
+                routeFn(cmd);
+            }
+        });
+
         this.navSync.on('Command', routeFn);
         this.healthMonitor.on('Command', routeFn);
         this.recoveryManager.on('Command', routeFn);
