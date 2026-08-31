@@ -56,6 +56,7 @@ export class SubmissionController {
             payload: {
                 oddsSelector: this.registry.outcomeOdds,
                 selector: this.registry.placeBetButton,
+                confirmSelector: this.registry.flexibetConfirmButton,
                 expectedOdds: expectedOdds,
                 idempotent: false
             }

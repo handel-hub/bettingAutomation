@@ -491,12 +491,47 @@ export class ActionSimulator extends EventEmitter {
                         const oddsEl = document.querySelector(data.oddsSelector);
                         let currentOdds = null;
                         if (oddsEl) {
-                            currentOdds = parseFloat(oddsEl.innerText);
+                            const text = oddsEl.innerText || oddsEl.textContent || '';
+                            currentOdds = parseFloat(text);
                         }
                         if (currentOdds !== data.expectedOdds) {
                             throw new Error(`[ATOMIC-ABORT] Expected odds ${data.expectedOdds} but found ${currentOdds}`);
                         }
+                        
+                        // 1. Primary Click
                         el.click();
+                        
+                        // 2. Secondary Modal Auto-Dismiss (e.g. Flexibet Confirm)
+                        if (data.confirmSelector) {
+                            // Check immediately just in case it was already rendered but hidden
+                            const immediateBtn = document.querySelector(data.confirmSelector);
+                            if (immediateBtn && immediateBtn.getBoundingClientRect().height > 0) {
+                                immediateBtn.click();
+                            } else {
+                                // Set up a highly reactive observer scoped specifically to the betslip
+                                // to avoid global document.body performance penalties.
+                                const wrap = el.closest('.m-fast-betslip-wrap') || document.body;
+                                const observer = new MutationObserver((mutations, obs) => {
+                                    // querySelector is C++ optimized, much faster than manually iterating addedNodes
+                                    const confirmBtn = wrap.querySelector(data.confirmSelector);
+                                    if (confirmBtn && confirmBtn.getBoundingClientRect().height > 0) {
+                                        confirmBtn.click();
+                                        obs.disconnect();
+                                    }
+                                });
+                                
+                                observer.observe(wrap, {
+                                    childList: true, 
+                                    subtree: true,
+                                    attributes: true,
+                                    attributeFilter: ['style', 'class']
+                                });
+                                
+                                // Auto-disconnect after 2.5 seconds to prevent memory leaks 
+                                // (if it's a standard bet, the modal will never appear)
+                                setTimeout(() => observer.disconnect(), 2500);
+                            }
+                        }
                     }, command.payload);
                 }, browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'CLICK' || type === 'click') {

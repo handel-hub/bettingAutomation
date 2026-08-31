@@ -30,6 +30,7 @@ export class SportyBetLocatorRegistry {
         // --------------------------------------------------------------------
         // We target the inner span with data-op because SportyBet uses strict event delegation on this attribute
         this.placeBetButton = '.place-bet [data-op$="placebet"]';
+        this.flexibetConfirmButton = '.flexibet-confirm';
         this.processingButton = '.af-button--process';
         this.acceptOddsButton = '.betslip-notification .af-button--primary';
         
