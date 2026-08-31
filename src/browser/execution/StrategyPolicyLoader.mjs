@@ -71,52 +71,96 @@ export class StrategyPolicyLoader {
                 const raw = fs.readFileSync(policyPath, 'utf-8');
                 const parsed = ini.parse(raw);
                 
+                // Helper to safely parse numbers, allowing 0 to pass through without falling back to truthy defaults.
+                const parseNum = (val, defaultVal) => {
+                    if (val === undefined || val === null || val === '') return defaultVal;
+                    const num = parseFloat(val);
+                    return isNaN(num) ? defaultVal : num;
+                };
+
+                // Boolean parsing helper
+                const parseBool = (val, defaultVal) => {
+                    if (val === undefined || val === null || val === '') return defaultVal;
+                    return val === true || val === 'true';
+                };
+
+                // --- Risk Management Auto-Corrections ---
+                let minStake = parseNum(parsed.RiskManagement?.Policy?.MinimumStake, defaultPolicy.RiskManagement.Policy.MinimumStake);
+                let maxStake = parseNum(parsed.RiskManagement?.Policy?.MaxStake, defaultPolicy.RiskManagement.Policy.MaxStake);
+
+                if (maxStake <= 0) {
+                    logger.warn('[StrategyPolicy] MaxStake is <= 0. Auto-correcting to 1,000,000,000 to prevent immediate UNRESOLVABLE lock.');
+                    maxStake = 1000000000;
+                }
+
+                if (minStake > maxStake) {
+                    logger.warn(`[StrategyPolicy] Inverted limits detected (Min: ${minStake} > Max: ${maxStake}). Auto-correcting by swapping them.`);
+                    const temp = minStake;
+                    minStake = maxStake;
+                    maxStake = temp;
+                }
+
+                // --- Pricing Auto-Corrections ---
+                let mode = parsed.Pricing?.Strategy?.Mode || defaultPolicy.Pricing.Strategy.Mode;
+                let targetProfit = parseNum(parsed.Pricing?.Strategy?.TargetProfit, defaultPolicy.Pricing.Strategy.TargetProfit);
+                let baseStake = parseNum(parsed.Pricing?.Strategy?.BaseStake, defaultPolicy.Pricing.Strategy.BaseStake);
+                
+                if (mode === 'PROFIT_TARGET' && targetProfit <= 0) {
+                    if (baseStake > 0) {
+                        logger.warn(`[StrategyPolicy] PROFIT_TARGET mode selected but TargetProfit is ${targetProfit}. Auto-correcting to FIXED mode using BaseStake (${baseStake}).`);
+                        mode = 'FIXED';
+                    } else {
+                        logger.warn(`[StrategyPolicy] TargetProfit and BaseStake are both <= 0. Auto-correcting TargetProfit to safe default (1000).`);
+                        targetProfit = 1000;
+                    }
+                }
+
                 return {
                     Pricing: {
                         Strategy: {
-                            Mode: parsed['Pricing.Strategy']?.Mode || defaultPolicy.Pricing.Strategy.Mode,
-                            BaseStake: parseFloat(parsed['Pricing.Strategy']?.BaseStake) || defaultPolicy.Pricing.Strategy.BaseStake,
-                            TargetProfit: parseFloat(parsed['Pricing.Strategy']?.TargetProfit) || defaultPolicy.Pricing.Strategy.TargetProfit,
-                            MinimumAcceptableProfit: parseFloat(parsed['Pricing.Strategy']?.MinimumAcceptableProfit) || defaultPolicy.Pricing.Strategy.MinimumAcceptableProfit,
-                            ResolutionStrategy: parsed['Pricing.Strategy']?.ResolutionStrategy || defaultPolicy.Pricing.Strategy.ResolutionStrategy
+                            Mode: mode,
+                            BaseStake: baseStake,
+                            TargetProfit: targetProfit,
+                            MinimumAcceptableProfit: parseNum(parsed.Pricing?.Strategy?.MinimumAcceptableProfit, 0), // Default to 0 if missing!
+                            ResolutionStrategy: parsed.Pricing?.Strategy?.ResolutionStrategy || defaultPolicy.Pricing.Strategy.ResolutionStrategy
                         },
                         Behavior: {
-                            PlatformIncrement: parseFloat(parsed['Pricing.Behavior']?.PlatformIncrement) || defaultPolicy.Pricing.Behavior.PlatformIncrement,
-                            SelectionPreference: parsed['Pricing.Behavior']?.SelectionPreference || defaultPolicy.Pricing.Behavior.SelectionPreference,
-                            RestorePolicyOnRebet: parsed['Pricing.Behavior']?.RestorePolicyOnRebet === true || parsed['Pricing.Behavior']?.RestorePolicyOnRebet === 'true' || parsed['Pricing.Behavior']?.RestorePolicyOnRebet === undefined
+                            PlatformIncrement: parseNum(parsed.Pricing?.Behavior?.PlatformIncrement, defaultPolicy.Pricing.Behavior.PlatformIncrement),
+                            SelectionPreference: parsed.Pricing?.Behavior?.SelectionPreference || defaultPolicy.Pricing.Behavior.SelectionPreference,
+                            RestorePolicyOnRebet: parseBool(parsed.Pricing?.Behavior?.RestorePolicyOnRebet, defaultPolicy.Pricing.Behavior.RestorePolicyOnRebet)
                         }
                     },
                     Rebet: {
                         Strategy: {
-                            MaxRebetAttempts: parseInt(parsed['Rebet.Strategy']?.MaxRebetAttempts) ?? defaultPolicy.Rebet.Strategy.MaxRebetAttempts
+                            MaxRebetAttempts: parseNum(parsed.Rebet?.Strategy?.MaxRebetAttempts, defaultPolicy.Rebet.Strategy.MaxRebetAttempts)
                         }
                     },
                     Execution: { 
                         Timeouts: {
-                            ResultTimeoutMs: parseInt(parsed['Execution.Timeouts']?.ResultTimeoutMs) || defaultPolicy.Execution.Timeouts.ResultTimeoutMs,
-                            NavigationTimeoutMs: parseInt(parsed['Execution.Timeouts']?.NavigationTimeoutMs) || defaultPolicy.Execution.Timeouts.NavigationTimeoutMs,
-                            LoginTimeoutMs: parseInt(parsed['Execution.Timeouts']?.LoginTimeoutMs) || defaultPolicy.Execution.Timeouts.LoginTimeoutMs,
-                            DecisionFreshnessTTLMs: parseInt(parsed['Execution.Timeouts']?.DecisionFreshnessTTLMs) || defaultPolicy.Execution.Timeouts.DecisionFreshnessTTLMs,
-                            ReconciliationTimeoutMs: parseInt(parsed['Execution.Timeouts']?.ReconciliationTimeoutMs) || defaultPolicy.Execution.Timeouts.ReconciliationTimeoutMs
+                            ResultTimeoutMs: parseNum(parsed.Execution?.Timeouts?.ResultTimeoutMs, defaultPolicy.Execution.Timeouts.ResultTimeoutMs),
+                            NavigationTimeoutMs: parseNum(parsed.Execution?.Timeouts?.NavigationTimeoutMs, defaultPolicy.Execution.Timeouts.NavigationTimeoutMs),
+                            LoginTimeoutMs: parseNum(parsed.Execution?.Timeouts?.LoginTimeoutMs, defaultPolicy.Execution.Timeouts.LoginTimeoutMs),
+                            DecisionFreshnessTTLMs: parseNum(parsed.Execution?.Timeouts?.DecisionFreshnessTTLMs, defaultPolicy.Execution.Timeouts.DecisionFreshnessTTLMs),
+                            ReconciliationTimeoutMs: parseNum(parsed.Execution?.Timeouts?.ReconciliationTimeoutMs, defaultPolicy.Execution.Timeouts.ReconciliationTimeoutMs)
                         },
                         Pacing: {
-                            KeyboardTypingDelayMs: parseInt(parsed['Execution.Pacing']?.KeyboardTypingDelayMs) || defaultPolicy.Execution.Pacing.KeyboardTypingDelayMs
+                            KeyboardTypingDelayMs: parseNum(parsed.Execution?.Pacing?.KeyboardTypingDelayMs, defaultPolicy.Execution.Pacing.KeyboardTypingDelayMs)
                         },
                         Retries: {
-                            MaxExecutionRetries: parseInt(parsed['Execution.Retries']?.MaxExecutionRetries) ?? defaultPolicy.Execution.Retries.MaxExecutionRetries,
-                            MaxRecoveryAttempts: parseInt(parsed['Execution.Retries']?.MaxRecoveryAttempts) ?? defaultPolicy.Execution.Retries.MaxRecoveryAttempts,
-                            RecoveryBaseDelayMs: parseInt(parsed['Execution.Retries']?.RecoveryBaseDelayMs) || defaultPolicy.Execution.Retries.RecoveryBaseDelayMs
+                            MaxExecutionRetries: parseNum(parsed.Execution?.Retries?.MaxExecutionRetries, defaultPolicy.Execution.Retries.MaxExecutionRetries),
+                            MaxRecoveryAttempts: parseNum(parsed.Execution?.Retries?.MaxRecoveryAttempts, defaultPolicy.Execution.Retries.MaxRecoveryAttempts),
+                            RecoveryBaseDelayMs: parseNum(parsed.Execution?.Retries?.RecoveryBaseDelayMs, defaultPolicy.Execution.Retries.RecoveryBaseDelayMs)
                         },
                         Limits: {
-                            MaxRecordedActions: parseInt(parsed['Execution.Limits']?.MaxRecordedActions) || defaultPolicy.Execution.Limits.MaxRecordedActions
+                            MaxRecordedActions: parseNum(parsed.Execution?.Limits?.MaxRecordedActions, defaultPolicy.Execution.Limits.MaxRecordedActions)
                         }
                     },
                     RiskManagement: { 
                         Policy: {
-                            AutoAcceptOddsChanges: parsed['RiskManagement.Policy']?.AutoAcceptOddsChanges === true || parsed['RiskManagement.Policy']?.AutoAcceptOddsChanges === 'true',
-                            MaxStake: parseFloat(parsed['RiskManagement.Policy']?.MaxStake) || defaultPolicy.RiskManagement.Policy.MaxStake,
-                            MinimumStake: parseFloat(parsed['RiskManagement.Policy']?.MinimumStake) || defaultPolicy.RiskManagement.Policy.MinimumStake,
-                            AbortOnMarketSuspend: parsed['RiskManagement.Policy']?.AbortOnMarketSuspend === true || parsed['RiskManagement.Policy']?.AbortOnMarketSuspend === 'true' || parsed['RiskManagement.Policy']?.AbortOnMarketSuspend === undefined
+                            AutoAcceptOddsChanges: parseBool(parsed.RiskManagement?.Policy?.AutoAcceptOddsChanges, defaultPolicy.RiskManagement.Policy.AutoAcceptOddsChanges),
+                            MaxStake: maxStake,
+                            MinimumStake: minStake,
+                            AbortOnMarketSuspend: parseBool(parsed.RiskManagement?.Policy?.AbortOnMarketSuspend, defaultPolicy.RiskManagement.Policy.AbortOnMarketSuspend)
                         }
                     }
                 };
