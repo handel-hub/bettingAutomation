@@ -3,8 +3,8 @@ export class SportyBetLocatorRegistry {
         // --------------------------------------------------------------------
         // STABLE ANCESTORS & BALANCE
         // --------------------------------------------------------------------
-        this.sessionBalanceContainer = '.avatar-box'; // Navbar / Home page
-        this.betslipBalanceContainer = '.user-assets-panel'; // Inside the betslip header
+        this.sessionBalanceContainer = '.has-login.ml-auto'; // Navbar / Home page
+        this.betslipBalanceContainer = '.user-assets-panel .has-login.ml-auto'; // Specific leaf node for balance
         
         // --------------------------------------------------------------------
         // BETSLIP TRIGGERS (Opening the slip)
@@ -28,7 +28,8 @@ export class SportyBetLocatorRegistry {
         // --------------------------------------------------------------------
         // ACTION BUTTONS
         // --------------------------------------------------------------------
-        this.placeBetButton = '.place-bet.real-theme';
+        // We target the inner span with data-op because SportyBet uses strict event delegation on this attribute
+        this.placeBetButton = '.place-bet [data-op$="placebet"]';
         this.processingButton = '.af-button--process';
         this.acceptOddsButton = '.betslip-notification .af-button--primary';
         

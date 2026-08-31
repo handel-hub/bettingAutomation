@@ -11,7 +11,10 @@ export const SHADOW_OBSERVER_SCRIPT = `
 
     function getBetslipState() {
         const wrap = document.querySelector('.m-fast-betslip-wrap');
-        const isOpen = wrap && window.getComputedStyle(wrap).display !== 'none';
+        
+        // Use getBoundingClientRect to ensure it's actually rendered on screen.
+        // This natively handles cases where a parent sets display:none, causing the fixed wrap to collapse to 0x0.
+        const isOpen = wrap && wrap.getBoundingClientRect().height > 0;
         
         if (!isOpen) return { isOpen: false, odds: null, stake: null };
 
@@ -22,7 +25,9 @@ export const SHADOW_OBSERVER_SCRIPT = `
         let stake = null;
 
         if (oddsEl) {
-            const parsed = parseFloat(oddsEl.innerText);
+            // Fallback to textContent if innerText fails due to rendering quirks
+            const text = oddsEl.innerText || oddsEl.textContent || '';
+            const parsed = parseFloat(text);
             if (!isNaN(parsed)) odds = parsed;
         }
 
@@ -52,39 +57,16 @@ export const SHADOW_OBSERVER_SCRIPT = `
     // Report immediately on load
     reportState();
 
-    // Attach MutationObserver to the body but filter rapidly
-    const observer = new MutationObserver((mutations) => {
-        let shouldReport = false;
-        for (const mut of mutations) {
-            // Check if mutation is related to odds, stake, or betslip container
-            if (mut.target.classList) {
-                const cls = mut.target.className;
-                if (typeof cls === 'string' && (
-                    cls.includes('m-outcome-odds') || 
-                    cls.includes('m-keybord-input') || 
-                    cls.includes('m-fast-betslip-wrap') ||
-                    cls.includes('betslip')
-                )) {
-                    shouldReport = true;
-                    break;
-                }
-            }
-            // Catch cases where child text nodes change
-            if (mut.target.parentNode && mut.target.parentNode.classList) {
-                const cls = mut.target.parentNode.className;
-                if (typeof cls === 'string' && (
-                    cls.includes('m-outcome-odds') || 
-                    cls.includes('m-keybord-input')
-                )) {
-                    shouldReport = true;
-                    break;
-                }
-            }
-        }
-        
-        if (shouldReport) {
-            // Use requestAnimationFrame to coalesce rapid DOM paints
-            requestAnimationFrame(reportState);
+    // Attach MutationObserver to the body.
+    // We trigger on any mutation but debounce heavily via requestAnimationFrame to avoid missing
+    // parent-level class changes (e.g. .m-bottom-nav toggling display: none)
+    let reportTimeout = null;
+    const observer = new MutationObserver(() => {
+        if (!reportTimeout) {
+            reportTimeout = requestAnimationFrame(() => {
+                reportState();
+                reportTimeout = null;
+            });
         }
     });
 

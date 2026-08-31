@@ -19,17 +19,18 @@ export class ResultResolver {
             const outcomeHandler = await page.waitForFunction(
                 (selectors) => {
                     const success = document.querySelector(selectors.success);
-                    if (success && window.getComputedStyle(success).display !== 'none') {
+                    // Use getBoundingClientRect to protect against 0x0 hidden parent containers
+                    if (success && success.getBoundingClientRect().height > 0) {
                         return 'SUCCESS';
                     }
 
                     const fail = document.querySelector(selectors.fail);
-                    if (fail && window.getComputedStyle(fail).display !== 'none') {
+                    if (fail && fail.getBoundingClientRect().height > 0) {
                         return 'FAILED';
                     }
 
                     const errorMsg = document.querySelector(selectors.error);
-                    if (errorMsg && window.getComputedStyle(errorMsg).display !== 'none') {
+                    if (errorMsg && errorMsg.getBoundingClientRect().height > 0) {
                         return 'FAILED';
                     }
 

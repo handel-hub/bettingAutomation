@@ -42,8 +42,8 @@ export class SportyBetAdapter {
      */
     async readCurrentOdds(page) {
         try {
-            // Use an extremely short timeout (100ms) - we want the *immediate* state
-            const oddsText = await page.locator(this.locators.outcomeOdds).innerText({ timeout: 100 });
+            // Use textContent instead of innerText to bypass layout calculations (crucial for TOCTOU speed) and visibility quirks
+            const oddsText = await page.locator(this.locators.outcomeOdds).textContent({ timeout: 100 });
             const parsed = parseFloat(oddsText);
             if (!isNaN(parsed)) return parsed;
         } catch (err) {

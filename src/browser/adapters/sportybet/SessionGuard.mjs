@@ -11,11 +11,12 @@ export class SessionGuard {
      */
     async getSessionState(page) {
         try {
-            // Check for the presence of either the global avatar box or the betslip asset panel
-            const isGlobalVisible = await page.locator(this.registry.sessionBalanceContainer).isVisible().catch(() => false);
-            const isBetslipVisible = await page.locator(this.registry.betslipBalanceContainer).isVisible().catch(() => false);
+            // Check for the presence of either the global avatar box or the betslip asset panel in the DOM.
+            // We use .count() because mobile viewports may collapse the container (0x0 dimensions), which fails isVisible().
+            const globalCount = await page.locator(this.registry.sessionBalanceContainer).count().catch(() => 0);
+            const betslipCount = await page.locator(this.registry.betslipBalanceContainer).count().catch(() => 0);
 
-            if (isGlobalVisible || isBetslipVisible) {
+            if (globalCount > 0 || betslipCount > 0) {
                 return 'SESSION_ACTIVE';
             }
             return 'SESSION_EXPIRED';
@@ -32,19 +33,23 @@ export class SessionGuard {
      */
     async getBalance(page) {
         try {
-            let balanceText = null;
-            
-            // Prefer betslip panel if we are actively inside the betslip, otherwise fallback to global navbar
-            const betslipPanel = page.locator(this.registry.betslipBalanceContainer);
-            if (await betslipPanel.isVisible().catch(() => false)) {
-                balanceText = await betslipPanel.innerText();
-            } else {
-                // The global balance is in a specific span inside .avatar-box to avoid grabbing the currency code
-                const globalPanel = page.locator(`${this.registry.sessionBalanceContainer} span:not(.currency)`).first();
-                if (await globalPanel.isVisible().catch(() => false)) {
-                    balanceText = await globalPanel.innerText();
+            // Evaluate in-browser to bypass Playwright's strict 0x0 visibility checks on collapsed mobile panels
+            const balanceText = await page.evaluate((selectors) => {
+                const betslipEl = document.querySelector(selectors.betslip);
+                if (betslipEl && betslipEl.textContent && betslipEl.textContent.trim().length > 0) {
+                    return betslipEl.textContent;
                 }
-            }
+                
+                const globalEl = document.querySelector(selectors.global);
+                if (globalEl && globalEl.textContent && globalEl.textContent.trim().length > 0) {
+                    return globalEl.textContent;
+                }
+                
+                return null;
+            }, {
+                betslip: this.registry.betslipBalanceContainer,
+                global: this.registry.sessionBalanceContainer
+            }).catch(() => null);
 
             if (!balanceText) return null;
 

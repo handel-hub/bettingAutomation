@@ -155,13 +155,17 @@ export class ActionSimulator extends EventEmitter {
 
             const playwrightSelector = command.payload?.playwrightSelector || command.metadata?.playwrightSelector || command.payload?.selector;
 
+            const evalId = command.metadata?.shadowEvaluationId || command.traceId;
+
             if (playwrightSelector) {
                 try {
+                    logger.info({ event: 'PLAYWRIGHT_LOCATOR_RESOLUTION_START', shadowEvaluationId: evalId, commandId: command.id, locator: playwrightSelector }, `[ActionSimulator] Starting fast path locator resolution.`);
                     // Fast Path: Try Playwright native strict selector first
                     const loc = page.locator(playwrightSelector);
                     // Fast fail to ensure it's attached and strict mode passes
                     await loc.waitFor({ state: 'attached', timeout: 500 });
                     
+                    logger.info({ event: 'PLAYWRIGHT_LOCATOR_RESOLUTION_SUCCESS', shadowEvaluationId: evalId, commandId: command.id, locator: playwrightSelector }, `[ActionSimulator] Fast path locator resolution successful.`);
                     result = {
                         success: true,
                         playwrightLocator: loc,
@@ -169,7 +173,7 @@ export class ActionSimulator extends EventEmitter {
                         isFallback: false
                     };
                 } catch (err) {
-                    logger.warn(`[ActionSimulator] [Cmd: ${command.id}] Fast path strict locator failed: ${err.message}. Falling back to probabilistic resolution.`);
+                    logger.info({ event: 'PLAYWRIGHT_LOCATOR_RESOLUTION_FAILURE', shadowEvaluationId: evalId, commandId: command.id, error: err.message, locator: playwrightSelector }, `[ActionSimulator] Fast path strict locator failed: ${err.message}.`);
                     result = null;
                 }
             }
@@ -234,7 +238,16 @@ export class ActionSimulator extends EventEmitter {
                     });
                 }).catch(() => {});
 
-                await actionFn(result.playwrightLocator);
+                const evalId = command.metadata?.shadowEvaluationId || command.traceId;
+                logger.info({ event: 'PLAYWRIGHT_INPUT_START', shadowEvaluationId: evalId, commandId: command.id, actionType: interactionType }, `[ActionSimulator] Executing Playwright actuation.`);
+                
+                try {
+                    await actionFn(result.playwrightLocator);
+                    logger.info({ event: 'PLAYWRIGHT_INPUT_SUCCESS', shadowEvaluationId: evalId, commandId: command.id, actionType: interactionType, durationMs: Date.now() - execStart }, `[ActionSimulator] Playwright actuation successful.`);
+                } catch (actionErr) {
+                    logger.info({ event: 'PLAYWRIGHT_INPUT_FAILURE', shadowEvaluationId: evalId, commandId: command.id, error: actionErr.message, actionType: interactionType }, `[ActionSimulator] Playwright actuation failed: ${actionErr.message}`);
+                    throw actionErr;
+                }
                 
                 import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
                     observabilityCollector.emitTransition({
@@ -395,6 +408,10 @@ export class ActionSimulator extends EventEmitter {
     async execute(browserObj, command, options = {}) {
         const startTime = Date.now();
         const { id, page } = browserObj;
+        const type = command?.type || 'UNKNOWN';
+        const evalId = command?.metadata?.shadowEvaluationId || command?.traceId;
+
+        logger.info({ event: 'ACTION_SIMULATOR_RECEIVED', shadowEvaluationId: evalId, commandId: command?.id, browserId: id, commandType: type }, `[ActionSimulator] Received command ${command?.id} [${type}] for execution.`);
         
         // Transactional Safety Guard (Phase 1)
         if (command && command.idempotent === false) {
