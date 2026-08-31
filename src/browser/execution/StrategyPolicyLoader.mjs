@@ -58,6 +58,7 @@ export class StrategyPolicyLoader {
                 Policy: {
                     AutoAcceptOddsChanges: false,
                     MaxStake: 10000,
+                    MinimumStake: 10,
                     AbortOnMarketSuspend: true
                 }
             }
@@ -114,6 +115,7 @@ export class StrategyPolicyLoader {
                         Policy: {
                             AutoAcceptOddsChanges: parsed['RiskManagement.Policy']?.AutoAcceptOddsChanges === true || parsed['RiskManagement.Policy']?.AutoAcceptOddsChanges === 'true',
                             MaxStake: parseFloat(parsed['RiskManagement.Policy']?.MaxStake) || defaultPolicy.RiskManagement.Policy.MaxStake,
+                            MinimumStake: parseFloat(parsed['RiskManagement.Policy']?.MinimumStake) || defaultPolicy.RiskManagement.Policy.MinimumStake,
                             AbortOnMarketSuspend: parsed['RiskManagement.Policy']?.AbortOnMarketSuspend === true || parsed['RiskManagement.Policy']?.AbortOnMarketSuspend === 'true' || parsed['RiskManagement.Policy']?.AbortOnMarketSuspend === undefined
                         }
                     }

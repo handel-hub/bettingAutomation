@@ -74,6 +74,11 @@ export class ConstraintEngine {
         }
 
         // 4. HARD LIMIT ENFORCEMENT
+        if (policy.RiskManagement.Policy.MinimumStake && roundedStake < policy.RiskManagement.Policy.MinimumStake) {
+            trace.push(`[LIMIT-FAIL] Stake (${roundedStake}) falls below MinimumStake (${policy.RiskManagement.Policy.MinimumStake}).`);
+            return snapshot;
+        }
+
         if (roundedStake > policy.RiskManagement.Policy.MaxStake) {
             trace.push(`[LIMIT-FAIL] Stake (${roundedStake}) exceeds MaxStake (${policy.RiskManagement.Policy.MaxStake}).`);
             return snapshot;
