@@ -466,6 +466,13 @@ export class ActionSimulator extends EventEmitter {
             // Perform actions using the new decoupled recovery loop
             const getTimeout = (budget) => budget ? Math.max(10, budget.timeRemaining()) : 30000;
             const tOpts = { timeout: getTimeout(deadlineBudget) };
+            
+            // Bypass Playwright's actionability visibility/overlay checks for internal workflows.
+            // This is required because BetCycle injects an __auto_lock overlay to prevent user interference,
+            // which would otherwise block Playwright's own simulated clicks.
+            if (command.source === 'BetCycle') {
+                tOpts.force = true;
+            }
 
             if (type === 'EVENT_BURST') {
                 usedLocatorInfo = await this._executeWithRecovery(command, page, 'event_burst', async (loc) => {
