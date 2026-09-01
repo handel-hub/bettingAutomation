@@ -63,6 +63,23 @@ export class RuntimeRecorder {
   }
 
   /**
+   * Shim for coordination modules (RunOrchestrator, etc) that expect a recordEvent method.
+   * Translates an event name and data payload into a standard LogFact.
+   * @param {string} name 
+   * @param {any} data 
+   */
+  recordEvent(name, data = {}) {
+    this.record({
+      domain: 'Execution',
+      type: 'LogFact',
+      traceId: data?.runId || data?.traceId || 'unknown',
+      level: 'INFO',
+      message: name,
+      metadata: data
+    });
+  }
+
+  /**
    * @private
    * @param {import('../models/index.mjs').BaseFact} fact 
    */
