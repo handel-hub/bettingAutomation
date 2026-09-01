@@ -1,5 +1,6 @@
 import { logger } from '../../config.mjs';
 import featureFlags from '../execution/locatorIntelligence/FeatureFlags.mjs';
+import { Command } from '../execution/Command.mjs';
 
 export class EventBusRegistrar {
     constructor(deps) {
