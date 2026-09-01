@@ -24,26 +24,26 @@ describe('SportyBetAdapter', () => {
             // Total = 11 commands
             expect(commands.length).toBe(11);
             
-            // Starts with CLICK on stake input
-            expect(commands[0].type).toBe('CLICK');
+            // Starts with EVENT_BURST on stake input
+            expect(commands[0].type).toBe('EVENT_BURST');
             expect(commands[0].payload.selector).toBe('.m-betslips-stake .m-keybord-input');
             
             // Delay enforcing reactivity
             expect(commands[1].type).toBe('MACRO_DELAY');
-            expect(commands[1].payload.durationMs).toBe(250);
+            expect(commands[1].payload.ms).toBe(250);
             
             // Clear burst
             expect(commands[2].type).toBe('EVENT_BURST');
-            expect(commands[2].payload.selector).toBe('[data-key="clear"]');
+            expect(commands[2].payload.selector).toBe('[data-key="clear"] >> nth=0');
             
             // Digits
-            expect(commands[4].payload.selector).toBe('[data-key="1"]');
-            expect(commands[6].payload.selector).toBe('[data-key="0"]');
-            expect(commands[8].payload.selector).toBe('[data-key="5"]');
+            expect(commands[4].payload.selector).toBe('[data-key="1"] >> nth=0');
+            expect(commands[6].payload.selector).toBe('[data-key="0"] >> nth=0');
+            expect(commands[8].payload.selector).toBe('[data-key="5"] >> nth=0');
             
             // Done burst (no trailing delay required before return)
             expect(commands[10].type).toBe('EVENT_BURST');
-            expect(commands[10].payload.selector).toBe('[data-key="done"]');
+            expect(commands[10].payload.selector).toBe('[data-key="done"] >> nth=0');
         });
     });
 
@@ -51,7 +51,7 @@ describe('SportyBetAdapter', () => {
         it('translates place bet correctly with idempotent: false', () => {
             const cmd = adapter.translatePlaceBet();
             expect(cmd.type).toBe('CLICK');
-            expect(cmd.payload.selector).toBe('.place-bet.real-theme');
+            expect(cmd.payload.selector).toBe('.place-bet [data-op$="placebet"]');
             expect(cmd.payload.idempotent).toBe(false); // CRITICAL: Never retry
         });
     });

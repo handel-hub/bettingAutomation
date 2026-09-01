@@ -770,6 +770,10 @@ export class ExecutionScheduler {
                             if (ges !== undefined && ges !== null) {
                                 this.registry.incrementSlaveGes(browserId, true);
                             }
+                        } else if (success === true) {
+                            if (ges !== undefined && ges !== null) {
+                                this.registry.incrementSlaveGes(browserId, false);
+                            }
                         }
                     } finally {
                         getCollector().then((observabilityCollector) => {

@@ -696,10 +696,6 @@ export class ActionSimulator extends EventEmitter {
 
 
 
-            if (this.registry) {
-                this.registry.incrementSlaveGes(id);
-            }
-
             this.emit('ActionSuccess', { id, command });
             return true;
         } catch (err) {
