@@ -73,6 +73,7 @@ export class RuntimeRecorder {
       domain: 'Execution',
       type: 'LogFact',
       traceId: data?.runId || data?.traceId || 'unknown',
+      spanId: data?.spanId || 'unknown',
       level: 'INFO',
       message: name,
       metadata: data
