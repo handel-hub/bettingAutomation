@@ -10,6 +10,19 @@ export class SubmissionController {
      * @returns {Promise<Object>} Command payload
      */
     async translateOpenBetslip(page) {
+        // First check if it's already open by seeing if the wrapper is expanded
+        const isOpen = await page.evaluate((selector) => {
+            const wrap = document.querySelector(selector);
+            return wrap && wrap.getBoundingClientRect().height > 0;
+        }, this.registry.fastBetslipWrap).catch(() => false);
+
+        if (isOpen) {
+            return {
+                type: 'NOOP',
+                payload: { reason: 'Betslip already open' }
+            };
+        }
+
         const triggers = [
             this.registry.fastBetslipTrigger,
             this.registry.bottomNavBetslipTrigger,

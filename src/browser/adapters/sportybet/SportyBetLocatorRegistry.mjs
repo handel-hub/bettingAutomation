@@ -18,12 +18,12 @@ export class SportyBetLocatorRegistry {
         // BETSLIP CONTAINERS & COMPONENTS
         // --------------------------------------------------------------------
         this.fastBetslipWrap = '.m-fast-betslip-wrap';
-        this.outcomeOdds = '.m-outcome-odds';
+        this.outcomeOdds = '.m-fast-betslip-wrap .m-outcome-odds';
         
         // --------------------------------------------------------------------
         // STAKE & KEYBOARD
         // --------------------------------------------------------------------
-        this.stakeInput = '.m-betslips-stake .m-keybord-input';
+        this.stakeInput = '.m-fast-betslip-wrap .m-betslips-stake .m-keybord-input';
         
         // --------------------------------------------------------------------
         // ACTION BUTTONS
