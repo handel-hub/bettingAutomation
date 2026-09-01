@@ -32,7 +32,8 @@ export class TriggerRouter {
         const selector = command.payload?.playwrightSelector || command.payload?.selector || '';
         
         // Phase 1: Causal Suppression of Automated Stake Sync
-        if (type === 'input' && selector.includes(this.locators.stakeInput)) {
+        // The virtual keyboard uses click events on [data-key="X"], not input events.
+        if (selector.includes('data-key') || (type === 'input' && selector.includes(this.locators.stakeInput))) {
             if (this.passiveShadowDaemon && !this.passiveShadowDaemon.userControlled) {
                 // The daemon is in automated control of the stakes.
                 // Drop the generic Master DOM sync broadcast so Slaves execute their own local stakes.
@@ -47,7 +48,8 @@ export class TriggerRouter {
         }
 
         // Use the adapter's locator to determine if this is a transactional trigger
-        if (selector.includes(this.locators.placeBetButton)) {
+        // We check for 'place-bet' or 'placebet' broadly to ensure Playwright's auto-generated selectors match.
+        if (selector.includes('place-bet') || selector.includes('placebet')) {
             logger.info(`[TriggerRouter] Physical Place Bet click detected from DOM on [${browserId}].`);
 
             const lease = this.runOrchestrator.acquireOwnership(browserId, 'DOM_SYNC');
