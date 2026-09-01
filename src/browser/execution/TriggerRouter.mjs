@@ -48,8 +48,12 @@ export class TriggerRouter {
         }
 
         // Use the adapter's locator to determine if this is a transactional trigger
-        // We check for 'place-bet' or 'placebet' broadly to ensure Playwright's auto-generated selectors match.
-        if (selector.includes('place-bet') || selector.includes('placebet')) {
+        // We check against the registry's exact CSS selector, as well as text-based semantic fallbacks.
+        const selectorLower = selector.toLowerCase();
+        if (selector.includes(this.locators.placeBetButton) || 
+            selectorLower.includes('place-bet') || 
+            selectorLower.includes('placebet') || 
+            selectorLower.includes('place bet')) {
             logger.info(`[TriggerRouter] Physical Place Bet click detected from DOM on [${browserId}].`);
 
             const lease = this.runOrchestrator.acquireOwnership(browserId, 'DOM_SYNC');
