@@ -40,7 +40,7 @@ export class TriggerRouter {
                 logger.info(`[TriggerRouter] Suppressing automated stake DOM sync broadcast from [${browserId}].`);
                 if (command.ges !== undefined && command.ges !== null) {
                     return new Command({
-                        category: 'Execution', type: 'NOOP', target: command.target || 'noop', source: 'TriggerRouter', ges: command.ges, payload: { reason: 'Suppressed automated stake sync' }
+                        category: 'Execution', type: 'NOOP', target: command.target || {}, source: 'TriggerRouter', ges: command.ges, payload: { reason: 'Suppressed automated stake sync' }
                     });
                 }
                 return null;
@@ -73,7 +73,7 @@ export class TriggerRouter {
 
                 if (command.ges !== undefined && command.ges !== null) {
                     const noopCmd = new Command({
-                        category: 'Execution', type: 'NOOP', target: command.target || 'noop', source: 'TriggerRouter', ges: command.ges, payload: { reason: 'Intercepted PlaceBet trigger' }
+                        category: 'Execution', type: 'NOOP', target: command.target || {}, source: 'TriggerRouter', ges: command.ges, payload: { reason: 'Intercepted PlaceBet trigger' }
                     });
                     // Return both: Workflow for Master Orchestrator, NOOP for Slaves to increment their GES safely
                     return [noopCmd, workflowCmd];
@@ -82,7 +82,7 @@ export class TriggerRouter {
             }
             if (command.ges !== undefined && command.ges !== null) {
                 return new Command({
-                    category: 'Execution', type: 'NOOP', target: command.target || 'noop', source: 'TriggerRouter', ges: command.ges, payload: { reason: 'Suppressed duplicate physical click' }
+                    category: 'Execution', type: 'NOOP', target: command.target || {}, source: 'TriggerRouter', ges: command.ges, payload: { reason: 'Suppressed duplicate physical click' }
                 });
             }
             return null; // Suppress duplicate physical clicks if already executing
