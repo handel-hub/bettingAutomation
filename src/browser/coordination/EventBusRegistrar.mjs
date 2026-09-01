@@ -204,13 +204,22 @@ export class EventBusRegistrar {
             // to prevent the ActionSimulator's physical clicks from echoing as user intent.
             if (this.runOrchestrator && this.runOrchestrator.isExecuting(masterId)) {
                 logger.debug(`[EventBusRegistrar] Dropped DOM_SYNC command [${cmd.type}] because Master [${masterId}] is EXECUTING.`);
+                if (cmd.ges !== undefined && cmd.ges !== null) {
+                    this.commandRouter.route(new Command({
+                        category: 'Execution', type: 'NOOP', source: 'EventBusRegistrar', ges: cmd.ges, payload: { reason: 'Master EXECUTING drop' }
+                    }));
+                }
                 return;
             }
 
             // 2. If PASSIVE, check if this click is a Place Bet trigger.
             if (this.triggerRouter) {
                 const intercepted = this.triggerRouter.interceptDomSync(cmd, masterId);
-                if (intercepted) this.commandRouter.route(intercepted);
+                if (Array.isArray(intercepted)) {
+                    intercepted.forEach(c => this.commandRouter.route(c));
+                } else if (intercepted) {
+                    this.commandRouter.route(intercepted);
+                }
             } else {
                 routeFn(cmd);
             }

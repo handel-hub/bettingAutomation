@@ -38,6 +38,11 @@ export class TriggerRouter {
                 // The daemon is in automated control of the stakes.
                 // Drop the generic Master DOM sync broadcast so Slaves execute their own local stakes.
                 logger.info(`[TriggerRouter] Suppressing automated stake DOM sync broadcast from [${browserId}].`);
+                if (command.ges !== undefined && command.ges !== null) {
+                    return new Command({
+                        category: 'Execution', type: 'NOOP', source: 'TriggerRouter', ges: command.ges, payload: { reason: 'Suppressed automated stake sync' }
+                    });
+                }
                 return null;
             }
             return command; // If userControlled is true, allow manual broadcast
@@ -58,13 +63,26 @@ export class TriggerRouter {
 
             const lease = this.runOrchestrator.acquireOwnership(browserId, 'DOM_SYNC');
             if (lease) {
-                // Return a Workflow command so EventBusRegistrar can natively route it to WorkflowEngine
-                return new Command({
+                const workflowCmd = new Command({
                     category: 'Workflow',
                     type: 'placebet',
                     source: 'TriggerRouter',
                     executionMode: 'UNIQUE_ACCOUNTS_ONLY',
                     runId: lease.runId
+                });
+
+                if (command.ges !== undefined && command.ges !== null) {
+                    const noopCmd = new Command({
+                        category: 'Execution', type: 'NOOP', source: 'TriggerRouter', ges: command.ges, payload: { reason: 'Intercepted PlaceBet trigger' }
+                    });
+                    // Return both: Workflow for Master Orchestrator, NOOP for Slaves to increment their GES safely
+                    return [noopCmd, workflowCmd];
+                }
+                return workflowCmd;
+            }
+            if (command.ges !== undefined && command.ges !== null) {
+                return new Command({
+                    category: 'Execution', type: 'NOOP', source: 'TriggerRouter', ges: command.ges, payload: { reason: 'Suppressed duplicate physical click' }
                 });
             }
             return null; // Suppress duplicate physical clicks if already executing
