@@ -20,34 +20,46 @@ export class ResultResolver {
                     const tracker = window.__cmsTracker;
                     if (!tracker) return false;
 
-                    // 1. Check CMS Tracker explicitly for termination states
+                    // 1. Detect if the transient state has resolved
+                    let submittingFinished = false;
+                    for (const entry of tracker.log) {
+                        const key = entry.key ? entry.key.toLowerCase() : '';
+                        if (key === 'submitting' && (entry.event === 'removed' || entry.event === 'attr_removed')) {
+                            submittingFinished = true;
+                        }
+                    }
+
+                    // 2. Check explicitly for termination states in the log
+                    let hasSuccessKey = false;
+                    let hasFailKey = false;
                     for (const entry of tracker.log) {
                         const key = entry.key ? entry.key.toLowerCase() : '';
                         if (key.includes('rebet') || key.includes('ok') || key === 'betslip_success_ok' || key === 'betslip_success_rebet') {
-                            return 'SUCCESS';
+                            hasSuccessKey = true;
                         }
                         if (key.includes('fail') || key.includes('error')) {
-                            return 'FAILED';
+                            hasFailKey = true;
                         }
                     }
 
-                    // 2. Fallback CSS checks just in case CMS key isn't attached to the success button
-                    const success = document.querySelector(selectors.success);
-                    if (success && success.getBoundingClientRect().height > 0) {
-                        const computed = window.getComputedStyle(success);
-                        if (computed.opacity !== '0' && computed.display !== 'none') {
+                    // If submitting is done, or we saw a definitive key, resolve it
+                    if (submittingFinished || hasSuccessKey || hasFailKey) {
+                        if (hasSuccessKey) return 'SUCCESS';
+                        if (hasFailKey) return 'FAILED';
+
+                        // 3. Fallback CSS checks if CMS keys for success/fail weren't found
+                        const success = document.querySelector(selectors.success);
+                        if (success && success.getBoundingClientRect().height > 0) {
                             return 'SUCCESS';
                         }
-                    }
-
-                    const fail = document.querySelector(selectors.fail);
-                    if (fail && fail.getBoundingClientRect().height > 0) {
-                        return 'FAILED';
-                    }
-
-                    const errorMsg = document.querySelector(selectors.error);
-                    if (errorMsg && errorMsg.getBoundingClientRect().height > 0) {
-                        return 'FAILED';
+                        const fail = document.querySelector(selectors.fail);
+                        if (fail && fail.getBoundingClientRect().height > 0) {
+                            return 'FAILED';
+                        }
+                        const errorMsg = document.querySelector(selectors.error);
+                        if (errorMsg && errorMsg.getBoundingClientRect().height > 0) {
+                            return 'FAILED';
+                        }
                     }
 
                     return false; // Keep waiting
