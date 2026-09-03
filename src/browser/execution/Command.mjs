@@ -19,7 +19,7 @@ export class Command {
         version = 3, lifecycle = 'CREATED',
         id, captureTime, creationTime, traceId, eidHash, timestamp,
         ges = null, framePath = null, hlc = null, priority, idempotent = true,
-        runId = null, cycleId = null
+        runId = null, cycleId = null, ttlMs
     }) {
         this.version = version;
         this.lifecycle = lifecycle;
@@ -30,6 +30,7 @@ export class Command {
         this.payload = payload;
         this.source = source;
         this.executionMode = executionMode;
+        this.metadata = metadata;
         this.priority = priority;
         this.idempotent = idempotent;
         this.runId = runId;
@@ -37,6 +38,9 @@ export class Command {
 
         this.ges = ges;
         this.framePath = framePath;
+        if (ttlMs !== undefined) {
+            this.ttlMs = ttlMs;
+        }
         this.hlc = hlc;
 
         if (hlc && !(hlc instanceof HybridLogicalClock)) {
