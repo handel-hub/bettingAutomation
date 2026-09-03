@@ -563,35 +563,77 @@ export class ActionSimulator extends EventEmitter {
                         
                         // INJECT CMS STATE TRACKER BEFORE CLICK
                         window.__cmsTracker = { log: [], processingSeen: false };
-                        const cmsObserver = new MutationObserver(mutations => {
-                            mutations.forEach(m => {
-                                if (m.type === 'childList') {
+                        const cmsObserver = new MutationObserver((mutations) => {
+                            for (let m of mutations) {
+                                // 1. DETECT APPEARANCE (Node added to DOM)
+                                if (m.type === 'childList' && m.addedNodes.length > 0) {
                                     m.addedNodes.forEach(n => {
                                         if (n.nodeType === 1) {
                                             const keys = [...n.querySelectorAll('[data-cms-key]'), n].filter(i => i.hasAttribute && i.hasAttribute('data-cms-key'));
                                             keys.forEach(k => {
                                                 const key = k.getAttribute('data-cms-key');
-                                                window.__cmsTracker.log.push({ key, time: Date.now() });
-                                                if (key && (key.includes('confirm') || key.includes('process') || key.includes('loading'))) {
+                                                window.__cmsTracker.log.push({ key, time: Date.now(), event: 'added' });
+                                                if (key === 'submitting' || key.includes('process') || key.includes('loading') || key.includes('confirm')) {
                                                     window.__cmsTracker.processingSeen = true;
+                                                }
+                                                if (key === 'submitting') {
+                                                    console.log(`%c >>> SUBMITTING STARTED: ${new Date().toLocaleTimeString()}`, "color: white; background: #27ae60; font-weight: bold; padding: 4px; border-radius: 3px;");
                                                 }
                                             });
                                         }
                                     });
-                                } else if (m.type === 'attributes') {
-                                    const key = m.target.getAttribute('data-cms-key');
-                                    if (key) {
-                                        window.__cmsTracker.log.push({ key, time: Date.now(), attrChange: true });
-                                        if (key.includes('confirm') || key.includes('process') || key.includes('loading')) {
+                                }
+
+                                // 2. DETECT DISAPPEARANCE (Node removed from DOM)
+                                if (m.type === 'childList' && m.removedNodes.length > 0) {
+                                    m.removedNodes.forEach(n => {
+                                        if (n.nodeType === 1) {
+                                            const keys = [...n.querySelectorAll('[data-cms-key]'), n].filter(i => i.hasAttribute && i.hasAttribute('data-cms-key'));
+                                            keys.forEach(k => {
+                                                const key = k.getAttribute('data-cms-key');
+                                                window.__cmsTracker.log.push({ key, time: Date.now(), event: 'removed' });
+                                                if (key === 'submitting') {
+                                                    console.log(`%c <<< SUBMITTING FINISHED: ${new Date().toLocaleTimeString()}`, "color: white; background: #c0392b; font-weight: bold; padding: 4px; border-radius: 3px;");
+                                                }
+                                            });
+                                        }
+                                    });
+                                }
+                                
+                                // 3. DETECT ATTRIBUTE CHANGE
+                                if (m.type === 'attributes' && m.attributeName === 'data-cms-key') {
+                                    const newKey = m.target.getAttribute('data-cms-key');
+                                    if (newKey) {
+                                        window.__cmsTracker.log.push({ key: newKey, time: Date.now(), event: 'attr_added' });
+                                        if (newKey === 'submitting' || newKey.includes('process') || newKey.includes('loading') || newKey.includes('confirm')) {
                                             window.__cmsTracker.processingSeen = true;
+                                        }
+                                        if (newKey === 'submitting') {
+                                            console.log(`%c >>> SUBMITTING STARTED (Attribute): ${new Date().toLocaleTimeString()}`, "color: white; background: #27ae60; font-weight: bold;");
+                                        }
+                                    } else if (m.oldValue) {
+                                        window.__cmsTracker.log.push({ key: m.oldValue, time: Date.now(), event: 'attr_removed' });
+                                        if (m.oldValue === 'submitting') {
+                                            console.log(`%c <<< SUBMITTING FINISHED (Attribute): ${new Date().toLocaleTimeString()}`, "color: white; background: #c0392b; font-weight: bold;");
                                         }
                                     }
                                 }
-                            });
+                            }
                         });
-                        cmsObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-cms-key'] });
+
+                        console.log("%c Life-Cycle Tracker Active: Monitoring 'submitting' appearance/disappearance...", "color: white; background: #2c3e50; padding: 4px;");
+                        cmsObserver.observe(document.body, { 
+                            childList: true, 
+                            subtree: true, 
+                            attributes: true, 
+                            attributeOldValue: true,
+                            attributeFilter: ['data-cms-key'] 
+                        });
                         // Let it run for 10 seconds, then disconnect to prevent memory leaks
-                        setTimeout(() => cmsObserver.disconnect(), 10000);
+                        setTimeout(() => {
+                            cmsObserver.disconnect();
+                            console.log("%c Life-Cycle Tracker Disconnected.", "color: white; background: #7f8c8d; padding: 4px;");
+                        }, 10000);
 
                         // 2. CHECK DOM STATE
                         const placeBtn = wrapEl.querySelector(data.placeBetSelector) || document.querySelector(data.placeBetSelector);
