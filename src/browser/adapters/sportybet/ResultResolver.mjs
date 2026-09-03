@@ -5,8 +5,8 @@ export class ResultResolver {
 
     /**
      * Observes the DOM for definitive Primary Evidence of the bet result.
-     * Enforces the Evidence Hierarchy: DOM Success/Fail is authoritative. 
-     * Timeouts are strictly mapped to UNCERTAIN.
+     * Evaluates the __cmsTracker log natively injected by ATOMIC_PLACE_BET
+     * to deterministically track the state machine.
      * 
      * @param {import('playwright').Page} page
      * @param {number} timeoutMs - Max time to wait for evidence
@@ -14,10 +14,24 @@ export class ResultResolver {
      */
     async observeResult(page, timeoutMs = 30000) {
         try {
-            // Using polling: 'mutation' to satisfy the strict "Zero Polling" / WAIT_FOR_MUTATION
-            // timing audit requirement. This evaluates the function ONLY when the DOM changes.
+            // We use page.waitForFunction to rapidly poll the __cmsTracker
             const outcomeHandler = await page.waitForFunction(
                 (selectors) => {
+                    const tracker = window.__cmsTracker;
+                    if (!tracker) return false;
+
+                    // 1. Check CMS Tracker explicitly for termination states
+                    for (const entry of tracker.log) {
+                        const key = entry.key ? entry.key.toLowerCase() : '';
+                        if (key.includes('rebet') || key.includes('ok') || key === 'betslip_success_ok' || key === 'betslip_success_rebet') {
+                            return 'SUCCESS';
+                        }
+                        if (key.includes('fail') || key.includes('error')) {
+                            return 'FAILED';
+                        }
+                    }
+
+                    // 2. Fallback CSS checks just in case CMS key isn't attached to the success button
                     const success = document.querySelector(selectors.success);
                     if (success && success.getBoundingClientRect().height > 0) {
                         const computed = window.getComputedStyle(success);
@@ -47,11 +61,14 @@ export class ResultResolver {
             );
 
             const status = await outcomeHandler.jsonValue();
+            
+            // Allow a tiny deterministic buffer after the CMS state resolves to ensure Vue has physically 
+            // mounted the target buttons before returning control to the orchestrator.
+            await page.waitForTimeout(150);
+
             return { status: status };
 
         } catch (error) {
-            // If the timeout is reached, Playwright throws a TimeoutError.
-            // Check the CMS tracker to see if the bet ever actually submitted
             try {
                 const cmsData = await page.evaluate(() => window.__cmsTracker);
                 if (cmsData) {
@@ -67,11 +84,8 @@ export class ResultResolver {
                         };
                     }
                 }
-            } catch (e) {
-                // Ignore evaluation errors on crash
-            }
+            } catch (e) {}
 
-            // Fallback: missing primary evidence is ALWAYS 'UNCERTAIN'
             return { 
                 status: 'UNCERTAIN', 
                 detail: `Wait failed or Primary DOM evidence missing: ${error.message}`
