@@ -542,13 +542,23 @@ export class ActionSimulator extends EventEmitter {
                         forensic('ATOMIC_ODDS_READ', { expectedOdds: data.expectedOdds, actualOdds: currentOdds });
                         forensic('ATOMIC_ODDS_COMPARISON', { match: currentOdds === data.expectedOdds });
                         
-                        const stakeEl = document.querySelector('.m-input') || document.querySelector('input[type="number"]');
-                        const actualStake = stakeEl ? stakeEl.value : null;
-                        forensic('ATOMIC_STAKE_READ', { expectedStake: null, actualStake });
+                        const stakeEl = document.querySelector(data.stakeSelector) || document.querySelector('.m-input') || document.querySelector('input[type="number"]');
+                        let actualStake = null;
+                        if (stakeEl) {
+                            const rawVal = stakeEl.value !== undefined ? stakeEl.value : (stakeEl.innerText || stakeEl.textContent || '');
+                            const cleaned = rawVal.replace(/[^\d.]/g, '');
+                            actualStake = parseFloat(cleaned);
+                        }
+                        forensic('ATOMIC_STAKE_READ', { expectedStake: data.expectedStake, actualStake, rawVal: stakeEl ? (stakeEl.value !== undefined ? stakeEl.value : stakeEl.innerText) : null });
 
                         if (currentOdds !== data.expectedOdds) {
                             forensic('ATOMIC_RESULT', { result: 'ABORTED_ODDS' });
                             throw new Error(`[ATOMIC-ABORT] Expected odds ${data.expectedOdds} but found ${currentOdds}`);
+                        }
+
+                        if (actualStake !== data.expectedStake) {
+                            forensic('ATOMIC_RESULT', { result: 'ABORTED_STAKE' });
+                            throw new Error(`[ATOMIC-ABORT] Expected stake ${data.expectedStake} but found ${actualStake} in the DOM`);
                         }
                         
                         // INJECT CMS STATE TRACKER BEFORE CLICK

@@ -135,13 +135,13 @@ export class SportyBetAdapter {
     }
 
     /**
-     * Translates the Place Bet intent into an ATOMIC_PLACE_BET command that performs
-     * TOCTOU validation natively inside the browser event loop before clicking.
+     * Returns an atomic macro command to verify odds and physically place the bet.
      * @param {number} expectedOdds
+     * @param {number} expectedStake
      * @returns {Object} Command payload
      */
-    translateAtomicPlaceBet(expectedOdds) {
-        return this.submissionController.translateAtomicPlaceBet(expectedOdds);
+    translateAtomicPlaceBet(expectedOdds, expectedStake) {
+        return this.submissionController.translateAtomicPlaceBet(expectedOdds, expectedStake);
     }
 
     /**

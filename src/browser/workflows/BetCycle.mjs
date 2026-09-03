@@ -24,13 +24,13 @@ export class BetCycle {
     async _captureState(page, moment, bId) {
         try {
             const state = await page.evaluate(() => {
-                const stakeEl = document.querySelector('.m-input') || document.querySelector('input[type="number"]');
+                const stakeEl = document.querySelector('.m-fast-betslip-wrap .m-betslips-stake .m-keybord-input') || document.querySelector('.m-input') || document.querySelector('input[type="number"]');
                 const oddsEl = document.querySelector('.m-value') || document.querySelector('.m-outcome-odds');
                 const wrap = document.querySelector('.m-fast-betslip-wrap');
                 const pb = document.querySelector('.m-btn-place');
                 const conf = document.querySelector('.m-btn-confirm') || document.querySelector('.af-button--primary');
                 return {
-                    stakeDOMValue: stakeEl ? stakeEl.value : null,
+                    stakeDOMValue: stakeEl ? (stakeEl.value !== undefined ? stakeEl.value : stakeEl.innerText) : null,
                     oddsDOMValue: oddsEl ? oddsEl.innerText : null,
                     betslipVisibility: wrap ? wrap.getBoundingClientRect().height > 0 : false,
                     placeBetButtonState: pb ? (pb.disabled ? 'disabled' : 'enabled') : 'missing',
@@ -167,10 +167,10 @@ export class BetCycle {
 
             this._logStateTransition('PROCESSING', id);
             logger.info(`[Cycle:${this.cycleId}] Submitting Bet (Atomic)...`);
-            const placeCmdRaw = this.adapter.translateAtomicPlaceBet(liveOdds);
+            const placeCmdRaw = this.adapter.translateAtomicPlaceBet(liveOdds, stakeAmount);
             
             await this._captureState(page, 'D. Immediately before ATOMIC_PLACE_BET', id);
-            forensicLogger.log('ATOMIC_PLACE_BET_START', { cycleId: this.cycleId, accountId: id, expectedOdds: liveOdds });
+            forensicLogger.log('ATOMIC_PLACE_BET_START', { cycleId: this.cycleId, accountId: id, expectedOdds: liveOdds, expectedStake: stakeAmount });
             // Idempotent: false is structurally forced by the Adapter here, requiring the lease.
             try {
                 await this.simulator.execute(browserObj, this._toCommand(placeCmdRaw, false));

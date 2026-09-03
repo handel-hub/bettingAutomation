@@ -61,9 +61,10 @@ export class SubmissionController {
      * Translates the Place Bet intent into an ATOMIC_PLACE_BET command that performs
      * TOCTOU validation natively inside the browser event loop before clicking.
      * @param {number} expectedOdds
+     * @param {number} expectedStake
      * @returns {Object} Command payload
      */
-    translateAtomicPlaceBet(expectedOdds) {
+    translateAtomicPlaceBet(expectedOdds, expectedStake) {
         return {
             type: 'ATOMIC_PLACE_BET',
             payload: {
@@ -74,8 +75,10 @@ export class SubmissionController {
                 placeBetSelector: this.registry.placeBetButton,
                 confirmSelector: this.registry.flexibetConfirmButton,
                 oddsSelector: this.registry.outcomeOdds,
+                stakeSelector: this.registry.stakeInput,
                 
-                expectedOdds: expectedOdds,
+                expectedOdds,
+                expectedStake,
                 idempotent: false
             }
         };
