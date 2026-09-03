@@ -162,8 +162,9 @@ export class ActionSimulator extends EventEmitter {
                     logger.info({ event: 'PLAYWRIGHT_LOCATOR_RESOLUTION_START', shadowEvaluationId: evalId, commandId: command.id, locator: playwrightSelector }, `[ActionSimulator] Starting fast path locator resolution.`);
                     // Fast Path: Try Playwright native strict selector first
                     const loc = page.locator(playwrightSelector);
-                    // Fast fail to ensure it's attached and strict mode passes
-                    await loc.waitFor({ state: 'attached', timeout: 500 });
+                    // Fast fail to ensure it's attached and strict mode passes (can be overridden by payload)
+                    const waitTimeout = command.payload?.locatorTimeout || command.metadata?.locatorTimeout || 500;
+                    await loc.waitFor({ state: 'attached', timeout: waitTimeout });
                     
                     logger.info({ event: 'PLAYWRIGHT_LOCATOR_RESOLUTION_SUCCESS', shadowEvaluationId: evalId, commandId: command.id, locator: playwrightSelector }, `[ActionSimulator] Fast path locator resolution successful.`);
                     result = {
@@ -411,6 +412,36 @@ export class ActionSimulator extends EventEmitter {
         const type = command?.type || 'UNKNOWN';
         const evalId = command?.metadata?.shadowEvaluationId || command?.traceId;
 
+        if (page && !page.__forensicsAttached) {
+            page.__forensicsAttached = true;
+            page.on('console', msg => {
+                const text = msg.text();
+                if (text.startsWith('FORENSIC_LOG:')) {
+                    try {
+                        const { evt, meta, ts } = JSON.parse(text.slice(13));
+                        import('../forensics/ForensicLogger.mjs').then(({ forensicLogger }) => {
+                            forensicLogger.log(evt, { ...meta, browserTimestamp: ts });
+                        }).catch(()=>{});
+                    } catch(e){}
+                }
+            });
+        }
+
+        if (command) {
+            import('../forensics/ForensicLogger.mjs').then(({ forensicLogger }) => {
+                forensicLogger.log('ACTION_SIMULATOR_START', {
+                    commandId: command.id,
+                    commandType: type,
+                    source: command.source,
+                    accountId: id,
+                    browserId: id,
+                    GES: command.ges,
+                    cycleId: command.cycleId,
+                    preparationId: command.metadata?.shadowEvaluationId || null
+                });
+            }).catch(()=>{});
+        }
+
         logger.info({ event: 'ACTION_SIMULATOR_RECEIVED', shadowEvaluationId: evalId, commandId: command?.id, browserId: id, commandType: type }, `[ActionSimulator] Received command ${command?.id} [${type}] for execution.`);
         
         // Transactional Safety Guard (Phase 1)
@@ -494,35 +525,85 @@ export class ActionSimulator extends EventEmitter {
                 await new Promise(r => setTimeout(r, payload.ms || 250));
             } else if (type === 'ATOMIC_PLACE_BET') {
                 usedLocatorInfo = await this._executeWithRecovery(command, page, 'atomic_place', async (loc) => {
-                    await loc.evaluate((el, data) => {
+                    import('../forensics/ForensicLogger.mjs').then(({ forensicLogger }) => {
+                        forensicLogger.log('ATOMIC_PLACE_BET_START', { commandId: command.id });
+                    }).catch(()=>{});
+
+                    await loc.evaluate((wrapEl, data) => {
+                        const forensic = (evt, meta) => console.log('FORENSIC_LOG:' + JSON.stringify({ evt, meta, ts: performance.now() }));
+                        
+                        // 1. VERIFY ODDS NATIVELY
                         const oddsEl = document.querySelector(data.oddsSelector);
                         let currentOdds = null;
                         if (oddsEl) {
                             const text = oddsEl.innerText || oddsEl.textContent || '';
                             currentOdds = parseFloat(text);
                         }
+                        forensic('ATOMIC_ODDS_READ', { expectedOdds: data.expectedOdds, actualOdds: currentOdds });
+                        forensic('ATOMIC_ODDS_COMPARISON', { match: currentOdds === data.expectedOdds });
+                        
+                        const stakeEl = document.querySelector('.m-input') || document.querySelector('input[type="number"]');
+                        const actualStake = stakeEl ? stakeEl.value : null;
+                        forensic('ATOMIC_STAKE_READ', { expectedStake: null, actualStake });
+
                         if (currentOdds !== data.expectedOdds) {
+                            forensic('ATOMIC_RESULT', { result: 'ABORTED_ODDS' });
                             throw new Error(`[ATOMIC-ABORT] Expected odds ${data.expectedOdds} but found ${currentOdds}`);
                         }
                         
-                        // 1. Primary Click
-                        el.click();
+                        // INJECT CMS STATE TRACKER BEFORE CLICK
+                        window.__cmsTracker = { log: [], processingSeen: false };
+                        const cmsObserver = new MutationObserver(mutations => {
+                            mutations.forEach(m => {
+                                if (m.type === 'childList') {
+                                    m.addedNodes.forEach(n => {
+                                        if (n.nodeType === 1) {
+                                            const keys = [...n.querySelectorAll('[data-cms-key]'), n].filter(i => i.hasAttribute && i.hasAttribute('data-cms-key'));
+                                            keys.forEach(k => {
+                                                const key = k.getAttribute('data-cms-key');
+                                                window.__cmsTracker.log.push({ key, time: Date.now() });
+                                                if (key && (key.includes('confirm') || key.includes('process') || key.includes('loading'))) {
+                                                    window.__cmsTracker.processingSeen = true;
+                                                }
+                                            });
+                                        }
+                                    });
+                                } else if (m.type === 'attributes') {
+                                    const key = m.target.getAttribute('data-cms-key');
+                                    if (key) {
+                                        window.__cmsTracker.log.push({ key, time: Date.now(), attrChange: true });
+                                        if (key.includes('confirm') || key.includes('process') || key.includes('loading')) {
+                                            window.__cmsTracker.processingSeen = true;
+                                        }
+                                    }
+                                }
+                            });
+                        });
+                        cmsObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-cms-key'] });
+                        // Let it run for 10 seconds, then disconnect to prevent memory leaks
+                        setTimeout(() => cmsObserver.disconnect(), 10000);
+
+                        // 2. CHECK DOM STATE
+                        const placeBtn = wrapEl.querySelector(data.placeBetSelector) || document.querySelector(data.placeBetSelector);
+                        const confirmBtn = document.querySelector(data.confirmSelector);
                         
-                        // 2. Secondary Modal Auto-Dismiss (e.g. Flexibet Confirm)
-                        if (data.confirmSelector) {
-                            // Check immediately just in case it was already rendered but hidden
-                            const immediateBtn = document.querySelector(data.confirmSelector);
-                            if (immediateBtn && immediateBtn.getBoundingClientRect().height > 0) {
-                                immediateBtn.click();
-                            } else {
-                                // Set up a highly reactive observer scoped specifically to the betslip
-                                // to avoid global document.body performance penalties.
-                                const wrap = el.closest('.m-fast-betslip-wrap') || document.body;
+                        // STATE A: WE ARE ALREADY ON THE CONFIRM SCREEN
+                        if (confirmBtn && confirmBtn.getBoundingClientRect().height > 0) {
+                            forensic('ATOMIC_CLICK', { target: 'Confirm (Already Advanced)' });
+                            confirmBtn.click();
+                        } 
+                        // STATE B: WE ARE ON THE PLACE BET SCREEN
+                        else if (placeBtn && placeBtn.getBoundingClientRect().height > 0) {
+                            forensic('ATOMIC_CLICK', { target: 'Primary' });
+                            placeBtn.click();
+                            
+                            // Setup an ultra-fast observer to click Confirm the millisecond it appears
+                            if (data.confirmSelector) {
+                                const wrap = wrapEl || document.body;
                                 const observer = new MutationObserver((mutations, obs) => {
-                                    // querySelector is C++ optimized, much faster than manually iterating addedNodes
-                                    const confirmBtn = wrap.querySelector(data.confirmSelector);
-                                    if (confirmBtn && confirmBtn.getBoundingClientRect().height > 0) {
-                                        confirmBtn.click();
+                                    const newConfirmBtn = document.querySelector(data.confirmSelector);
+                                    if (newConfirmBtn && newConfirmBtn.getBoundingClientRect().height > 0) {
+                                        newConfirmBtn.click();
                                         obs.disconnect();
                                     }
                                 });
@@ -535,9 +616,12 @@ export class ActionSimulator extends EventEmitter {
                                 });
                                 
                                 // Auto-disconnect after 2.5 seconds to prevent memory leaks 
-                                // (if it's a standard bet, the modal will never appear)
                                 setTimeout(() => observer.disconnect(), 2500);
                             }
+                        } 
+                        // STATE C: FATAL UI DESYNC
+                        else {
+                            throw new Error("[ATOMIC-ABORT] Neither Place Bet nor Confirm buttons are visible.");
                         }
                     }, command.payload);
                 }, browserObj, deadlineBudget, options.executionContext);
@@ -703,11 +787,42 @@ export class ActionSimulator extends EventEmitter {
 
 
 
+            if (command) {
+                import('../forensics/ForensicLogger.mjs').then(({ forensicLogger }) => {
+                    forensicLogger.log('ACTION_SIMULATOR_SUCCESS', {
+                        commandId: command.id,
+                        accountId: id,
+                        duration: Date.now() - startTime
+                    });
+                    forensicLogger.log('ACTION_SIMULATOR_END', {
+                        commandId: command.id,
+                        accountId: id,
+                        result: 'SUCCESS'
+                    });
+                }).catch(()=>{});
+            }
+
             this.emit('ActionSuccess', { id, command });
             return true;
         } catch (err) {
             const lifecycle = 'FAILED';
             
+            if (command) {
+                import('../forensics/ForensicLogger.mjs').then(({ forensicLogger }) => {
+                    forensicLogger.log('ACTION_SIMULATOR_FAILURE', {
+                        commandId: command.id,
+                        accountId: id,
+                        error: err.message,
+                        duration: Date.now() - startTime
+                    });
+                    forensicLogger.log('ACTION_SIMULATOR_END', {
+                        commandId: command.id,
+                        accountId: id,
+                        result: 'FAILURE'
+                    });
+                }).catch(()=>{});
+            }
+
             if (err instanceof UncertainStateError) {
                 logger.warn(`[Interaction Uncertain] Command ${command.id} on slave [${id}]: ${err.message} | Execution duration: ${Date.now() - startTime}ms | Lifecycle: UNCERTAIN`);
                 this.emit('ActionUncertain', { id, command, error: err });

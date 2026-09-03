@@ -67,9 +67,14 @@ export class SubmissionController {
         return {
             type: 'ATOMIC_PLACE_BET',
             payload: {
-                oddsSelector: this.registry.outcomeOdds,
-                selector: this.registry.placeBetButton,
+                // Playwright targets the body (Always exists, never times out, no strict mode violation)
+                selector: 'body', 
+                
+                // Pass the button selectors as data for the native script
+                placeBetSelector: this.registry.placeBetButton,
                 confirmSelector: this.registry.flexibetConfirmButton,
+                oddsSelector: this.registry.outcomeOdds,
+                
                 expectedOdds: expectedOdds,
                 idempotent: false
             }

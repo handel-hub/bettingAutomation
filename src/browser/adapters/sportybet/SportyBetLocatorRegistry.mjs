@@ -12,7 +12,10 @@ export class SportyBetLocatorRegistry {
         this.fastBetslipTrigger = '.m-fast-betslip';
         this.bottomNavBetslipTrigger = '.m-bottom-nav-item:has-text("Betslip")';
         this.themeIconTrigger = '.betslip-theme-icon__inner';
-        this.rebetTrigger = 'button.af-button.rebet';
+        
+        // Success Dialog Actions
+        this.rebetTrigger = 'button[data-op="betslip-success-rebet"]';
+        this.successOkButton = 'button[data-op="betslip-success-ok"]';
 
         // --------------------------------------------------------------------
         // BETSLIP CONTAINERS & COMPONENTS
@@ -23,7 +26,7 @@ export class SportyBetLocatorRegistry {
         // --------------------------------------------------------------------
         // STAKE & KEYBOARD
         // --------------------------------------------------------------------
-        this.stakeInput = '.m-fast-betslip-wrap .m-betslips-stake .m-keybord-input';
+        this.stakeInput = '.m-fast-betslip-wrap .m-betslips-stake .m-keybord-input, .m-betslips-stake .m-keybord-input';
         
         // --------------------------------------------------------------------
         // ACTION BUTTONS
@@ -38,7 +41,7 @@ export class SportyBetLocatorRegistry {
         // NOTIFICATIONS & RESULTS
         // --------------------------------------------------------------------
         this.betslipNotification = '.betslip-notification';
-        this.successIcon = '.m-icon-success';
+        this.successIcon = '.success-wrap, .dialog-container.fast-betslip-success';
         this.failIcon = '.m-icon-fail';
         this.errorMsg = '.fs-m-error';
     }

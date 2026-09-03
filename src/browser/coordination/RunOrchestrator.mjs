@@ -1,6 +1,7 @@
 import { logger } from '../../config.mjs';
 import { globalRecorder } from '../../rkp/RuntimeKnowledgePlatform.mjs';
 import crypto from 'node:crypto';
+import { forensicLogger } from '../forensics/ForensicLogger.mjs';
 
 /**
  * RunOrchestrator - Evolves the older SequenceOrchestrator.
@@ -24,7 +25,9 @@ export class RunOrchestrator {
      * @returns {Object|null} The lease { runId, cycleId } or null if rejected.
      */
     acquireOwnership(accountId, triggerSource) {
+        forensicLogger.log('OWNERSHIP_REQUEST', { ownershipId: accountId, accountId, browserId: accountId, triggerSource, previousState: this.activeRuns.has(accountId) ? 'EXECUTING' : 'PASSIVE' });
         if (this.activeRuns.has(accountId)) {
+            forensicLogger.log('OWNERSHIP_REJECTED', { ownershipId: accountId, accountId, browserId: accountId, reason: 'Already EXECUTING' });
             logger.warn(`[RunOrchestrator] Ownership acquisition rejected for [${accountId}] via ${triggerSource}: Already EXECUTING.`);
             return null;
         }
@@ -42,6 +45,7 @@ export class RunOrchestrator {
 
         this.activeRuns.set(accountId, runLease);
 
+        forensicLogger.log('OWNERSHIP_GRANTED', { ownershipId: accountId, accountId, browserId: accountId, runId, cycleId: null, previousState: 'PASSIVE', newState: 'EXECUTING' });
         logger.info(`[RunOrchestrator] Acquired AUTOMATION ownership for [${accountId}] via ${triggerSource}. Run: ${runId}`);
         
         if (globalRecorder) {
@@ -119,6 +123,7 @@ export class RunOrchestrator {
         }
 
         this.activeRuns.delete(accountId);
+        forensicLogger.log('OWNERSHIP_RELEASED', { ownershipId: accountId, accountId, browserId: accountId, runId: run.runId, cycleId: run.cycleId, previousState: 'EXECUTING', newState: 'PASSIVE', result });
         logger.info(`[RunOrchestrator] Released AUTOMATION ownership for [${accountId}]. Returned to PASSIVE.`);
         
         if (globalRecorder) {

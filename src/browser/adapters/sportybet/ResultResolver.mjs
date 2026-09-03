@@ -19,9 +19,11 @@ export class ResultResolver {
             const outcomeHandler = await page.waitForFunction(
                 (selectors) => {
                     const success = document.querySelector(selectors.success);
-                    // Use getBoundingClientRect to protect against 0x0 hidden parent containers
                     if (success && success.getBoundingClientRect().height > 0) {
-                        return 'SUCCESS';
+                        const computed = window.getComputedStyle(success);
+                        if (computed.opacity !== '0' && computed.display !== 'none') {
+                            return 'SUCCESS';
+                        }
                     }
 
                     const fail = document.querySelector(selectors.fail);
@@ -41,7 +43,7 @@ export class ResultResolver {
                     fail: this.registry.failIcon,
                     error: this.registry.errorMsg
                 },
-                { timeout: timeoutMs, polling: 'mutation' }
+                { timeout: timeoutMs, polling: 'raf' }
             );
 
             const status = await outcomeHandler.jsonValue();
@@ -49,11 +51,30 @@ export class ResultResolver {
 
         } catch (error) {
             // If the timeout is reached, Playwright throws a TimeoutError.
-            // As per the Evidence Hierarchy, missing primary evidence is ALWAYS 'UNCERTAIN',
-            // preventing catastrophic false-failures on network desyncs.
+            // Check the CMS tracker to see if the bet ever actually submitted
+            try {
+                const cmsData = await page.evaluate(() => window.__cmsTracker);
+                if (cmsData) {
+                    if (cmsData.processingSeen) {
+                        return { 
+                            status: 'UNCERTAIN', 
+                            detail: `Wait failed, but processing state WAS detected. Bet is in flight. CMS Log: ${JSON.stringify(cmsData.log)}`
+                        };
+                    } else {
+                        return { 
+                            status: 'FAILED', 
+                            detail: `Wait failed, and processing state was NEVER detected. The click likely swallowed. CMS Log: ${JSON.stringify(cmsData.log)}`
+                        };
+                    }
+                }
+            } catch (e) {
+                // Ignore evaluation errors on crash
+            }
+
+            // Fallback: missing primary evidence is ALWAYS 'UNCERTAIN'
             return { 
                 status: 'UNCERTAIN', 
-                detail: `Primary DOM evidence missing after ${timeoutMs}ms. Vue.js render may have failed or network is hung.`
+                detail: `Wait failed or Primary DOM evidence missing: ${error.message}`
             };
         }
     }

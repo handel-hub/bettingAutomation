@@ -8,6 +8,7 @@ import { DeadlineBudget } from './time/DeadlineBudget.mjs';
 import { QueueDeadlineExceededError } from './errors.mjs';
 import { SequenceGapError, StaleCommandError } from '../../common/errors/ProtocolErrors.mjs';
 import { TelemetryCollector } from './locatorIntelligence/telemetry/TelemetryCollector.mjs';
+import { forensicLogger } from '../forensics/ForensicLogger.mjs';
 
 let _cachedCollector = null;
 async function getCollector() {
@@ -422,6 +423,9 @@ export class ExecutionScheduler {
         try {
             qManager.insert(queueClass, entry);
             this.telemetry.totalEnqueued++;
+            
+            forensicLogger.log('SCHEDULER_ENQUEUE', { commandId: command.id, commandType: command.type, source: command.source, queueDepth: qManager.queues ? Object.values(qManager.queues).reduce((a,b)=>a+b.length,0) : 0, GES: command.ges, accountId: browserId, browserId });
+            
             const eid = command.payload && command.payload.identityDocument ? command.payload.identityDocument : null;
             TelemetryCollector.recordLifecycleEvent({
                 traceId: command.traceId || command.payload?.traceId || 'tr-unknown',
@@ -532,6 +536,8 @@ export class ExecutionScheduler {
                     nextEntry.dequeueTime = Date.now();
                     nextEntry.queueDelay = nextEntry.dequeueTime - nextEntry.enqueueTime;
                     
+                    forensicLogger.log('SCHEDULER_DEQUEUE', { commandId: nextEntry.command.id, commandType: nextEntry.command.type, queueDelay: nextEntry.queueDelay, GES: nextEntry.command.ges, accountId: browserId, browserId });
+
                     this.telemetry.totalDequeued++;
                     this.telemetry.cumulativeQueueWait += nextEntry.queueDelay;
                     if (nextEntry.queueDelay > this.telemetry.maxQueueWait) {

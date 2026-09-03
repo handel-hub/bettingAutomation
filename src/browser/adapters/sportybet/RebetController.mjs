@@ -12,7 +12,23 @@ export class RebetController {
             type: 'CLICK',
             payload: { 
                 selector: this.registry.rebetTrigger, 
-                idempotent: true 
+                idempotent: true,
+                locatorTimeout: 5000 
+            }
+        };
+    }
+
+    /**
+     * Translates the intent to dismiss the success modal into a generic CLICK command.
+     * @returns {Object} Command payload
+     */
+    translateDismissSuccess() {
+        return {
+            type: 'CLICK',
+            payload: { 
+                selector: this.registry.successOkButton, 
+                idempotent: true,
+                locatorTimeout: 5000 
             }
         };
     }
@@ -28,15 +44,19 @@ export class RebetController {
      */
     async revalidateRebet(page) {
         try {
-            // 1. Wait for the betslip overlay to finish animating/loading
+            // 1. Wait for the success modal to be destroyed/hidden after clicking Rebet
+            await page.waitForSelector('.success-wrap, .dialog-container.fast-betslip-success', { state: 'hidden', timeout: 5000 }).catch(() => {});
+            
+            // 2. Ensure the main betslip is visible
             await page.waitForSelector(this.registry.fastBetslipWrap, { state: 'visible', timeout: 5000 });
 
-            // 2. Extract the pre-filled stake
-            const stakeElement = page.locator(this.registry.stakeInput);
-            const stakeText = await stakeElement.innerText();
+            // 3. Extract the pre-filled stake (using inputValue for inputs, innerText for spans)
+            const stakeElement = page.locator(this.registry.stakeInput).first();
+            const tagName = await stakeElement.evaluate(el => el.tagName.toLowerCase()).catch(() => 'span');
+            const stakeText = tagName === 'input' ? await stakeElement.inputValue() : await stakeElement.innerText();
             const stake = parseFloat(stakeText.replace(/[^0-9.]/g, ''));
 
-            // 3. Extract the active odds from the first selection in the list
+            // 4. Extract the active odds from the first selection in the list
             const oddsElement = page.locator(this.registry.outcomeOdds).first();
             const oddsText = await oddsElement.innerText();
             const odds = parseFloat(oddsText.replace(/[^0-9.]/g, ''));

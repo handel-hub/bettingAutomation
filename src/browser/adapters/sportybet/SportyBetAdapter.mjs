@@ -26,6 +26,14 @@ export class SportyBetAdapter {
     }
 
     /**
+     * Translates the intent to dismiss the success modal into a generic CLICK command.
+     * @returns {Object} Command payload
+     */
+    translateDismissSuccess() {
+        return this.rebetController.translateDismissSuccess();
+    }
+
+    /**
      * Explicitly re-extracts the restored stake and odds after a Rebet.
      * @param {import('playwright').Page} page
      * @returns {Promise<{stake: number, odds: number}>}

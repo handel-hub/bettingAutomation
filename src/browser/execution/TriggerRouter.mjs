@@ -1,6 +1,7 @@
 import { logger } from '../../config.mjs';
 import { Command } from './Command.mjs';
 import { SportyBetLocatorRegistry } from '../adapters/sportybet/SportyBetLocatorRegistry.mjs';
+import { forensicLogger } from '../forensics/ForensicLogger.mjs';
 
 /**
  * TriggerRouter - Intercepts commands at the boundary.
@@ -23,6 +24,7 @@ export class TriggerRouter {
      * @returns {Command|null} Returns original command if safe to broadcast, or null to NOOP.
      */
     interceptDomSync(command, browserId) {
+        forensicLogger.log('TRIGGER_RECEIVED', { browserId, eventType: command.type, target: command.target, locator: command.payload?.selector, isTrusted: command.metadata?.isTrusted, commandId: command.id });
         // Fast-path bypass for non-click, non-input interactions
         const type = String(command.type).toLowerCase();
         if (type !== 'click' && type !== 'dblclick' && type !== 'input') {
@@ -35,6 +37,7 @@ export class TriggerRouter {
         // The virtual keyboard uses click events on [data-key="X"], not input events.
         if (selector.includes('data-key') || (type === 'input' && selector.includes(this.locators.stakeInput))) {
             if (this.passiveShadowDaemon && !this.passiveShadowDaemon.userControlled) {
+                forensicLogger.log('DOM_SYNC_SUPPRESSED', { browserId, reason: 'Suppressed automated stake sync', commandId: command.id });
                 // The daemon is in automated control of the stakes.
                 // Drop the generic Master DOM sync broadcast so Slaves execute their own local stakes.
                 logger.info(`[TriggerRouter] Suppressing automated stake DOM sync broadcast from [${browserId}].`);
@@ -55,10 +58,14 @@ export class TriggerRouter {
         // Use the adapter's locator to determine if this is a transactional trigger
         // We check against the registry's exact CSS selector, as well as text-based semantic fallbacks.
         const selectorLower = selector.toLowerCase();
+        const sidText = (command.payload?.sid?.text || '').toLowerCase();
         if (selector.includes(this.locators.placeBetButton) || 
             selectorLower.includes('place-bet') || 
             selectorLower.includes('placebet') || 
-            selectorLower.includes('place bet')) {
+            selectorLower.includes('place bet') ||
+            sidText.startsWith('place ') ||
+            selectorLower.includes('\"place ')) {
+            forensicLogger.log('PLACE_BET_DETECTED', { browserId, commandId: command.id, locator: selector, text: sidText });
             logger.info(`[TriggerRouter] Physical Place Bet click detected from DOM on [${browserId}].`);
 
             const lease = this.runOrchestrator.acquireOwnership(browserId, 'DOM_SYNC');
@@ -70,22 +77,15 @@ export class TriggerRouter {
                     executionMode: 'UNIQUE_ACCOUNTS_ONLY',
                     runId: lease.runId
                 });
+                forensicLogger.log('WORKFLOW_CREATED', { browserId, runId: lease.runId, commandId: workflowCmd.id });
 
-                if (command.ges !== undefined && command.ges !== null) {
-                    const noopCmd = new Command({
-                        category: 'Execution', type: 'NOOP', target: command.target || {}, source: 'TriggerRouter', ges: command.ges, payload: { reason: 'Intercepted PlaceBet trigger' }
-                    });
-                    // Return both: Workflow for Master Orchestrator, NOOP for Slaves to increment their GES safely
-                    return [noopCmd, workflowCmd];
-                }
-                return workflowCmd;
+                // Return both: Workflow for Master Orchestrator, and original click for Slaves to execute
+                // so they remain consistent (e.g. they show the confirm dialog).
+                return [command, workflowCmd];
             }
-            if (command.ges !== undefined && command.ges !== null) {
-                return new Command({
-                    category: 'Execution', type: 'NOOP', target: command.target || {}, source: 'TriggerRouter', ges: command.ges, payload: { reason: 'Suppressed duplicate physical click' }
-                });
-            }
-            return null; // Suppress duplicate physical clicks if already executing
+            
+            // If already executing, still allow the physical click to sync to maintain consistency
+            return command;
         }
 
         return command;

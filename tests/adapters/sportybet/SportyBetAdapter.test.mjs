@@ -26,7 +26,7 @@ describe('SportyBetAdapter', () => {
             
             // Starts with EVENT_BURST on stake input
             expect(commands[0].type).toBe('EVENT_BURST');
-            expect(commands[0].payload.selector).toBe('.m-betslips-stake .m-keybord-input');
+            expect(commands[0].payload.selector).toBe('.m-fast-betslip-wrap .m-betslips-stake .m-keybord-input, .m-betslips-stake .m-keybord-input');
             
             // Delay enforcing reactivity
             expect(commands[1].type).toBe('MACRO_DELAY');

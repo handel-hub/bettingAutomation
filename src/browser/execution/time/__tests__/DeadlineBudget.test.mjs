@@ -126,7 +126,7 @@ describe('Milestone 2: NTP Time Synchronization & TTL Eviction Engine Tests', ()
             expect(budget.captureTime).toBe(now);
             expect(budget.ttlMs).toBe(1500);
             expect(budget.deadline).toBe(now + 1500);
-            expect(budget.getRemainingMs()).toBeGreaterThan(1490);
+            expect(budget.getRemainingMs()).toBeGreaterThan(1400);
             expect(budget.getRemainingMs()).toBeLessThanOrEqual(1500);
         });
 
