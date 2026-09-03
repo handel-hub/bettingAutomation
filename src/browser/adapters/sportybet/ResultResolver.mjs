@@ -14,71 +14,72 @@ export class ResultResolver {
      */
     async observeResult(page, timeoutMs = 30000) {
         try {
-            // We use page.waitForFunction to rapidly poll the __cmsTracker
+            // 1. Wait for the transient 'submitting' state to finish OR a definitive key to appear
             const outcomeHandler = await page.waitForFunction(
-                (selectors) => {
+                () => {
                     const tracker = window.__cmsTracker;
                     if (!tracker) return false;
 
-                    // 1. Detect if the transient state has resolved
-                    let submittingFinished = false;
                     for (const entry of tracker.log) {
                         const key = entry.key ? entry.key.toLowerCase() : '';
+                        
+                        // If submitting is explicitly removed, transient state is over
                         if (key === 'submitting' && (entry.event === 'removed' || entry.event === 'attr_removed')) {
-                            submittingFinished = true;
+                            return 'SUBMITTING_FINISHED';
                         }
-                    }
-
-                    // 2. Check explicitly for termination states in the log
-                    let hasSuccessKey = false;
-                    let hasFailKey = false;
-                    for (const entry of tracker.log) {
-                        const key = entry.key ? entry.key.toLowerCase() : '';
+                        
+                        // If we see definitive keys early, we can shortcut
                         if (key.includes('rebet') || key.includes('ok') || key === 'betslip_success_ok' || key === 'betslip_success_rebet') {
-                            hasSuccessKey = true;
+                            return 'SUCCESS_KEY_SEEN';
                         }
                         if (key.includes('fail') || key.includes('error')) {
-                            hasFailKey = true;
-                        }
-                    }
-
-                    // If submitting is done, or we saw a definitive key, resolve it
-                    if (submittingFinished || hasSuccessKey || hasFailKey) {
-                        if (hasSuccessKey) return 'SUCCESS';
-                        if (hasFailKey) return 'FAILED';
-
-                        // 3. Fallback CSS checks if CMS keys for success/fail weren't found
-                        const success = document.querySelector(selectors.success);
-                        if (success && success.getBoundingClientRect().height > 0) {
-                            return 'SUCCESS';
-                        }
-                        const fail = document.querySelector(selectors.fail);
-                        if (fail && fail.getBoundingClientRect().height > 0) {
-                            return 'FAILED';
-                        }
-                        const errorMsg = document.querySelector(selectors.error);
-                        if (errorMsg && errorMsg.getBoundingClientRect().height > 0) {
-                            return 'FAILED';
+                            return 'FAIL_KEY_SEEN';
                         }
                     }
 
                     return false; // Keep waiting
                 },
-                {
-                    success: this.registry.successIcon,
-                    fail: this.registry.failIcon,
-                    error: this.registry.errorMsg
-                },
+                null,
                 { timeout: timeoutMs, polling: 'raf' }
             );
 
-            const status = await outcomeHandler.jsonValue();
-            
-            // Allow a tiny deterministic buffer after the CMS state resolves to ensure Vue has physically 
-            // mounted the target buttons before returning control to the orchestrator.
+            const initialStatus = await outcomeHandler.jsonValue();
+
+            // 2. Wait exactly 1 frame (16ms) for Vue.js to mount the new DOM elements
+            await page.waitForTimeout(16);
+
+            // 3. Evaluate the definitive outcome
+            const finalStatus = await page.evaluate((selectors) => {
+                const tracker = window.__cmsTracker;
+                if (tracker) {
+                    for (const entry of tracker.log) {
+                        const key = entry.key ? entry.key.toLowerCase() : '';
+                        if (key.includes('rebet') || key.includes('ok') || key === 'betslip_success_ok' || key === 'betslip_success_rebet') return 'SUCCESS';
+                        if (key.includes('fail') || key.includes('error')) return 'FAILED';
+                    }
+                }
+
+                // Fallback CSS checks
+                const success = document.querySelector(selectors.success);
+                if (success && success.getBoundingClientRect().height > 0) return 'SUCCESS';
+                
+                const fail = document.querySelector(selectors.fail);
+                if (fail && fail.getBoundingClientRect().height > 0) return 'FAILED';
+                
+                const errorMsg = document.querySelector(selectors.error);
+                if (errorMsg && errorMsg.getBoundingClientRect().height > 0) return 'FAILED';
+
+                return 'UNCERTAIN';
+            }, {
+                success: this.registry.successIcon,
+                fail: this.registry.failIcon,
+                error: this.registry.errorMsg
+            });
+
+            // Add the 150ms deterministic buffer to ensure the buttons are fully interactable for the next macro
             await page.waitForTimeout(150);
 
-            return { status: status };
+            return { status: finalStatus };
 
         } catch (error) {
             try {
