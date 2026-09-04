@@ -1,0 +1,6 @@
+{"eventName":"GES_VALIDATE","timestamp":1788350448291,"monotonicTime":1769.2005,"forensicRunId":"FR-20260902120048-574","accountId":"slave-1","browserId":"slave-1","previousGES":null,"newGES":null,"result":"ALIGNED","reason":"No GES provided"}
+{"eventName":"GES_VALIDATE","timestamp":1788350448291,"monotonicTime":1842.1816,"forensicRunId":"FR-20260902120048-574","accountId":"slave-1","browserId":"slave-1","previousGES":null,"newGES":null,"result":"ALIGNED","reason":"No GES provided"}
+{"eventName":"GES_VALIDATE","timestamp":1788350448291,"monotonicTime":1844.4796,"forensicRunId":"FR-20260902120048-574","accountId":"slave-1","browserId":"slave-1","previousGES":5,"newGES":6,"result":"ALIGNED"}
+{"eventName":"GES_VALIDATE","timestamp":1788350448291,"monotonicTime":1845.9214,"forensicRunId":"FR-20260902120048-574","accountId":"slave-1","browserId":"slave-1","previousGES":5,"newGES":7,"result":"WAITING"}
+{"eventName":"GES_VALIDATE","timestamp":1788350448291,"monotonicTime":1846.9157,"forensicRunId":"FR-20260902120048-574","accountId":"slave-1","browserId":"slave-1","previousGES":5,"newGES":5,"result":"STALE"}
+{"eventName":"GES_VALIDATE","timestamp":1788350448291,"monotonicTime":1847.8291,"forensicRunId":"FR-20260902120048-574","accountId":"slave-1","browserId":"slave-1","previousGES":5,"newGES":4,"result":"STALE"}

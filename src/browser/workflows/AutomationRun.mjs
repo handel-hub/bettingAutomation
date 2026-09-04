@@ -99,10 +99,26 @@ export class AutomationRun {
                             ttlMs: rebetCmdRaw.payload?.locatorTimeout ? rebetCmdRaw.payload.locatorTimeout + 1000 : undefined
                         });
                         
-                        await this.simulator.execute(browserObj, rebetCmd);
-                        
-                        // Signal the next cycle to robustly verify the DOM instead of waiting blindly
-                        this.isNextCycleRebet = true;
+                        try {
+                            await this.simulator.execute(browserObj, rebetCmd);
+                            // Signal the next cycle to robustly verify the DOM instead of waiting blindly
+                            this.isNextCycleRebet = true;
+                        } catch (err) {
+                            logger.warn(`[AutomationRun:${this.runId}] Failed to click Rebet (err: ${err.message}). Falling back to OK and terminating cycle loop.`);
+                            const okCmdRaw = this.adapter.translateDismissSuccess();
+                            const okCmd = new Command({
+                                category: 'Execution',
+                                type: okCmdRaw.type,
+                                payload: okCmdRaw.payload,
+                                source: 'AutomationRun',
+                                runId: this.runId,
+                                idempotent: true,
+                                ttlMs: okCmdRaw.payload?.locatorTimeout ? okCmdRaw.payload.locatorTimeout + 1000 : undefined
+                            });
+                            try { await this.simulator.execute(browserObj, okCmd); } catch(e){}
+                            this.state = 'COMPLETED';
+                            active = false;
+                        }
                     } else {
                         // Phase 2/4: Terminate on success, as physical placement intent is satisfied.
                         logger.info(`[AutomationRun:${this.runId}] Cycle SUCCESS. Target achieved (${this.successCount}/${targetTotalBets} total bets). Closing overlay and terminating.`);
