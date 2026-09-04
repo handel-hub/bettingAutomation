@@ -14,8 +14,8 @@ export class SportyBetLocatorRegistry {
         this.themeIconTrigger = '.betslip-theme-icon__inner';
         
         // Success Dialog Actions
-        this.rebetTrigger = 'button[data-op="betslip-success-rebet"], [data-cms-key="rebet"], .m-btn-rebet, button:has-text("Rebet"), button:has-text("REBET")';
-        this.successOkButton = 'button[data-op="betslip-success-ok"], [data-cms-key="ok"], .m-btn-confirm';
+        this.rebetTrigger = 'button[data-op="betslip-success-rebet"], button.m-btn-rebet';
+        this.successOkButton = 'button[data-op="betslip-success-ok"], button[data-cms-key="ok"], button.m-btn-confirm';
 
         // --------------------------------------------------------------------
         // BETSLIP CONTAINERS & COMPONENTS
