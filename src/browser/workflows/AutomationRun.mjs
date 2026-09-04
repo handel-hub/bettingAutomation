@@ -71,6 +71,24 @@ export class AutomationRun {
                     
                     if (this.consecutiveFailures <= maxFailures) {
                         logger.info(`[AutomationRun:${this.runId}] Cycle FAILED. Retry attempt ${this.consecutiveFailures} of ${maxFailures}. Spawning new cycle...`);
+                        
+                        // Clear any blocking Error Modal before spawning the next cycle
+                        try {
+                            const errDismissRaw = this.adapter.translateDismissSuccess(); // generic OK button
+                            const errDismissCmd = new Command({
+                                category: 'Execution',
+                                type: errDismissRaw.type,
+                                payload: { ...errDismissRaw.payload, locatorTimeout: 1000 },
+                                source: 'AutomationRun',
+                                runId: this.runId,
+                                idempotent: true,
+                                ttlMs: 1500
+                            });
+                            await this.simulator.execute(browserObj, errDismissCmd);
+                        } catch(e) {
+                            // Ignored: there might not be an error modal
+                        }
+
                         // Small delay before spawning next cycle to let DOM settle if it was an odds interrupt
                         await new Promise(resolve => setTimeout(resolve, 500));
                     } else {
@@ -89,6 +107,12 @@ export class AutomationRun {
                     if (this.successCount < targetTotalBets) {
                         logger.info(`[AutomationRun:${this.runId}] Cycle SUCCESS. Target not yet reached (${this.successCount}/${targetTotalBets} total bets). Initiating autonomous rebet.`);
                         
+                        const cooldownMs = this.policySnapshot.Rebet?.Strategy?.RebetCooldownMs ?? 0;
+                        if (cooldownMs > 0) {
+                            logger.info(`[AutomationRun:${this.runId}] Applying Rebet cooldown pacing: ${cooldownMs}ms to prevent anti-spam rejection...`);
+                            await new Promise(resolve => setTimeout(resolve, cooldownMs));
+                        }
+
                         const rebetCmdRaw = this.adapter.translateRebet();
                         const rebetCmd = new Command({
                             category: 'Execution',

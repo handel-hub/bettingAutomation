@@ -809,7 +809,7 @@ export class ExecutionScheduler {
                             const snapshot = this.registry.getState(browserId);
                             const plan = await this.syncManager.recoveryCoordinator.recover(snapshot, 'PHYSICAL_EXECUTION_FAILURE');
                             if (this.syncManager.recoveryActionExecutor) {
-                                await this.syncManager.recoveryActionExecutor.execute(plan);
+                                await this.syncManager.recoveryActionExecutor.execute(plan, { browserId });
                             }
                         } catch (recoveryErr) {
                             logger.error(`[Scheduler] Recovery cascade failed for ${browserId}: ${recoveryErr.message}`);
