@@ -27,6 +27,7 @@ export class SportyBetLocatorRegistry {
         // STAKE & KEYBOARD
         // --------------------------------------------------------------------
         this.stakeInput = '.m-fast-betslip-wrap .m-betslips-stake .m-keybord-input, .m-betslips-stake .m-keybord-input';
+        this.confirmStakeText = '[data-op="betslip-confirm-wrap"] .stake-num';
         
         // --------------------------------------------------------------------
         // ACTION BUTTONS

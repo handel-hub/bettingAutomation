@@ -85,10 +85,6 @@ export class BetCycle {
                 return { status: 'FAILED', detail: 'Session EXPIRED' };
             }
 
-            forensicLogger.log('BALANCE_READ_START', { cycleId: this.cycleId, accountId: id });
-            const balance = await this.adapter.getBalance(page);
-            forensicLogger.log('BALANCE_READ_END', { cycleId: this.cycleId, accountId: id, balance });
-
             let liveOdds = null;
 
             if (this.isRebetContinuation) {
@@ -112,6 +108,10 @@ export class BetCycle {
                 forensicLogger.log('ODDS_READ_END', { cycleId: this.cycleId, accountId: id, liveOdds });
             }
 
+            forensicLogger.log('BALANCE_READ_START', { cycleId: this.cycleId, accountId: id });
+            const balance = await this.adapter.getBalance(page);
+            forensicLogger.log('BALANCE_READ_END', { cycleId: this.cycleId, accountId: id, balance });
+
             this._logStateTransition('STAKE_PREPARATION', id);
             
             forensicLogger.log('POLICY_READ_START', { cycleId: this.cycleId, accountId: id });
@@ -129,15 +129,28 @@ export class BetCycle {
 
             const stakeAmount = decision.stake;
             logger.info(`[Cycle:${this.cycleId}] Inputting Authorized Stake: ${stakeAmount}...`);
-            const stakeCmds = this.adapter.translateStake(stakeAmount);
             
-            await this._captureState(page, 'B. Immediately before stake typing', id);
-            forensicLogger.log('STAKE_TYPING_START', { cycleId: this.cycleId, accountId: id, expectedStake: stakeAmount });
-            for (const cmdRaw of stakeCmds) {
-                await this.simulator.execute(browserObj, this._toCommand(cmdRaw, true));
+            const currentDOMStake = await this.adapter.readCurrentStake(page);
+            const isOnConfirmScreen = await page.evaluate(() => {
+                const conf = document.querySelector('.m-btn-confirm') || document.querySelector('.af-button--primary');
+                return conf && conf.getBoundingClientRect().height > 0;
+            }).catch(() => false);
+
+            if (isOnConfirmScreen) {
+                logger.info(`[Cycle:${this.cycleId}] Already on Confirm screen. Skipping stake typing to prevent UI corruption.`);
+            } else if (currentDOMStake === stakeAmount) {
+                logger.info(`[Cycle:${this.cycleId}] Stake already matches ${stakeAmount}. Skipping typing.`);
+            } else {
+                const stakeCmds = this.adapter.translateStake(stakeAmount);
+                
+                await this._captureState(page, 'B. Immediately before stake typing', id);
+                forensicLogger.log('STAKE_TYPING_START', { cycleId: this.cycleId, accountId: id, expectedStake: stakeAmount });
+                for (const cmdRaw of stakeCmds) {
+                    await this.simulator.execute(browserObj, this._toCommand(cmdRaw, true));
+                }
+                forensicLogger.log('STAKE_TYPING_END', { cycleId: this.cycleId, accountId: id });
+                await this._captureState(page, 'C. Immediately after stake typing', id);
             }
-            forensicLogger.log('STAKE_TYPING_END', { cycleId: this.cycleId, accountId: id });
-            await this._captureState(page, 'C. Immediately after stake typing', id);
 
             this._logStateTransition('READY_TO_SUBMIT', id);
             

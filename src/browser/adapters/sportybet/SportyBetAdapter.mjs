@@ -61,6 +61,26 @@ export class SportyBetAdapter {
     }
 
     /**
+     * Performs a strict read of the current stake in the DOM.
+     * @param {import('playwright').Page} page
+     * @returns {Promise<number|null>} The parsed stake, or null if unreadable
+     */
+    async readCurrentStake(page) {
+        try {
+            const stakeText = await page.evaluate((selector) => {
+                const el = document.querySelector(selector) || document.querySelector('.m-input') || document.querySelector('input[type="number"]');
+                return el ? (el.value !== undefined ? el.value : (el.innerText || el.textContent || '')) : null;
+            }, this.locators.stakeInput);
+            
+            if (stakeText) {
+                const parsed = parseFloat(stakeText.replace(/[^\d.]/g, ''));
+                if (!isNaN(parsed)) return parsed;
+            }
+        } catch (err) {}
+        return null;
+    }
+
+    /**
      * Observes the DOM for definitive Primary Evidence of the bet result.
      * @param {import('playwright').Page} page
      * @param {number} timeoutMs

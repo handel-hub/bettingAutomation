@@ -532,7 +532,10 @@ export class ActionSimulator extends EventEmitter {
                     await loc.evaluate((wrapEl, data) => {
                         const forensic = (evt, meta) => console.log('FORENSIC_LOG:' + JSON.stringify({ evt, meta, ts: performance.now() }));
                         
-                        // 1. VERIFY ODDS NATIVELY
+                        // 1. VERIFY ODDS & STAKE NATIVELY
+                        const confirmBtn = document.querySelector(data.confirmSelector);
+                        const isConfirmScreen = confirmBtn && confirmBtn.getBoundingClientRect().height > 0;
+
                         const oddsEl = document.querySelector(data.oddsSelector);
                         let currentOdds = null;
                         if (oddsEl) {
@@ -542,14 +545,23 @@ export class ActionSimulator extends EventEmitter {
                         forensic('ATOMIC_ODDS_READ', { expectedOdds: data.expectedOdds, actualOdds: currentOdds });
                         forensic('ATOMIC_ODDS_COMPARISON', { match: currentOdds === data.expectedOdds });
                         
-                        const stakeEl = document.querySelector(data.stakeSelector) || document.querySelector('.m-input') || document.querySelector('input[type="number"]');
                         let actualStake = null;
-                        if (stakeEl) {
-                            const rawVal = stakeEl.value !== undefined ? stakeEl.value : (stakeEl.innerText || stakeEl.textContent || '');
-                            const cleaned = rawVal.replace(/[^\d.]/g, '');
-                            actualStake = parseFloat(cleaned);
+                        let rawVal = null;
+                        if (isConfirmScreen && data.confirmStakeSelector) {
+                            const confStakeEl = document.querySelector(data.confirmStakeSelector);
+                            if (confStakeEl) {
+                                rawVal = confStakeEl.innerText || confStakeEl.textContent || '';
+                                actualStake = parseFloat(rawVal.replace(/[^\d.]/g, ''));
+                            }
+                        } else {
+                            const stakeEl = document.querySelector(data.stakeSelector) || document.querySelector('.m-input') || document.querySelector('input[type="number"]');
+                            if (stakeEl) {
+                                rawVal = stakeEl.value !== undefined ? stakeEl.value : (stakeEl.innerText || stakeEl.textContent || '');
+                                actualStake = parseFloat(rawVal.replace(/[^\d.]/g, ''));
+                            }
                         }
-                        forensic('ATOMIC_STAKE_READ', { expectedStake: data.expectedStake, actualStake, rawVal: stakeEl ? (stakeEl.value !== undefined ? stakeEl.value : stakeEl.innerText) : null });
+                        
+                        forensic('ATOMIC_STAKE_READ', { expectedStake: data.expectedStake, actualStake, rawVal });
 
                         if (currentOdds !== data.expectedOdds) {
                             forensic('ATOMIC_RESULT', { result: 'ABORTED_ODDS' });

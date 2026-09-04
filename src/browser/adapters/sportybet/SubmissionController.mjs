@@ -76,6 +76,7 @@ export class SubmissionController {
                 confirmSelector: this.registry.flexibetConfirmButton,
                 oddsSelector: this.registry.outcomeOdds,
                 stakeSelector: this.registry.stakeInput,
+                confirmStakeSelector: this.registry.confirmStakeText,
                 
                 expectedOdds,
                 expectedStake,

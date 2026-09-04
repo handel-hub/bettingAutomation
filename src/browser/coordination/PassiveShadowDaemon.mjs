@@ -124,113 +124,126 @@ export class PassiveShadowDaemon {
                 logger.info({ event: 'SHADOW_TARGET_BROWSERS_RESOLVED', count: browsers.length, browserIds: browsers.map(b => b.id) }, `[PassiveShadowDaemon] Resolved target browsers.`);
                 logger.info({ event: 'SHADOW_ODDS_RESOLVED', source: 'master', odds, shadowEvaluationId: evalId, observationId: obsId }, `[PassiveShadowDaemon] Odds resolved for evaluation.`);
 
-                await Promise.all(browsers.map(async (browserObj) => {
+                if (!this.isTyping) this.isTyping = new Set();
+                
+                browsers.forEach((browserObj) => {
                     const bId = browserObj.id;
-                    const prepId = evalId;
-                    forensicLogger.log('PREPARATION_START', { preparationId: prepId, accountId: bId, browserId: bId });
-                    logger.info({ event: 'SHADOW_ACCOUNT_EVALUATION_START', browserId: bId, shadowEvaluationId: evalId }, `[PassiveShadowDaemon] Starting evaluation for browser [${bId}]`);
-                    
-                    if (this.userControlled) return;
-                    
-                    forensicLogger.log('PASSIVE_EXECUTION_CHECK', { accountId: bId, browserId: bId, preparationId: prepId, isExecuting: this.runOrchestrator.isExecuting(bId) });
-                    if (this.runOrchestrator.isExecuting(bId)) {
-                        forensicLogger.log('PASSIVE_EXECUTION_ABORT', { reason: 'RunOrchestrator lock active', ownershipId: bId, cycleId: null });
-                        logger.info({ event: 'SHADOW_EVALUATION_SKIPPED', browserId: bId, shadowEvaluationId: evalId, reason: 'RunOrchestrator lock active' }, `[PassiveShadowDaemon] Suspending evaluation for [${bId}]: RunOrchestrator is EXECUTING.`);
-                        return;
+                    if (this.isTyping.has(bId)) {
+                         return; // Prevents overlapping typing tasks on the same browser
                     }
+                    this.isTyping.add(bId);
 
-                    forensicLogger.log('ODDS_OBSERVED', { preparationId: prepId, accountId: bId, odds });
-                    logger.info({ event: 'SHADOW_POLICY_RESOLUTION_START', browserId: bId, shadowEvaluationId: evalId }, `[PassiveShadowDaemon] Resolving policy.`);
-                    const policy = this.policyManager.getPolicy(bId);
-                    if (!policy || !browserObj.page) {
-                        logger.info({ event: 'SHADOW_POLICY_RESOLUTION_FAILURE', browserId: bId, shadowEvaluationId: evalId, reason: 'Missing policy or page object.' }, `[PassiveShadowDaemon] Missing policy or page object.`);
-                        return;
-                    }
-                    logger.info({ event: 'SHADOW_POLICY_RESOLUTION_SUCCESS', browserId: bId, shadowEvaluationId: evalId, policyMode: policy.Pricing?.Strategy?.Mode }, `[PassiveShadowDaemon] Policy resolution successful.`);
-
-                    let balance;
-                    logger.info({ event: 'SHADOW_BALANCE_RESOLUTION_START', browserId: bId, shadowEvaluationId: evalId }, `[PassiveShadowDaemon] Resolving balance.`);
-                    try {
-                        balance = await this.adapter.getBalance(browserObj.page);
-                        forensicLogger.log('BALANCE_OBSERVED', { preparationId: prepId, accountId: bId, balance });
-                        logger.info({ event: 'SHADOW_BALANCE_RESOLUTION_SUCCESS', browserId: bId, shadowEvaluationId: evalId, balance }, `[PassiveShadowDaemon] Balance resolution successful.`);
-                    } catch (err) {
-                        logger.info({ event: 'SHADOW_BALANCE_RESOLUTION_FAILURE', browserId: bId, shadowEvaluationId: evalId, error: err.message }, `[PassiveShadowDaemon] Failed to read live balance for [${bId}]: ${err.message}`);
-                        return;
-                    }
-
-                    logger.info({ event: 'SHADOW_CALCULATION_START', browserId: bId, shadowEvaluationId: evalId }, `[PassiveShadowDaemon] Evaluating ConstraintEngine.`);
-                    const decision = ConstraintEngine.evaluate(policy, balance, odds);
-                    forensicLogger.log('STAKE_CALCULATED', { preparationId: prepId, accountId: bId, calculatedStake: decision.stake });
-                    logger.info({ event: 'SHADOW_CALCULATION_SUCCESS', browserId: bId, shadowEvaluationId: evalId, inputs: { balance, odds }, output: { status: decision.status, stake: decision.stake }, trace: decision.trace }, `[PassiveShadowDaemon] ConstraintEngine evaluation complete.`);
-
-                    const lastDispatched = this.dispatchedStakes.get(bId) || null;
-
-                    if (bId === 'master' && decision.stake === stake) {
-                        if (decision.stake !== lastDispatched) {
-                            this.dispatchedStakes.set(bId, decision.stake);
-                        }
-                        logger.info({ event: 'STAKE_UNCHANGED', browserId: bId, shadowEvaluationId: evalId, calculatedStake: decision.stake, observedStake: stake, reason: 'Master DOM already reflects intended stake.' }, `[PassiveShadowDaemon] Stake unchanged on Master.`);
-                        return;
-                    }
-
-                    if (decision.status === 'AUTHORIZED') {
-                        if (decision.stake === lastDispatched) {
-                            logger.info({ event: 'STAKE_UPDATE_SKIPPED', browserId: bId, shadowEvaluationId: evalId, calculatedStake: decision.stake, previousStake: lastDispatched, reason: 'Stake matches last dispatched value.' }, `[PassiveShadowDaemon] Stake update skipped.`);
-                            return;
-                        }
-                        
-                        logger.info({ event: 'STAKE_CHANGE_REQUIRED', browserId: bId, shadowEvaluationId: evalId, previousStake: lastDispatched, calculatedStake: decision.stake, observedStake: stake }, `[PassiveShadowDaemon] Calculated new target stake for [${bId}]: ${decision.stake} (Odds: ${odds}). Dispatching.`);
-                        
-                        logger.info({ event: 'SHADOW_STAKE_COMMAND_CREATION_START', browserId: bId, shadowEvaluationId: evalId }, `[PassiveShadowDaemon] Generating raw keystroke commands.`);
-                        const rawCommands = this.adapter.translateStake(decision.stake);
-                        logger.info({ event: 'SHADOW_STAKE_COMMAND_CREATED', browserId: bId, shadowEvaluationId: evalId, count: rawCommands.length }, `[PassiveShadowDaemon] Generated execution commands.`);
-                        forensicLogger.log('STAKE_TYPING_START', { preparationId: prepId, accountId: bId, expectedStake: decision.stake, commandCount: rawCommands.length });
-                        
+                    (async () => {
                         try {
-                            let keyIndex = 0;
-                            for (const rawCmd of rawCommands) {
-                                forensicLogger.log('PASSIVE_EXECUTION_CHECK', { accountId: bId, browserId: bId, preparationId: prepId, isExecuting: this.runOrchestrator.isExecuting(bId) });
-                                if (this.runOrchestrator.isExecuting(bId)) {
-                                    forensicLogger.log('PASSIVE_EXECUTION_ABORT', { reason: 'RunOrchestrator lock acquired mid-flight', ownershipId: bId, expectedStakeValue: decision.stake, currentCommandIndex: keyIndex, remainingCommands: rawCommands.length - keyIndex });
-                                    logger.info({ event: 'SHADOW_ACTION_EXECUTION_REJECTED', browserId: bId, shadowEvaluationId: evalId, reason: 'RunOrchestrator lock acquired mid-flight' }, `[PassiveShadowDaemon] Aborting typing sequence mid-flight for [${bId}].`);
-                                    return;
-                                }
-                                if (this.userControlled) {
-                                    forensicLogger.log('PASSIVE_EXECUTION_ABORT', { reason: 'Hardware override detected mid-flight', ownershipId: bId, expectedStakeValue: decision.stake, currentCommandIndex: keyIndex, remainingCommands: rawCommands.length - keyIndex });
-                                    logger.info({ event: 'SHADOW_ACTION_EXECUTION_REJECTED', browserId: bId, shadowEvaluationId: evalId, reason: 'Hardware override detected mid-flight' }, `[PassiveShadowDaemon] Aborting typing sequence mid-flight.`);
-                                    return;
-                                }
-                                
-                                const command = new Command({
-                                    category: 'Execution',
-                                    type: rawCmd.type,
-                                    payload: rawCmd.payload,
-                                    source: 'PASSIVE_SHADOW',
-                                    idempotent: true,
-                                    metadata: { shadowEvaluationId: evalId, observationId: obsId }
-                                });
-                                
-                                forensicLogger.log('STAKE_KEY_START', { preparationId: prepId, accountId: bId, keyIndex, key: rawCmd.payload?.key || rawCmd.type, expectedStake: decision.stake, commandId: command.id });
-                                logger.info({ event: 'STAKE_COMMAND_DISPATCHED', browserId: bId, commandId: command.id, shadowEvaluationId: evalId, commandType: command.type }, `[PassiveShadowDaemon] Dispatching command to ActionSimulator.`);
-                                await this.simulator.execute(browserObj, command);
-                                forensicLogger.log('STAKE_KEY_COMPLETE', { preparationId: prepId, accountId: bId, keyIndex, key: rawCmd.payload?.key || rawCmd.type, commandId: command.id });
-                                keyIndex++;
+                            const prepId = evalId;
+                            forensicLogger.log('PREPARATION_START', { preparationId: prepId, accountId: bId, browserId: bId });
+                            logger.info({ event: 'SHADOW_ACCOUNT_EVALUATION_START', browserId: bId, shadowEvaluationId: evalId }, `[PassiveShadowDaemon] Starting evaluation for browser [${bId}]`);
+                            
+                            if (this.userControlled) return;
+                            
+                            forensicLogger.log('PASSIVE_EXECUTION_CHECK', { accountId: bId, browserId: bId, preparationId: prepId, isExecuting: this.runOrchestrator.isExecuting(bId) });
+                            if (this.runOrchestrator.isExecuting(bId)) {
+                                forensicLogger.log('PASSIVE_EXECUTION_ABORT', { reason: 'RunOrchestrator lock active', ownershipId: bId, cycleId: null });
+                                logger.info({ event: 'SHADOW_EVALUATION_SKIPPED', browserId: bId, shadowEvaluationId: evalId, reason: 'RunOrchestrator lock active' }, `[PassiveShadowDaemon] Suspending evaluation for [${bId}]: RunOrchestrator is EXECUTING.`);
+                                return;
                             }
-                            forensicLogger.log('STAKE_TYPING_COMPLETE', { preparationId: prepId, accountId: bId });
-                            forensicLogger.log('PREPARATION_COMPLETE', { preparationId: prepId, accountId: bId });
-                            logger.info({ event: 'STAKE_UPDATE_DISPATCHED', browserId: bId, shadowEvaluationId: evalId, expectedStake: decision.stake }, `[PassiveShadowDaemon] All stake keystroke commands dispatched successfully.`);
-                        } catch (cmdErr) {
-                            logger.info({ event: 'SHADOW_ACTION_EXECUTION_FAILURE', browserId: bId, shadowEvaluationId: evalId, error: cmdErr.message }, `[PassiveShadowDaemon] Failed to dispatch target stake for [${bId}]: ${cmdErr.message}`);
-                            this.dispatchedStakes.delete(bId);
-                            return;
+
+                            forensicLogger.log('ODDS_OBSERVED', { preparationId: prepId, accountId: bId, odds });
+                            logger.info({ event: 'SHADOW_POLICY_RESOLUTION_START', browserId: bId, shadowEvaluationId: evalId }, `[PassiveShadowDaemon] Resolving policy.`);
+                            const policy = this.policyManager.getPolicy(bId);
+                            if (!policy || !browserObj.page) {
+                                logger.info({ event: 'SHADOW_POLICY_RESOLUTION_FAILURE', browserId: bId, shadowEvaluationId: evalId, reason: 'Missing policy or page object.' }, `[PassiveShadowDaemon] Missing policy or page object.`);
+                                return;
+                            }
+                            logger.info({ event: 'SHADOW_POLICY_RESOLUTION_SUCCESS', browserId: bId, shadowEvaluationId: evalId, policyMode: policy.Pricing?.Strategy?.Mode }, `[PassiveShadowDaemon] Policy resolution successful.`);
+
+                            let balance;
+                            logger.info({ event: 'SHADOW_BALANCE_RESOLUTION_START', browserId: bId, shadowEvaluationId: evalId }, `[PassiveShadowDaemon] Resolving balance.`);
+                            try {
+                                balance = await this.adapter.getBalance(browserObj.page);
+                                forensicLogger.log('BALANCE_OBSERVED', { preparationId: prepId, accountId: bId, balance });
+                                logger.info({ event: 'SHADOW_BALANCE_RESOLUTION_SUCCESS', browserId: bId, shadowEvaluationId: evalId, balance }, `[PassiveShadowDaemon] Balance resolution successful.`);
+                            } catch (err) {
+                                logger.info({ event: 'SHADOW_BALANCE_RESOLUTION_FAILURE', browserId: bId, shadowEvaluationId: evalId, error: err.message }, `[PassiveShadowDaemon] Failed to read live balance for [${bId}]: ${err.message}`);
+                                return;
+                            }
+
+                            logger.info({ event: 'SHADOW_CALCULATION_START', browserId: bId, shadowEvaluationId: evalId }, `[PassiveShadowDaemon] Evaluating ConstraintEngine.`);
+                            const decision = ConstraintEngine.evaluate(policy, balance, odds);
+                            forensicLogger.log('STAKE_CALCULATED', { preparationId: prepId, accountId: bId, calculatedStake: decision.stake });
+                            logger.info({ event: 'SHADOW_CALCULATION_SUCCESS', browserId: bId, shadowEvaluationId: evalId, inputs: { balance, odds }, output: { status: decision.status, stake: decision.stake }, trace: decision.trace }, `[PassiveShadowDaemon] ConstraintEngine evaluation complete.`);
+
+                            const lastDispatched = this.dispatchedStakes.get(bId) || null;
+
+                            if (bId === 'master' && decision.stake === stake) {
+                                if (decision.stake !== lastDispatched) {
+                                    this.dispatchedStakes.set(bId, decision.stake);
+                                }
+                                logger.info({ event: 'STAKE_UNCHANGED', browserId: bId, shadowEvaluationId: evalId, calculatedStake: decision.stake, observedStake: stake, reason: 'Master DOM already reflects intended stake.' }, `[PassiveShadowDaemon] Stake unchanged on Master.`);
+                                return;
+                            }
+
+                            if (decision.status === 'AUTHORIZED') {
+                                if (decision.stake === lastDispatched) {
+                                    logger.info({ event: 'STAKE_UPDATE_SKIPPED', browserId: bId, shadowEvaluationId: evalId, calculatedStake: decision.stake, previousStake: lastDispatched, reason: 'Stake matches last dispatched value.' }, `[PassiveShadowDaemon] Stake update skipped.`);
+                                    return;
+                                }
+                                
+                                logger.info({ event: 'STAKE_CHANGE_REQUIRED', browserId: bId, shadowEvaluationId: evalId, previousStake: lastDispatched, calculatedStake: decision.stake, observedStake: stake }, `[PassiveShadowDaemon] Calculated new target stake for [${bId}]: ${decision.stake} (Odds: ${odds}). Dispatching.`);
+                                
+                                logger.info({ event: 'SHADOW_STAKE_COMMAND_CREATION_START', browserId: bId, shadowEvaluationId: evalId }, `[PassiveShadowDaemon] Generating raw keystroke commands.`);
+                                const rawCommands = this.adapter.translateStake(decision.stake);
+                                logger.info({ event: 'SHADOW_STAKE_COMMAND_CREATED', browserId: bId, shadowEvaluationId: evalId, count: rawCommands.length }, `[PassiveShadowDaemon] Generated execution commands.`);
+                                forensicLogger.log('STAKE_TYPING_START', { preparationId: prepId, accountId: bId, expectedStake: decision.stake, commandCount: rawCommands.length });
+                                
+                                try {
+                                    let keyIndex = 0;
+                                    for (const rawCmd of rawCommands) {
+                                        forensicLogger.log('PASSIVE_EXECUTION_CHECK', { accountId: bId, browserId: bId, preparationId: prepId, isExecuting: this.runOrchestrator.isExecuting(bId) });
+                                        if (this.runOrchestrator.isExecuting(bId)) {
+                                            forensicLogger.log('PASSIVE_EXECUTION_ABORT', { reason: 'RunOrchestrator lock acquired mid-flight', ownershipId: bId, expectedStakeValue: decision.stake, currentCommandIndex: keyIndex, remainingCommands: rawCommands.length - keyIndex });
+                                            logger.info({ event: 'SHADOW_ACTION_EXECUTION_REJECTED', browserId: bId, shadowEvaluationId: evalId, reason: 'RunOrchestrator lock acquired mid-flight' }, `[PassiveShadowDaemon] Aborting typing sequence mid-flight for [${bId}].`);
+                                            return;
+                                        }
+                                        if (this.userControlled) {
+                                            forensicLogger.log('PASSIVE_EXECUTION_ABORT', { reason: 'Hardware override detected mid-flight', ownershipId: bId, expectedStakeValue: decision.stake, currentCommandIndex: keyIndex, remainingCommands: rawCommands.length - keyIndex });
+                                            logger.info({ event: 'SHADOW_ACTION_EXECUTION_REJECTED', browserId: bId, shadowEvaluationId: evalId, reason: 'Hardware override detected mid-flight' }, `[PassiveShadowDaemon] Aborting typing sequence mid-flight.`);
+                                            return;
+                                        }
+                                        
+                                        const command = new Command({
+                                            category: 'Execution',
+                                            type: rawCmd.type,
+                                            payload: rawCmd.payload,
+                                            source: 'PASSIVE_SHADOW',
+                                            idempotent: true,
+                                            metadata: { shadowEvaluationId: evalId, observationId: obsId }
+                                        });
+                                        
+                                        forensicLogger.log('STAKE_KEY_START', { preparationId: prepId, accountId: bId, keyIndex, key: rawCmd.payload?.key || rawCmd.type, expectedStake: decision.stake, commandId: command.id });
+                                        logger.info({ event: 'STAKE_COMMAND_DISPATCHED', browserId: bId, commandId: command.id, shadowEvaluationId: evalId, commandType: command.type }, `[PassiveShadowDaemon] Dispatching command to ActionSimulator.`);
+                                        await this.simulator.execute(browserObj, command);
+                                        forensicLogger.log('STAKE_KEY_COMPLETE', { preparationId: prepId, accountId: bId, keyIndex, key: rawCmd.payload?.key || rawCmd.type, commandId: command.id });
+                                        keyIndex++;
+                                    }
+                                    forensicLogger.log('STAKE_TYPING_COMPLETE', { preparationId: prepId, accountId: bId });
+                                    forensicLogger.log('PREPARATION_COMPLETE', { preparationId: prepId, accountId: bId });
+                                    logger.info({ event: 'STAKE_UPDATE_DISPATCHED', browserId: bId, shadowEvaluationId: evalId, expectedStake: decision.stake }, `[PassiveShadowDaemon] All stake keystroke commands dispatched successfully.`);
+                                } catch (cmdErr) {
+                                    logger.info({ event: 'SHADOW_ACTION_EXECUTION_FAILURE', browserId: bId, shadowEvaluationId: evalId, error: cmdErr.message }, `[PassiveShadowDaemon] Failed to dispatch target stake for [${bId}]: ${cmdErr.message}`);
+                                    this.dispatchedStakes.delete(bId);
+                                    return;
+                                }
+                                
+                                this.dispatchedStakes.set(bId, decision.stake);
+                            } else {
+                                 logger.info({ event: 'STAKE_UPDATE_SKIPPED', browserId: bId, shadowEvaluationId: evalId, calculatedStake: decision.stake, status: decision.status, reason: 'Calculation status is NOT AUTHORIZED.' }, `[PassiveShadowDaemon] Stake calculation unauthorized.`);
+                            }
+                        } finally {
+                            this.isTyping.delete(bId);
                         }
-                        
-                        this.dispatchedStakes.set(bId, decision.stake);
-                    } else {
-                         logger.info({ event: 'STAKE_UPDATE_SKIPPED', browserId: bId, shadowEvaluationId: evalId, calculatedStake: decision.stake, status: decision.status, reason: 'Calculation status is NOT AUTHORIZED.' }, `[PassiveShadowDaemon] Stake calculation unauthorized.`);
-                    }
-                }));
+                    })();
+                });
 
                 await new Promise(r => setTimeout(r, 200));
             }
