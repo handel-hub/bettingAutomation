@@ -32,8 +32,7 @@ export class StrategyPolicyLoader {
             Rebet: {
                 Strategy: {
                     MaxRebetAttempts: 3,
-                    RebetStakeIncrement: 0,
-                    RebetCooldownMs: 1500
+                    RebetStakeIncrement: 0
                 }
             },
             Execution: {
@@ -135,8 +134,7 @@ export class StrategyPolicyLoader {
                     Rebet: {
                         Strategy: {
                             MaxRebetAttempts: parseNum(parsed.Rebet?.Strategy?.MaxRebetAttempts, defaultPolicy.Rebet.Strategy.MaxRebetAttempts),
-                            RebetStakeIncrement: parseNum(parsed.Rebet?.Strategy?.RebetStakeIncrement, defaultPolicy.Rebet.Strategy.RebetStakeIncrement),
-                            RebetCooldownMs: parseNum(parsed.Rebet?.Strategy?.RebetCooldownMs, defaultPolicy.Rebet.Strategy.RebetCooldownMs)
+                            RebetStakeIncrement: parseNum(parsed.Rebet?.Strategy?.RebetStakeIncrement, defaultPolicy.Rebet.Strategy.RebetStakeIncrement)
                         }
                     },
                     Execution: { 
