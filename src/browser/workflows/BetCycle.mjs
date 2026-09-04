@@ -9,7 +9,7 @@ import { forensicLogger } from '../forensics/ForensicLogger.mjs';
  * Owns physical execution (typing, pre-flight checks, physical click) and observes the immediate DOM result.
  */
 export class BetCycle {
-    constructor({ runId, cycleId, policySnapshot, adapter, simulator, runOrchestrator, isRebetContinuation = false }) {
+    constructor({ runId, cycleId, policySnapshot, adapter, simulator, runOrchestrator, isRebetContinuation = false, rebetSequenceIndex = 0 }) {
         this.runId = runId;
         this.cycleId = cycleId;
         this.policy = policySnapshot;
@@ -17,6 +17,7 @@ export class BetCycle {
         this.simulator = simulator;
         this.runOrchestrator = runOrchestrator;
         this.isRebetContinuation = isRebetContinuation;
+        this.rebetSequenceIndex = rebetSequenceIndex;
         
         this.state = 'CREATED';
     }
@@ -127,7 +128,18 @@ export class BetCycle {
                 return { status: 'FAILED', detail: `Policy Rejected: ${decision.status}` };
             }
 
-            const stakeAmount = decision.stake;
+            let stakeAmount = decision.stake;
+            
+            // Appended Linear Stake Progression (Option B)
+            const incrementN = this.policy.Rebet?.Strategy?.RebetStakeIncrement ?? 0;
+            if (incrementN > 0 && this.rebetSequenceIndex >= 2) {
+                // rebetSequenceIndex: 0 = Initial, 1 = Rebet 1, 2 = Rebet 2, 3 = Rebet 3
+                const multiplier = this.rebetSequenceIndex - 1; 
+                const appendedValue = multiplier * incrementN;
+                stakeAmount += appendedValue;
+                logger.info(`[Cycle:${this.cycleId}] Appended Rebet Increment applied: +${appendedValue} (Calculated Stake: ${decision.stake} -> Final Stake: ${stakeAmount})`);
+            }
+
             logger.info(`[Cycle:${this.cycleId}] Inputting Authorized Stake: ${stakeAmount}...`);
             
             const currentDOMStake = await this.adapter.readCurrentStake(page);

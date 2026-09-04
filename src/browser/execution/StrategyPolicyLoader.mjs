@@ -31,7 +31,8 @@ export class StrategyPolicyLoader {
             },
             Rebet: {
                 Strategy: {
-                    MaxRebetAttempts: 3
+                    MaxRebetAttempts: 3,
+                    RebetStakeIncrement: 0
                 }
             },
             Execution: {
@@ -132,7 +133,8 @@ export class StrategyPolicyLoader {
                     },
                     Rebet: {
                         Strategy: {
-                            MaxRebetAttempts: parseNum(parsed.Rebet?.Strategy?.MaxRebetAttempts, defaultPolicy.Rebet.Strategy.MaxRebetAttempts)
+                            MaxRebetAttempts: parseNum(parsed.Rebet?.Strategy?.MaxRebetAttempts, defaultPolicy.Rebet.Strategy.MaxRebetAttempts),
+                            RebetStakeIncrement: parseNum(parsed.Rebet?.Strategy?.RebetStakeIncrement, defaultPolicy.Rebet.Strategy.RebetStakeIncrement)
                         }
                     },
                     Execution: { 

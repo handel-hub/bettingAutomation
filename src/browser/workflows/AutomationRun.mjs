@@ -48,7 +48,8 @@ export class AutomationRun {
                     adapter: this.adapter,
                     simulator: this.simulator,
                     runOrchestrator: this.runOrchestrator,
-                    isRebetContinuation: this.isNextCycleRebet
+                    isRebetContinuation: this.isNextCycleRebet,
+                    rebetSequenceIndex: this.successCount
                 });
                 
                 // Reset the flag immediately after consuming it
