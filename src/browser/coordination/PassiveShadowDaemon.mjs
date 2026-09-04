@@ -21,6 +21,24 @@ export class PassiveShadowDaemon {
         this.latestState = { isOpen: false, odds: null, stake: null };
         this.dispatchedStakes = new Map();
         this.userControlled = false; 
+
+        // Automatically reset manual override lock when AutomationRun terminates
+        if (this.runOrchestrator) {
+            const origRelease = this.runOrchestrator.releaseOwnership.bind(this.runOrchestrator);
+            this.runOrchestrator.releaseOwnership = (accountId, result) => {
+                origRelease(accountId, result);
+                if (accountId === 'master') {
+                    this.resetManualOverride();
+                }
+            };
+        }
+    }
+
+    resetManualOverride() {
+        if (this.userControlled) {
+            this.userControlled = false;
+            logger.info({ event: 'SHADOW_MANUAL_OVERRIDE_RESET' }, `[PassiveShadowDaemon] Automation run completed. Resetting manual override lock to resume automated evaluation.`);
+        }
     }
 
     async attachToPage(browserId, page) {
