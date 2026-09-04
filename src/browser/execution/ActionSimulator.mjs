@@ -649,10 +649,9 @@ export class ActionSimulator extends EventEmitter {
 
                         // 2. CHECK DOM STATE
                         const placeBtn = wrapEl.querySelector(data.placeBetSelector) || document.querySelector(data.placeBetSelector);
-                        const confirmBtn = document.querySelector(data.confirmSelector);
                         
                         // STATE A: WE ARE ALREADY ON THE CONFIRM SCREEN
-                        if (confirmBtn && confirmBtn.getBoundingClientRect().height > 0) {
+                        if (isConfirmScreen) {
                             forensic('ATOMIC_CLICK', { target: 'Confirm (Already Advanced)' });
                             confirmBtn.click();
                         } 
