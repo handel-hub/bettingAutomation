@@ -29,7 +29,7 @@ export class ResultResolver {
                         }
                         
                         // If we see definitive keys early, we can shortcut
-                        if (key.includes('rebet') || key.includes('ok') || key === 'betslip_success_ok' || key === 'betslip_success_rebet') {
+                        if (key.includes('rebet') || key === 'betslip_success_ok' || key === 'betslip_success_rebet') {
                             return 'SUCCESS_KEY_SEEN';
                         }
                         if (key.includes('fail') || key.includes('error')) {
@@ -54,7 +54,7 @@ export class ResultResolver {
                 if (tracker) {
                     for (const entry of tracker.log) {
                         const key = entry.key ? entry.key.toLowerCase() : '';
-                        if (key.includes('rebet') || key.includes('ok') || key === 'betslip_success_ok' || key === 'betslip_success_rebet') return 'SUCCESS';
+                        if (key.includes('rebet') || key === 'betslip_success_ok' || key === 'betslip_success_rebet') return 'SUCCESS';
                         if (key.includes('fail') || key.includes('error')) return 'FAILED';
                     }
                 }
