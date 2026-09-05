@@ -60,7 +60,7 @@ describe('SportyBetAdapter', () => {
         it('translates rebet intent into an idempotent generic CLICK', () => {
             const cmd = adapter.translateRebet();
             expect(cmd.type).toBe('CLICK');
-            expect(cmd.payload.selector).toBe('button.af-button.rebet');
+            expect(cmd.payload.selector).toBe('button[data-op="betslip-success-rebet"], button.m-btn-rebet');
             expect(cmd.payload.idempotent).toBe(true);
         });
     });
