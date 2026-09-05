@@ -37,6 +37,7 @@ import {
 
 import { SynchronizationManager } from './synchronization/SynchronizationManager.mjs';
 import { SynchronizationCoordinator } from './synchronization/coordination/SynchronizationCoordinator.mjs';
+import { BettingAuthorizationRegistry } from './execution/BettingAuthorizationRegistry.mjs';
 import { ConsistencyEvaluator } from './synchronization/coordination/ConsistencyEvaluator.mjs';
 import { ConsistencyPolicy } from './synchronization/coordination/ConsistencyPolicy.mjs';
 import { RecoveryCoordinator } from './synchronization/coordination/RecoveryCoordinator.mjs';
@@ -95,7 +96,10 @@ export class AutomationController {
         this.policyManager = new FilePolicyProvider();
         this.commandRouter = new CommandRouter();
         this.runLedger = new RunLedger();
-        this.runOrchestrator = new RunOrchestrator(this.runLedger, this.registry, this.commandRouter);
+        
+        this.bettingAuthorizationRegistry = new BettingAuthorizationRegistry();
+
+        this.runOrchestrator = new RunOrchestrator(this.runLedger, this.registry, this.commandRouter, this.bettingAuthorizationRegistry);
 
 
         this.workflowEngine = new WorkflowEngine({
@@ -103,7 +107,8 @@ export class AutomationController {
             registry: this.registry,
             policyManager: this.policyManager,
             simulator: this.simulator,
-            runOrchestrator: this.runOrchestrator
+            runOrchestrator: this.runOrchestrator,
+            bettingAuthorizationRegistry: this.bettingAuthorizationRegistry
         });
 
         const credentialsMap = new Map(accounts.map(a => [a.username, a.password]));
@@ -132,6 +137,18 @@ export class AutomationController {
         
         this.reconciliationDaemon = new ReconciliationDaemon(this.sequenceMap, this.platformApiAdapter);
         this.reconciliationDaemon.start();
+        
+        // --- CONTROL PLANE HOOK ---
+        this.commandRouter.register('Control', 'SET_BETTING_AUTHORIZATION', async (command) => {
+            const { targetBrowserId, isEnabled } = command.payload || {};
+            if (targetBrowserId) {
+                if (isEnabled) {
+                    this.bettingAuthorizationRegistry.enable(targetBrowserId);
+                } else {
+                    this.bettingAuthorizationRegistry.disable(targetBrowserId);
+                }
+            }
+        });
 
         // --- Initialize Synchronization Orchestration ---
         this.consistencyEvaluator = new ConsistencyEvaluator(ConsistencyPolicy.DEFAULT);
@@ -210,6 +227,11 @@ export class AutomationController {
     }
 
     async start() {
+        // By default, enable betting authorization for all provisioned browsers
+        this.bettingAuthorizationRegistry.enable('master');
+        for (let i = 0; i < this.accounts.length - 1; i++) {
+            this.bettingAuthorizationRegistry.enable(`slave_${i}`);
+        }
         await this.clusterOrchestrator.start();
     }
 

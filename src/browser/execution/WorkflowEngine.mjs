@@ -5,12 +5,13 @@ import { AutomationRun } from '../workflows/AutomationRun.mjs';
 import { SportyBetAdapter } from '../adapters/sportybet/SportyBetAdapter.mjs';
 
 export class WorkflowEngine {
-    constructor({ lockManager, registry, policyManager, simulator, runOrchestrator }) {
+    constructor({ lockManager, registry, policyManager, simulator, runOrchestrator, bettingAuthorizationRegistry }) {
         this.lockManager = lockManager;
         this.registry = registry;
         this.policyManager = policyManager;
         this.simulator = simulator;
         this.runOrchestrator = runOrchestrator;
+        this.bettingAuthorizationRegistry = bettingAuthorizationRegistry;
         
         try {
             const selectorsPath = path.resolve(process.cwd(), 'sequences', 'selectors.json');
@@ -51,7 +52,8 @@ export class WorkflowEngine {
                     this.policyManager,
                     adapter,
                     this.simulator,
-                    this.runOrchestrator
+                    this.runOrchestrator,
+                    this.bettingAuthorizationRegistry
                 );
 
                 this.activeRuns.set(runId, run);

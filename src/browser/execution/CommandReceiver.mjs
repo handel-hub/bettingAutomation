@@ -112,6 +112,24 @@ export class CommandReceiver extends EventEmitter {
                 validationMode = false;
                 return;
             }
+
+            // STUB: Control plane hotkeys (e.g., pause/resume specific accounts).
+            // This is a placeholder for the upcoming IPC migration where these 
+            // inputs will stream over IPC instead of raw terminal hotkeys.
+            if (binding.kind === 'control') {
+                const command = new Command({
+                    category: 'Control',
+                    type: binding.name, // e.g., 'SET_BETTING_AUTHORIZATION'
+                    payload: binding.payload || {},
+                    source: 'Terminal',
+                    executionMode: 'ALL'
+                });
+                this.emit('Command', command);
+                logger.info(`[Terminal] Triggered Control command '${binding.name}'.`);
+                this.clearValidationTimeout();
+                validationMode = false;
+                return;
+            }
             
             if (binding.kind === 'macro') {
                 const command = new Command({

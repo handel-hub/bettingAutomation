@@ -9,12 +9,13 @@ import { Command } from '../execution/Command.mjs';
  * Snapshots policy, spawns cycles, and evaluates rebet logic.
  */
 export class AutomationRun {
-    constructor(runId, accountId, policyManager, adapter, simulator, runOrchestrator) {
+    constructor(runId, accountId, policyManager, adapter, simulator, runOrchestrator, bettingAuthorizationRegistry) {
         this.runId = runId;
         this.accountId = accountId;
         this.adapter = adapter;
         this.simulator = simulator;
         this.runOrchestrator = runOrchestrator;
+        this.bettingAuthorizationRegistry = bettingAuthorizationRegistry;
         
         // Take an immutable snapshot of the current policy
         const livePolicy = policyManager.getPolicy(accountId);
@@ -48,8 +49,9 @@ export class AutomationRun {
                     adapter: this.adapter,
                     simulator: this.simulator,
                     runOrchestrator: this.runOrchestrator,
+                    bettingAuthorizationRegistry: this.bettingAuthorizationRegistry,
                     isRebetContinuation: this.isNextCycleRebet,
-                    rebetSequenceIndex: this.successCount
+                    rebetSequenceIndex: this.isNextCycleRebet ? this.successCount : 0
                 });
                 
                 // Reset the flag immediately after consuming it
@@ -63,6 +65,10 @@ export class AutomationRun {
                     // Critical failure state. Hand off to Reconciliation.
                     logger.warn(`[AutomationRun:${this.runId}] Cycle resulted in UNCERTAIN state. Aborting run for safety.`);
                     this.state = 'UNCERTAIN';
+                    active = false;
+                } else if (result.status === 'ABORTED') {
+                    logger.info(`[AutomationRun:${this.runId}] Cycle explicitly ABORTED (Reason: ${result.reason || 'Unknown'}). Terminating run.`);
+                    this.state = 'ABORTED';
                     active = false;
                 } else if (result.status === 'FAILED') {
                     this.consecutiveFailures++;
