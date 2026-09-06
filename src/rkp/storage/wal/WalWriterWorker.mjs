@@ -1,6 +1,6 @@
 import { Serializer } from './Serializer.mjs';
 import { ProcessLocalWal } from './ProcessLocalWal.mjs';
-import { logger } from '../../../config.mjs';
+import { logger } from '../../../utils/logger.mjs';
 
 /**
  * The background worker responsible for serializing facts and passing them to the WAL.

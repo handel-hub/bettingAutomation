@@ -12,7 +12,7 @@
 
 import crypto from 'node:crypto';
 import EventEmitter from 'node:events';
-import { logger } from '../../../config.mjs';
+import { logger } from '../../../utils/logger.mjs';
 
 export class SanraFailureTaxonomy {
     static Codes = {

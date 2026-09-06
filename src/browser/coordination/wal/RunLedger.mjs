@@ -1,14 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import readline from 'node:readline';
-import { logger } from '../../../config.mjs';
+import { logger } from '../../../utils/logger.mjs';
 
 /**
  * Append-only Write-Ahead Log (WAL) to survive process crashes during irreversible transactions.
  */
 export class RunLedger {
     constructor(walDir = null) {
-        this.walDir = walDir || path.resolve(process.cwd(), 'data', 'wal');
+        this.walDir = walDir || path.resolve(__dirname, '..', '..', '..', '..', 'data', 'wal');
         this.walFilePath = path.join(this.walDir, 'run_ledger.jsonl');
         this._ensureDirectory();
     }

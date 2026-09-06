@@ -1,4 +1,4 @@
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import { SHADOW_OBSERVER_SCRIPT } from '../adapters/sportybet/ShadowObserverScript.mjs';
 import { ConstraintEngine } from '../execution/ConstraintEngine.mjs';
 import { SportyBetAdapter } from '../adapters/sportybet/SportyBetAdapter.mjs';

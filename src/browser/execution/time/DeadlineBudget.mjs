@@ -2,7 +2,7 @@ import { NTPClockSync } from './NTPClockSync.mjs';
 import featureFlags from '../locatorIntelligence/FeatureFlags.mjs';
 import { QueueDeadlineExceededError, GlobalTimeoutError } from '../errors.mjs';
 import { TelemetryCollector } from '../locatorIntelligence/telemetry/TelemetryCollector.mjs';
-import { logger } from '../../../config.mjs';
+import { logger } from '../../../utils/logger.mjs';
 
 /**
  * Immutable deadline tracker for distributed queue and resolution budgeting under Candidate D specification (ENG-PLAN-V3-2026-07).

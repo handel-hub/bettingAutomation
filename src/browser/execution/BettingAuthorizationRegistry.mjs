@@ -1,4 +1,4 @@
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import { forensicLogger } from '../forensics/ForensicLogger.mjs';
 
 /**

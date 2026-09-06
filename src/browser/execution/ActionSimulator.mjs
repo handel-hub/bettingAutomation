@@ -1,4 +1,4 @@
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import EventEmitter from 'node:events';
 import { LocatorResolver } from './LocatorResolver.mjs';
 import featureFlags from './locatorIntelligence/FeatureFlags.mjs';

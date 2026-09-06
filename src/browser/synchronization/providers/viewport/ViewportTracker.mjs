@@ -1,5 +1,5 @@
 import { ViewportEvent, ViewportEventType } from './ViewportEvent.mjs';
-import { logger } from '../../../../config.mjs';
+import { logger } from '../../../../utils/logger.mjs';
 
 /**
  * Responsible for observing Viewport changes via Playwright events

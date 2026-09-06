@@ -1,11 +1,15 @@
 import { performance } from 'perf_hooks';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 class ForensicLogger {
     constructor() {
         this.runId = `FR-${new Date().toISOString().replace(/[-:T]/g, '').slice(0,14)}-${Math.floor(Math.random()*1000).toString().padStart(3, '0')}`;
-        this.logFile = path.resolve(process.cwd(), `forensic_trace_${this.runId}.jsonl`);
+        this.logFile = path.resolve(__dirname, '..', '..', '..', `forensic_trace_${this.runId}.jsonl`);
         this.events = [];
     }
 

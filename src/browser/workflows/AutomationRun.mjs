@@ -1,4 +1,4 @@
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import { BetCycle } from './BetCycle.mjs';
 import crypto from 'node:crypto';
 import { Command } from '../execution/Command.mjs';

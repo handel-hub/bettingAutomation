@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { logger } from '../../config.mjs';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+import { logger } from '../../utils/logger.mjs';
 import { AutomationRun } from '../workflows/AutomationRun.mjs';
 import { SportyBetAdapter } from '../adapters/sportybet/SportyBetAdapter.mjs';
 
@@ -14,7 +18,7 @@ export class WorkflowEngine {
         this.bettingAuthorizationRegistry = bettingAuthorizationRegistry;
         
         try {
-            const selectorsPath = path.resolve(process.cwd(), 'sequences', 'selectors.json');
+            const selectorsPath = path.resolve(__dirname, '..', '..', '..', 'sequences', 'selectors.json');
             this.selectors = JSON.parse(fs.readFileSync(selectorsPath, 'utf8'));
             logger.info('WorkflowEngine: Loaded selectors.json successfully.');
         } catch (err) {

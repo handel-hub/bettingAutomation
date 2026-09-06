@@ -7,7 +7,7 @@
  */
 
 import EventEmitter from 'node:events';
-import { logger } from '../../../../config.mjs';
+import { logger } from '../../../../utils/logger.mjs';
 
 export const ISOMORPHISM_TOLERANCE = 0.001;
 
