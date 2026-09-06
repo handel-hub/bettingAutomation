@@ -24,7 +24,7 @@ export class RecoveryActionExecutor extends EventEmitter {
                 break;
             case 'PAGE_RELOAD':
                 this.emit('Command', new Command({
-                    category: 'Navigation',
+                    category: 'Recovery',
                     type: 'PAGE_RELOAD',
                     target: syncContext.browserId,
                     source: 'RecoveryActionExecutor'

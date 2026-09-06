@@ -39,3 +39,4 @@ docs/Interaction-Scoped-DevTools-Investigation.md
 debug_injected.js
 test-plw-rotation/
 reports/
+forensic_trace_*.jsonl
