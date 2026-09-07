@@ -1,3 +1,0 @@
-{"eventName":"BETTING_AUTHORIZATION_CHANGED","timestamp":1788716395632,"monotonicTime":2914.6633,"forensicRunId":"FR-20260906173955-749","browserId":"master","previousState":"UNKNOWN","newState":"ENABLED"}
-{"eventName":"BETTING_AUTHORIZATION_CHANGED","timestamp":1788716395642,"monotonicTime":2923.8866,"forensicRunId":"FR-20260906173955-749","browserId":"slave_0","previousState":"UNKNOWN","newState":"ENABLED"}
-{"eventName":"BETTING_AUTHORIZATION_CHANGED","timestamp":1788716395645,"monotonicTime":2926.8407,"forensicRunId":"FR-20260906173955-749","browserId":"slave_1","previousState":"UNKNOWN","newState":"ENABLED"}
