@@ -51,7 +51,7 @@ export class AutomationRun {
                     runOrchestrator: this.runOrchestrator,
                     bettingAuthorizationRegistry: this.bettingAuthorizationRegistry,
                     isRebetContinuation: this.isNextCycleRebet,
-                    rebetSequenceIndex: this.isNextCycleRebet ? this.successCount : 0
+                    rebetSequenceIndex: this.successCount
                 });
                 
                 // Reset the flag immediately after consuming it
