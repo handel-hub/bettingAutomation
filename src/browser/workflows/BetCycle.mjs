@@ -147,16 +147,6 @@ export class BetCycle {
                 const multiplier = this.rebetSequenceIndex - 1; 
                 const appendedValue = multiplier * incrementN;
                 stakeAmount += appendedValue;
-
-                // Hard Risk Guard: Clamp to balance and MaxStake
-                const maxAllowed = Math.min(
-                    typeof balance === 'number' && balance > 0 ? balance : Infinity,
-                    this.policy.RiskManagement?.Policy?.MaxStake ?? Infinity
-                );
-                if (stakeAmount > maxAllowed) {
-                    logger.warn(`[Cycle:${this.cycleId}] Appended stake (${stakeAmount}) exceeds limit (${maxAllowed}). Clamping to limit.`);
-                    stakeAmount = maxAllowed;
-                }
                 logger.info(`[Cycle:${this.cycleId}] Appended Rebet Increment applied: +${appendedValue} (Calculated Stake: ${decision.stake} -> Final Stake: ${stakeAmount})`);
             }
 
@@ -164,7 +154,7 @@ export class BetCycle {
             
             const currentDOMStake = await this.adapter.readCurrentStake(page);
             const isOnConfirmScreen = await page.evaluate(() => {
-                const conf = document.querySelector('.m-btn-confirm, .dialog-container .af-button--primary, .m-confirm-dialog .af-button--primary');
+                const conf = document.querySelector('.m-btn-confirm') || document.querySelector('.af-button--primary');
                 return conf && conf.getBoundingClientRect().height > 0;
             }).catch(() => false);
 

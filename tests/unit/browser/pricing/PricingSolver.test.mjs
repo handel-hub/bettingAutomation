@@ -131,21 +131,5 @@ describe('PricingSolver', () => {
                 120  // Cycle 4 (Rebet 3): x + 2n
             ]);
         });
-
-        it('clamps stake when appended increment exceeds balance or MaxStake', () => {
-            const lowBalance = 105;
-            const rebetSequenceIndex = 2; // +10 -> 110
-            let stake = 100;
-            const n = 10;
-            if (n > 0 && rebetSequenceIndex >= 2) {
-                stake += (rebetSequenceIndex - 1) * n;
-                const maxAllowed = Math.min(lowBalance, basePolicy.RiskManagement.Policy.MaxStake);
-                if (stake > maxAllowed) {
-                    stake = maxAllowed;
-                }
-            }
-
-            expect(stake).toBe(105); // Clamped to balance
-        });
     });
 });
