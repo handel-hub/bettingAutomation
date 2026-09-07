@@ -1,5 +1,6 @@
 import { logger } from '../../config.mjs';
 import featureFlags from '../execution/locatorIntelligence/FeatureFlags.mjs';
+import { Command } from '../execution/Command.mjs';
 
 export class EventBusRegistrar {
     constructor(deps) {
@@ -19,6 +20,8 @@ export class EventBusRegistrar {
         this.syncRecoveryActionExecutor = deps.syncRecoveryActionExecutor;
         this.simulator = deps.simulator;
         this.convergenceEngine = deps.convergenceEngine;
+        this.triggerRouter = deps.triggerRouter;
+        this.runOrchestrator = deps.runOrchestrator;
     }
 
     registerAll() {
@@ -185,8 +188,44 @@ export class EventBusRegistrar {
 
         const routeFn = (cmd) => this.commandRouter.route(cmd);
         
-        this.commandReceiver.on('Command', routeFn);
-        this.actionDispatcher.on('Command', routeFn);
+        // Causal Suppression: Intercept Hotkeys
+        this.commandReceiver.on('Command', (cmd) => {
+            if (this.triggerRouter) {
+                const intercepted = this.triggerRouter.interceptHotkey(cmd, 'master');
+                if (intercepted) this.commandRouter.route(intercepted);
+            } else {
+                routeFn(cmd);
+            }
+        });
+
+        // Causal Suppression: Intercept DOM Sync (Feedback Loop Guard)
+        this.actionDispatcher.on('Command', (cmd) => {
+            const masterId = cmd.metadata?.browserId || 'master';
+            // 1. If currently executing an Automation Run, drop ALL Master DOM Syncs 
+            // to prevent the ActionSimulator's physical clicks from echoing as user intent.
+            if (this.runOrchestrator && this.runOrchestrator.isExecuting(masterId)) {
+                logger.debug(`[EventBusRegistrar] Dropped DOM_SYNC command [${cmd.type}] because Master [${masterId}] is EXECUTING.`);
+                if (cmd.ges !== undefined && cmd.ges !== null) {
+                    this.commandRouter.route(new Command({
+                        category: 'Execution', type: 'NOOP', target: cmd.target || {}, source: 'EventBusRegistrar', ges: cmd.ges, payload: { reason: 'Master EXECUTING drop' }
+                    }));
+                }
+                return;
+            }
+
+            // 2. If PASSIVE, check if this click is a Place Bet trigger.
+            if (this.triggerRouter) {
+                const intercepted = this.triggerRouter.interceptDomSync(cmd, masterId);
+                if (Array.isArray(intercepted)) {
+                    intercepted.forEach(c => this.commandRouter.route(c));
+                } else if (intercepted) {
+                    this.commandRouter.route(intercepted);
+                }
+            } else {
+                routeFn(cmd);
+            }
+        });
+
         this.navSync.on('Command', routeFn);
         this.healthMonitor.on('Command', routeFn);
         this.recoveryManager.on('Command', routeFn);

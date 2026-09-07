@@ -3,7 +3,7 @@ import { logger } from '../../config.mjs';
 import EventEmitter from 'node:events';
 import { Command } from './Command.mjs';
 
-const WORKFLOW_HOTKEY_KEYS = ['cashout'];
+const WORKFLOW_HOTKEY_KEYS = ['cashout', 'placebet'];
 
 export class CommandReceiver extends EventEmitter {
     constructor(settings) {
@@ -108,6 +108,24 @@ export class CommandReceiver extends EventEmitter {
                 });
                 this.emit('Command', command);
                 logger.info(`[Terminal] Triggered '${binding.name}' workflow.`);
+                this.clearValidationTimeout();
+                validationMode = false;
+                return;
+            }
+
+            // STUB: Control plane hotkeys (e.g., pause/resume specific accounts).
+            // This is a placeholder for the upcoming IPC migration where these 
+            // inputs will stream over IPC instead of raw terminal hotkeys.
+            if (binding.kind === 'control') {
+                const command = new Command({
+                    category: 'Control',
+                    type: binding.name, // e.g., 'SET_BETTING_AUTHORIZATION'
+                    payload: binding.payload || {},
+                    source: 'Terminal',
+                    executionMode: 'ALL'
+                });
+                this.emit('Command', command);
+                logger.info(`[Terminal] Triggered Control command '${binding.name}'.`);
                 this.clearValidationTimeout();
                 validationMode = false;
                 return;

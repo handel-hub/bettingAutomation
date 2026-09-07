@@ -52,7 +52,11 @@ export class ActionDispatcher extends EventEmitter {
             'extraction/FeatureExtractor.mjs',
             'telemetry/RollingWindow.mjs',
             'telemetry/MetricsRegistry.mjs',
-            'telemetry/TelemetryCollector.mjs'
+            'telemetry/TelemetryCollector.mjs',
+            '../../pricing/PricingSolver.mjs',
+            '../../pricing/BehavioralEngine.mjs',
+            '../../pricing/PricingObserver.mjs',
+            '../../pricing/EdgeStateMachine.mjs'
         ];
 
         const scriptPath = path.join(__dirname, '../../../playwright-injected/generated/playwright-iife.js');

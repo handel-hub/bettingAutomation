@@ -17,20 +17,24 @@ export class SequenceGate {
 
     evaluate(browserId, commandGes) {
         if (commandGes === undefined || commandGes === null) {
-            // Commands without GES bypass sequencing (e.g. out of band control)
+            import('../forensics/ForensicLogger.mjs').then(({ forensicLogger }) => {
+                forensicLogger.log('GES_VALIDATE', { accountId: browserId, browserId, previousGES: null, newGES: null, result: 'ALIGNED', reason: 'No GES provided' });
+            }).catch(()=>{});
             return 'ALIGNED';
         }
 
         const state = this.registry.getState(browserId);
         const slaveGes = state ? (state.currentGes || 0) : 0;
         
-        if (commandGes === slaveGes + 1) {
-            return 'ALIGNED';
-        } else if (commandGes > slaveGes + 1) {
-            return 'WAITING';
-        } else {
-            return 'STALE';
-        }
+        let result = 'STALE';
+        if (commandGes === slaveGes + 1) result = 'ALIGNED';
+        else if (commandGes > slaveGes + 1) result = 'WAITING';
+
+        import('../forensics/ForensicLogger.mjs').then(({ forensicLogger }) => {
+            forensicLogger.log('GES_VALIDATE', { accountId: browserId, browserId, previousGES: slaveGes, newGES: commandGes, result });
+        }).catch(()=>{});
+
+        return result;
     }
 
     startWatchdog(browserId, targetGes, timeoutMs, onTimeout, commandContext = null) {

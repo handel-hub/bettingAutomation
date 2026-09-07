@@ -16,6 +16,16 @@ import {
     VerificationEngine
 } from './coordination/index.mjs';
 
+import { AuthorizationGateway } from './coordination/AuthorizationGateway.mjs';
+import { ReconciliationDaemon } from './coordination/ReconciliationDaemon.mjs';
+import { RunLedger } from './coordination/wal/RunLedger.mjs';
+import { RunOrchestrator } from './coordination/RunOrchestrator.mjs';
+import { PassiveShadowDaemon } from './coordination/PassiveShadowDaemon.mjs';
+import { TriggerRouter } from './execution/TriggerRouter.mjs';
+import { StrategyPolicyLoader } from './execution/StrategyPolicyLoader.mjs';
+import { FilePolicyProvider } from './execution/FilePolicyProvider.mjs';
+
+
 import {
     CommandReceiver,
     ActionDispatcher,
@@ -27,6 +37,7 @@ import {
 
 import { SynchronizationManager } from './synchronization/SynchronizationManager.mjs';
 import { SynchronizationCoordinator } from './synchronization/coordination/SynchronizationCoordinator.mjs';
+import { BettingAuthorizationRegistry } from './execution/BettingAuthorizationRegistry.mjs';
 import { ConsistencyEvaluator } from './synchronization/coordination/ConsistencyEvaluator.mjs';
 import { ConsistencyPolicy } from './synchronization/coordination/ConsistencyPolicy.mjs';
 import { RecoveryCoordinator } from './synchronization/coordination/RecoveryCoordinator.mjs';
@@ -80,7 +91,25 @@ export class AutomationController {
         this.scheduler = new ExecutionScheduler(this.simulator, this.registry, this.syncManager);
         this.macroEngine = new MacroEngine(this.simulator, this.scheduler);
         this.lockManager = new AccountLockManager();
-        this.workflowEngine = new WorkflowEngine(this.lockManager, this.registry);
+
+        // --- P1 Fix: Initialize Policies and Orchestrators FIRST ---
+        this.policyManager = new FilePolicyProvider();
+        this.commandRouter = new CommandRouter();
+        this.runLedger = new RunLedger();
+        
+        this.bettingAuthorizationRegistry = new BettingAuthorizationRegistry();
+
+        this.runOrchestrator = new RunOrchestrator(this.runLedger, this.registry, this.commandRouter, this.bettingAuthorizationRegistry);
+
+
+        this.workflowEngine = new WorkflowEngine({
+            lockManager: this.lockManager,
+            registry: this.registry,
+            policyManager: this.policyManager,
+            simulator: this.simulator,
+            runOrchestrator: this.runOrchestrator,
+            bettingAuthorizationRegistry: this.bettingAuthorizationRegistry
+        });
 
         const credentialsMap = new Map(accounts.map(a => [a.username, a.password]));
         this.cdpMutex = new CDPMutex();
@@ -93,8 +122,33 @@ export class AutomationController {
             { cdpMutex: this.cdpMutex }
         );
 
-        this.commandRouter = new CommandRouter();
         this.targetResolver = new TargetResolver(this.registry, this.lockManager);
+
+        // --- Initialize Autonomous Pricing Execution Plane ---
+        this.sequenceMap = new Map();
+        this.platformApiAdapter = { getRecentHistory: async () => [] };
+
+        this.authorizationGateway = new AuthorizationGateway(this.sequenceMap, this.policyManager, this.commandRouter);
+        
+        // --- PHASE 1 WIRING ---
+        this.triggerRouter = new TriggerRouter(this.runOrchestrator, this.workflowEngine);
+        this.simulator.runOrchestrator = this.runOrchestrator;
+        // ---------------------------
+        
+        this.reconciliationDaemon = new ReconciliationDaemon(this.sequenceMap, this.platformApiAdapter);
+        this.reconciliationDaemon.start();
+        
+        // --- CONTROL PLANE HOOK ---
+        this.commandRouter.register('Control', 'SET_BETTING_AUTHORIZATION', async (command) => {
+            const { targetBrowserId, isEnabled } = command.payload || {};
+            if (targetBrowserId) {
+                if (isEnabled) {
+                    this.bettingAuthorizationRegistry.enable(targetBrowserId);
+                } else {
+                    this.bettingAuthorizationRegistry.disable(targetBrowserId);
+                }
+            }
+        });
 
         // --- Initialize Synchronization Orchestration ---
         this.consistencyEvaluator = new ConsistencyEvaluator(ConsistencyPolicy.DEFAULT);
@@ -136,8 +190,19 @@ export class AutomationController {
             lifecycleManager: this.lifecycleManager,
             simulator: this.simulator,
             stateObserver: this.stateObserver,
-            convergenceEngine: this.convergenceEngine
+            convergenceEngine: this.convergenceEngine,
+            triggerRouter: this.triggerRouter,
+            runOrchestrator: this.runOrchestrator
         });
+
+        // --- Initialize Phase 1 Passive Shadow Daemon ---
+        this.passiveShadowDaemon = new PassiveShadowDaemon(
+            this.runOrchestrator,
+            this.simulator,
+            this.policyManager,
+            this.registry
+        );
+        this.triggerRouter.passiveShadowDaemon = this.passiveShadowDaemon;
 
         this.clusterOrchestrator = new ClusterOrchestrator({
             settings: this.settings,
@@ -154,13 +219,19 @@ export class AutomationController {
             healthMonitor: this.healthMonitor,
             commandReceiver: this.commandReceiver,
             scheduler: this.scheduler,
-            stateObserver: this.stateObserver
+            stateObserver: this.stateObserver,
+            passiveShadowDaemon: this.passiveShadowDaemon
         });
 
         this.eventBusRegistrar.registerAll();
     }
 
     async start() {
+        // By default, enable betting authorization for all provisioned browsers
+        this.bettingAuthorizationRegistry.enable('master');
+        for (let i = 0; i < this.accounts.length - 1; i++) {
+            this.bettingAuthorizationRegistry.enable(`slave_${i}`);
+        }
         await this.clusterOrchestrator.start();
     }
 

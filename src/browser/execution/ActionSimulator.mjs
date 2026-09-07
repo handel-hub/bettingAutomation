@@ -19,12 +19,14 @@ import {
     QueueDeadlineExceededError,
     CandidateGenerationError,
     GenerationScriptMissingError,
-    TerminalExecutionError
+    TerminalExecutionError,
+    UncertainStateError
 } from './errors.mjs';
 
 export class ActionSimulator extends EventEmitter {
-    constructor() {
+    constructor(runOrchestrator = null) {
         super();
+        this.runOrchestrator = runOrchestrator;
         this.MAX_EXECUTION_RETRIES = 3;
         this.attachedPages = new WeakSet();
     }
@@ -153,13 +155,18 @@ export class ActionSimulator extends EventEmitter {
 
             const playwrightSelector = command.payload?.playwrightSelector || command.metadata?.playwrightSelector || command.payload?.selector;
 
+            const evalId = command.metadata?.shadowEvaluationId || command.traceId;
+
             if (playwrightSelector) {
                 try {
+                    logger.info({ event: 'PLAYWRIGHT_LOCATOR_RESOLUTION_START', shadowEvaluationId: evalId, commandId: command.id, locator: playwrightSelector }, `[ActionSimulator] Starting fast path locator resolution.`);
                     // Fast Path: Try Playwright native strict selector first
                     const loc = page.locator(playwrightSelector);
-                    // Fast fail to ensure it's attached and strict mode passes
-                    await loc.waitFor({ state: 'attached', timeout: 500 });
+                    // Fast fail to ensure it's attached and strict mode passes (can be overridden by payload)
+                    const waitTimeout = command.payload?.locatorTimeout || command.metadata?.locatorTimeout || 500;
+                    await loc.waitFor({ state: 'attached', timeout: waitTimeout });
                     
+                    logger.info({ event: 'PLAYWRIGHT_LOCATOR_RESOLUTION_SUCCESS', shadowEvaluationId: evalId, commandId: command.id, locator: playwrightSelector }, `[ActionSimulator] Fast path locator resolution successful.`);
                     result = {
                         success: true,
                         playwrightLocator: loc,
@@ -167,7 +174,7 @@ export class ActionSimulator extends EventEmitter {
                         isFallback: false
                     };
                 } catch (err) {
-                    logger.warn(`[ActionSimulator] [Cmd: ${command.id}] Fast path strict locator failed: ${err.message}. Falling back to probabilistic resolution.`);
+                    logger.info({ event: 'PLAYWRIGHT_LOCATOR_RESOLUTION_FAILURE', shadowEvaluationId: evalId, commandId: command.id, error: err.message, locator: playwrightSelector }, `[ActionSimulator] Fast path strict locator failed: ${err.message}.`);
                     result = null;
                 }
             }
@@ -232,7 +239,16 @@ export class ActionSimulator extends EventEmitter {
                     });
                 }).catch(() => {});
 
-                await actionFn(result.playwrightLocator);
+                const evalId = command.metadata?.shadowEvaluationId || command.traceId;
+                logger.info({ event: 'PLAYWRIGHT_INPUT_START', shadowEvaluationId: evalId, commandId: command.id, actionType: interactionType }, `[ActionSimulator] Executing Playwright actuation.`);
+                
+                try {
+                    await actionFn(result.playwrightLocator);
+                    logger.info({ event: 'PLAYWRIGHT_INPUT_SUCCESS', shadowEvaluationId: evalId, commandId: command.id, actionType: interactionType, durationMs: Date.now() - execStart }, `[ActionSimulator] Playwright actuation successful.`);
+                } catch (actionErr) {
+                    logger.info({ event: 'PLAYWRIGHT_INPUT_FAILURE', shadowEvaluationId: evalId, commandId: command.id, error: actionErr.message, actionType: interactionType }, `[ActionSimulator] Playwright actuation failed: ${actionErr.message}`);
+                    throw actionErr;
+                }
                 
                 import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
                     observabilityCollector.emitTransition({
@@ -335,6 +351,10 @@ export class ActionSimulator extends EventEmitter {
                     throw err;
                 }
 
+                if (automationError instanceof PlaywrightTimeoutError && command.idempotent === false) {
+                    throw new UncertainStateError(`[LF-306] Timeout on non-idempotent command: ${automationError.message}`);
+                }
+
                 logger.warn(`[ActionSimulator] [Cmd: ${command.id}] ${automationError.code} Execution failed on attempt ${attempts}: ${automationError.message}. Triggering re-resolution.`);
                 
                 import('./telemetry/ObservabilityCollector.mjs').then(({ observabilityCollector }) => {
@@ -389,6 +409,55 @@ export class ActionSimulator extends EventEmitter {
     async execute(browserObj, command, options = {}) {
         const startTime = Date.now();
         const { id, page } = browserObj;
+        const type = command?.type || 'UNKNOWN';
+        const evalId = command?.metadata?.shadowEvaluationId || command?.traceId;
+
+        if (page && !page.__forensicsAttached) {
+            page.__forensicsAttached = true;
+            page.on('console', msg => {
+                const text = msg.text();
+                if (text.startsWith('FORENSIC_LOG:')) {
+                    try {
+                        const { evt, meta, ts } = JSON.parse(text.slice(13));
+                        import('../forensics/ForensicLogger.mjs').then(({ forensicLogger }) => {
+                            forensicLogger.log(evt, { ...meta, browserTimestamp: ts });
+                        }).catch(()=>{});
+                    } catch(e){}
+                }
+            });
+        }
+
+        if (command) {
+            import('../forensics/ForensicLogger.mjs').then(({ forensicLogger }) => {
+                forensicLogger.log('ACTION_SIMULATOR_START', {
+                    commandId: command.id,
+                    commandType: type,
+                    source: command.source,
+                    accountId: id,
+                    browserId: id,
+                    GES: command.ges,
+                    cycleId: command.cycleId,
+                    preparationId: command.metadata?.shadowEvaluationId || null
+                });
+            }).catch(()=>{});
+        }
+
+        logger.info({ event: 'ACTION_SIMULATOR_RECEIVED', shadowEvaluationId: evalId, commandId: command?.id, browserId: id, commandType: type }, `[ActionSimulator] Received command ${command?.id} [${type}] for execution.`);
+        
+        // Transactional Safety Guard (Phase 1)
+        if (command && command.idempotent === false) {
+            if (!this.runOrchestrator) {
+                logger.error(`[Security] Simulator lacks RunOrchestrator to validate transactional command ${command.id}`);
+                return false;
+            }
+            if (!this.runOrchestrator.validateActiveCycle(command.cycleId)) {
+                const err = new Error(`Transaction Rejected: Command lacks valid cycle lease.`);
+                logger.error(`[Security] [${id}] Rejected command ${command.id}. ${err.message}`);
+                this.emit('ActionFailure', { id, command, error: err });
+                return false;
+            }
+        }
+
         const deadlineBudget = options.deadlineBudget || DeadlineBudget.fromCommand(command, 1500);
 
         try {
@@ -428,8 +497,198 @@ export class ActionSimulator extends EventEmitter {
             // Perform actions using the new decoupled recovery loop
             const getTimeout = (budget) => budget ? Math.max(10, budget.timeRemaining()) : 30000;
             const tOpts = { timeout: getTimeout(deadlineBudget) };
+            
+            // Bypass Playwright's actionability visibility/overlay checks for internal workflows.
+            // This is required because BetCycle injects an __auto_lock overlay to prevent user interference,
+            // which would otherwise block Playwright's own simulated clicks.
+            if (command.source === 'BetCycle') {
+                tOpts.force = true;
+            }
 
-            if (type === 'CLICK' || type === 'click') {
+            if (type === 'EVENT_BURST') {
+                usedLocatorInfo = await this._executeWithRecovery(command, page, 'event_burst', async (loc) => {
+                    const events = payload.events || ['touchstart', 'touchend', 'mousedown', 'mouseup', 'click'];
+                    await loc.evaluate((el, evs) => {
+                        evs.forEach(evName => {
+                            if (evName.startsWith('touch')) {
+                                // Must use real TouchEvent for mobile Vue.js components
+                                el.dispatchEvent(new TouchEvent(evName, { bubbles: true, cancelable: true }));
+                            } else if (evName.startsWith('mouse') || evName === 'click') {
+                                el.dispatchEvent(new MouseEvent(evName, { bubbles: true, cancelable: true, view: window }));
+                            } else {
+                                el.dispatchEvent(new Event(evName, { bubbles: true }));
+                            }
+                        });
+                    }, events);
+                }, browserObj, deadlineBudget, options.executionContext);
+            } else if (type === 'MACRO_DELAY') {
+                await new Promise(r => setTimeout(r, payload.ms || 250));
+            } else if (type === 'ATOMIC_PLACE_BET') {
+                usedLocatorInfo = await this._executeWithRecovery(command, page, 'atomic_place', async (loc) => {
+                    import('../forensics/ForensicLogger.mjs').then(({ forensicLogger }) => {
+                        forensicLogger.log('ATOMIC_PLACE_BET_START', { commandId: command.id });
+                    }).catch(()=>{});
+
+                    await loc.evaluate((wrapEl, data) => {
+                        const forensic = (evt, meta) => console.log('FORENSIC_LOG:' + JSON.stringify({ evt, meta, ts: performance.now() }));
+                        
+                        // 1. VERIFY ODDS & STAKE NATIVELY
+                        const confirmBtn = document.querySelector(data.confirmSelector);
+                        const isConfirmScreen = confirmBtn && confirmBtn.getBoundingClientRect().height > 0;
+
+                        const oddsEl = document.querySelector(data.oddsSelector);
+                        let currentOdds = null;
+                        if (oddsEl) {
+                            const text = oddsEl.innerText || oddsEl.textContent || '';
+                            currentOdds = parseFloat(text);
+                        }
+                        forensic('ATOMIC_ODDS_READ', { expectedOdds: data.expectedOdds, actualOdds: currentOdds });
+                        forensic('ATOMIC_ODDS_COMPARISON', { match: currentOdds === data.expectedOdds });
+                        
+                        let actualStake = null;
+                        let rawVal = null;
+                        if (isConfirmScreen && data.confirmStakeSelector) {
+                            const confStakeEl = document.querySelector(data.confirmStakeSelector);
+                            if (confStakeEl) {
+                                rawVal = confStakeEl.innerText || confStakeEl.textContent || '';
+                                actualStake = parseFloat(rawVal.replace(/[^\d.]/g, ''));
+                            }
+                        } else {
+                            const stakeEl = document.querySelector(data.stakeSelector) || document.querySelector('.m-input') || document.querySelector('input[type="number"]');
+                            if (stakeEl) {
+                                rawVal = stakeEl.value !== undefined ? stakeEl.value : (stakeEl.innerText || stakeEl.textContent || '');
+                                actualStake = parseFloat(rawVal.replace(/[^\d.]/g, ''));
+                            }
+                        }
+                        
+                        forensic('ATOMIC_STAKE_READ', { expectedStake: data.expectedStake, actualStake, rawVal });
+
+                        if (currentOdds !== data.expectedOdds) {
+                            forensic('ATOMIC_RESULT', { result: 'ABORTED_ODDS' });
+                            throw new Error(`[ATOMIC-ABORT] Expected odds ${data.expectedOdds} but found ${currentOdds}`);
+                        }
+
+                        if (actualStake !== data.expectedStake) {
+                            forensic('ATOMIC_RESULT', { result: 'ABORTED_STAKE' });
+                            throw new Error(`[ATOMIC-ABORT] Expected stake ${data.expectedStake} but found ${actualStake} in the DOM`);
+                        }
+                        
+                        // INJECT CMS STATE TRACKER BEFORE CLICK
+                        window.__cmsTracker = { log: [], processingSeen: false };
+                        const cmsObserver = new MutationObserver((mutations) => {
+                            for (let m of mutations) {
+                                // 1. DETECT APPEARANCE (Node added to DOM)
+                                if (m.type === 'childList' && m.addedNodes.length > 0) {
+                                    m.addedNodes.forEach(n => {
+                                        if (n.nodeType === 1) {
+                                            const keys = [...n.querySelectorAll('[data-cms-key]'), n].filter(i => i.hasAttribute && i.hasAttribute('data-cms-key'));
+                                            keys.forEach(k => {
+                                                const key = k.getAttribute('data-cms-key');
+                                                window.__cmsTracker.log.push({ key, time: Date.now(), event: 'added' });
+                                                if (key === 'submitting' || key.includes('process') || key.includes('loading') || key.includes('confirm')) {
+                                                    window.__cmsTracker.processingSeen = true;
+                                                }
+                                                if (key === 'submitting') {
+                                                    console.log(`%c >>> SUBMITTING STARTED: ${new Date().toLocaleTimeString()}`, "color: white; background: #27ae60; font-weight: bold; padding: 4px; border-radius: 3px;");
+                                                }
+                                            });
+                                        }
+                                    });
+                                }
+
+                                // 2. DETECT DISAPPEARANCE (Node removed from DOM)
+                                if (m.type === 'childList' && m.removedNodes.length > 0) {
+                                    m.removedNodes.forEach(n => {
+                                        if (n.nodeType === 1) {
+                                            const keys = [...n.querySelectorAll('[data-cms-key]'), n].filter(i => i.hasAttribute && i.hasAttribute('data-cms-key'));
+                                            keys.forEach(k => {
+                                                const key = k.getAttribute('data-cms-key');
+                                                window.__cmsTracker.log.push({ key, time: Date.now(), event: 'removed' });
+                                                if (key === 'submitting') {
+                                                    console.log(`%c <<< SUBMITTING FINISHED: ${new Date().toLocaleTimeString()}`, "color: white; background: #c0392b; font-weight: bold; padding: 4px; border-radius: 3px;");
+                                                }
+                                            });
+                                        }
+                                    });
+                                }
+                                
+                                // 3. DETECT ATTRIBUTE CHANGE
+                                if (m.type === 'attributes' && m.attributeName === 'data-cms-key') {
+                                    const newKey = m.target.getAttribute('data-cms-key');
+                                    if (newKey) {
+                                        window.__cmsTracker.log.push({ key: newKey, time: Date.now(), event: 'attr_added' });
+                                        if (newKey === 'submitting' || newKey.includes('process') || newKey.includes('loading') || newKey.includes('confirm')) {
+                                            window.__cmsTracker.processingSeen = true;
+                                        }
+                                        if (newKey === 'submitting') {
+                                            console.log(`%c >>> SUBMITTING STARTED (Attribute): ${new Date().toLocaleTimeString()}`, "color: white; background: #27ae60; font-weight: bold;");
+                                        }
+                                    } else if (m.oldValue) {
+                                        window.__cmsTracker.log.push({ key: m.oldValue, time: Date.now(), event: 'attr_removed' });
+                                        if (m.oldValue === 'submitting') {
+                                            console.log(`%c <<< SUBMITTING FINISHED (Attribute): ${new Date().toLocaleTimeString()}`, "color: white; background: #c0392b; font-weight: bold;");
+                                        }
+                                    }
+                                }
+                            }
+                        });
+
+                        console.log("%c Life-Cycle Tracker Active: Monitoring 'submitting' appearance/disappearance...", "color: white; background: #2c3e50; padding: 4px;");
+                        cmsObserver.observe(document.body, { 
+                            childList: true, 
+                            subtree: true, 
+                            attributes: true, 
+                            attributeOldValue: true,
+                            attributeFilter: ['data-cms-key'] 
+                        });
+                        // Let it run for 10 seconds, then disconnect to prevent memory leaks
+                        setTimeout(() => {
+                            cmsObserver.disconnect();
+                            console.log("%c Life-Cycle Tracker Disconnected.", "color: white; background: #7f8c8d; padding: 4px;");
+                        }, 10000);
+
+                        // 2. CHECK DOM STATE
+                        const placeBtn = wrapEl.querySelector(data.placeBetSelector) || document.querySelector(data.placeBetSelector);
+                        
+                        // STATE A: WE ARE ALREADY ON THE CONFIRM SCREEN
+                        if (isConfirmScreen) {
+                            forensic('ATOMIC_CLICK', { target: 'Confirm (Already Advanced)' });
+                            confirmBtn.click();
+                        } 
+                        // STATE B: WE ARE ON THE PLACE BET SCREEN
+                        else if (placeBtn && placeBtn.getBoundingClientRect().height > 0) {
+                            forensic('ATOMIC_CLICK', { target: 'Primary' });
+                            placeBtn.click();
+                            
+                            // Setup an ultra-fast observer to click Confirm the millisecond it appears
+                            if (data.confirmSelector) {
+                                const wrap = wrapEl || document.body;
+                                const observer = new MutationObserver((mutations, obs) => {
+                                    const newConfirmBtn = document.querySelector(data.confirmSelector);
+                                    if (newConfirmBtn && newConfirmBtn.getBoundingClientRect().height > 0) {
+                                        newConfirmBtn.click();
+                                        obs.disconnect();
+                                    }
+                                });
+                                
+                                observer.observe(wrap, {
+                                    childList: true, 
+                                    subtree: true,
+                                    attributes: true,
+                                    attributeFilter: ['style', 'class']
+                                });
+                                
+                                // Auto-disconnect after 2.5 seconds to prevent memory leaks 
+                                setTimeout(() => observer.disconnect(), 2500);
+                            }
+                        } 
+                        // STATE C: FATAL UI DESYNC
+                        else {
+                            throw new Error("[ATOMIC-ABORT] Neither Place Bet nor Confirm buttons are visible.");
+                        }
+                    }, command.payload);
+                }, browserObj, deadlineBudget, options.executionContext);
+            } else if (type === 'CLICK' || type === 'click') {
                 usedLocatorInfo = await this._executeWithRecovery(command, page, 'click', async (loc) => await loc.click(tOpts), browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'DOUBLE_CLICK' || type === 'dblclick') {
                 usedLocatorInfo = await this._executeWithRecovery(command, page, 'dblclick', async (loc) => await loc.dblclick(tOpts), browserObj, deadlineBudget, options.executionContext);
@@ -591,8 +850,19 @@ export class ActionSimulator extends EventEmitter {
 
 
 
-            if (this.registry) {
-                this.registry.incrementSlaveGes(id);
+            if (command) {
+                import('../forensics/ForensicLogger.mjs').then(({ forensicLogger }) => {
+                    forensicLogger.log('ACTION_SIMULATOR_SUCCESS', {
+                        commandId: command.id,
+                        accountId: id,
+                        duration: Date.now() - startTime
+                    });
+                    forensicLogger.log('ACTION_SIMULATOR_END', {
+                        commandId: command.id,
+                        accountId: id,
+                        result: 'SUCCESS'
+                    });
+                }).catch(()=>{});
             }
 
             this.emit('ActionSuccess', { id, command });
@@ -600,6 +870,28 @@ export class ActionSimulator extends EventEmitter {
         } catch (err) {
             const lifecycle = 'FAILED';
             
+            if (command) {
+                import('../forensics/ForensicLogger.mjs').then(({ forensicLogger }) => {
+                    forensicLogger.log('ACTION_SIMULATOR_FAILURE', {
+                        commandId: command.id,
+                        accountId: id,
+                        error: err.message,
+                        duration: Date.now() - startTime
+                    });
+                    forensicLogger.log('ACTION_SIMULATOR_END', {
+                        commandId: command.id,
+                        accountId: id,
+                        result: 'FAILURE'
+                    });
+                }).catch(()=>{});
+            }
+
+            if (err instanceof UncertainStateError) {
+                logger.warn(`[Interaction Uncertain] Command ${command.id} on slave [${id}]: ${err.message} | Execution duration: ${Date.now() - startTime}ms | Lifecycle: UNCERTAIN`);
+                this.emit('ActionUncertain', { id, command, error: err });
+                throw err;
+            }
+
             if (err instanceof QueueDeadlineExceededError || err instanceof GlobalTimeoutError || err instanceof OverlayInterceptionError || err instanceof ElementDetachedError || err instanceof PlaywrightTimeoutError || err instanceof LocatorResolutionError) {
                 logger.warn(`[Interaction Failure] Command ${command.id} on slave [${id}]: ${err.message} | Execution duration: ${Date.now() - startTime}ms | Lifecycle: ${lifecycle}`);
                 throw new TerminalExecutionError(err.message);
