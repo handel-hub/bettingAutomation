@@ -1,7 +1,7 @@
 import { CapabilityProvider } from './CapabilityProvider.mjs';
 import { CapabilityResult } from '../models/CapabilityResult.mjs';
 import { Capabilities } from '../capabilities.mjs';
-import { logger } from '../../../config.mjs';
+import { logger } from '../../../utils/logger.mjs';
 
 export class DOMCapabilityProvider extends CapabilityProvider {
     supportedCapabilities() {

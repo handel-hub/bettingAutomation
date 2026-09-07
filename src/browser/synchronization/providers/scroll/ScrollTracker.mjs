@@ -1,4 +1,4 @@
-import { logger } from '../../../../config.mjs';
+import { logger } from '../../../../utils/logger.mjs';
 import featureFlags from '../../../execution/locatorIntelligence/FeatureFlags.mjs';
 
 /**

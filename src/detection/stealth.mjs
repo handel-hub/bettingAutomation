@@ -1,5 +1,5 @@
 import stealthPlugin from 'puppeteer-extra-plugin-stealth';
-import { logger } from '../config.mjs';
+import { logger } from '../utils/logger.mjs';
 
 const stealth = stealthPlugin();
 

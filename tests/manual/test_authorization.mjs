@@ -2,7 +2,7 @@ import assert from 'node:assert';
 import { BettingAuthorizationRegistry } from '../../src/browser/execution/BettingAuthorizationRegistry.mjs';
 import { RunOrchestrator } from '../../src/browser/coordination/RunOrchestrator.mjs';
 import { BetCycle } from '../../src/browser/workflows/BetCycle.mjs';
-import { logger } from '../../src/config.mjs';
+import { logger } from '../../src/utils/logger.mjs';
 
 // Suppress logs during testing
 logger.level = 'silent';

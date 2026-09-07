@@ -1,6 +1,6 @@
 import EventEmitter from 'node:events';
 import { ScrollLifecycle } from '../../models/BrowserStateModel.mjs';
-import { logger } from '../../../../config.mjs';
+import { logger } from '../../../../utils/logger.mjs';
 
 /**
  * Consumes ScrollEvents, debounces them via ScrollPolicy,

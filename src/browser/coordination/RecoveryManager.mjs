@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import { Command } from '../execution/Command.mjs';
 import { CDPMutex } from '../synchronization/coordination/CDPMutex.mjs';
 

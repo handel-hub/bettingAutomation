@@ -1,10 +1,11 @@
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 
 export class ClusterOrchestrator {
     constructor(deps) {
         this.settings = deps.settings;
         this.accounts = deps.accounts;
-        this.proxyManager = deps.proxyManager;
+        this.proxies = deps.proxies || [];
+        this.proxyIndex = 0;
         this.lifecycleManager = deps.lifecycleManager;
         this.sessionManager = deps.sessionManager;
         this.navSync = deps.navSync;
@@ -20,6 +21,12 @@ export class ClusterOrchestrator {
         this.passiveShadowDaemon = deps.passiveShadowDaemon;
     }
 
+        _allocateProxy() {
+        if (this.proxies.length === 0) return null;
+        const proxy = this.proxies[this.proxyIndex];
+        this.proxyIndex = (this.proxyIndex + 1) % this.proxies.length;
+        return proxy;
+    }
     async start() {
         logger.info('Starting Automation Controller...');
 
@@ -84,7 +91,7 @@ export class ClusterOrchestrator {
         // 1. Master Spawning & Auth
         let masterProxyUrl = null;
         if (this.settings.Spawning.master_use_proxy === 'true') {
-            masterProxyUrl = this.proxyManager.allocateProxy();
+            masterProxyUrl = this._allocateProxy();
             if (!masterProxyUrl && this.settings.Proxy.proxy_failure_mode === 'strict') {
                 logger.error('master_use_proxy=true but no proxy is available (strict mode). Refusing to launch master unprotected.');
                 throw new Error('No proxy available in strict mode');
@@ -102,7 +109,7 @@ export class ClusterOrchestrator {
                 const account = slaveAccounts[i];
                 const id = `slave_${i}`;
                 
-                const proxyUrl = this.proxyManager.allocateProxy();
+                const proxyUrl = this._allocateProxy();
                 if (!proxyUrl && this.settings.Proxy.proxy_failure_mode === 'strict') {
                     logger.error(`Skipping account ${account.username} due to lack of proxy (strict mode).`);
                     continue;

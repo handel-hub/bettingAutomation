@@ -1,4 +1,4 @@
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import EventEmitter from 'node:events';
 
 export class ConvergenceEngine extends EventEmitter {

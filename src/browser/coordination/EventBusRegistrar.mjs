@@ -1,4 +1,4 @@
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import featureFlags from '../execution/locatorIntelligence/FeatureFlags.mjs';
 import { Command } from '../execution/Command.mjs';
 
@@ -120,8 +120,14 @@ export class EventBusRegistrar {
 
         this.commandRouter.register('Navigation', 'navigate', async (command) => {
             logger.info(`[Broadcast] Command ${command.id} [Navigation] | Latency (Capture->Broadcast): ${Date.now() - command.captureTime}ms`);
-            const slaves = this.registry.getReadySlaves();
-            logger.info(`Routing NavigationCommand to ${slaves.length} ready slaves: ${command.payload.url}`);
+            let slaves;
+            if (typeof command.target === 'string') {
+                const targetBrowser = this.registry.get(command.target);
+                slaves = targetBrowser ? [targetBrowser] : [];
+            } else {
+                slaves = this.registry.getReadySlaves();
+            }
+            logger.info(`Routing NavigationCommand to ${slaves.length} target(s): ${command.payload.url}`);
             const promises = slaves.map(b => {
                 return new Promise((resolve) => {
                     if (this.convergenceEngine) {
@@ -161,6 +167,28 @@ export class EventBusRegistrar {
             });
             await Promise.all(promises);
             logger.info(`[EventBusRegistrar] Navigation ${command.id} completed resolution across all slaves.`);
+        });
+
+        this.commandRouter.register('Recovery', 'PAGE_RELOAD', async (command) => {
+            const browserId = typeof command.target === 'string' ? command.target : command.target?.browserId;
+            const targetBrowser = this.registry.get(browserId);
+            if (!targetBrowser || !targetBrowser.page) {
+                logger.warn(`[EventBusRegistrar] Cannot execute PAGE_RELOAD: Target browser [${browserId}] not found.`);
+                return;
+            }
+            logger.info(`[EventBusRegistrar] Executing recovery PAGE_RELOAD on [${browserId}]...`);
+            try {
+                this.scheduler.clearQueue(browserId);
+                await targetBrowser.page.reload({ waitUntil: 'domcontentloaded' });
+                this.registry.updateState(browserId, 'Ready');
+                logger.info(`[EventBusRegistrar] Recovery PAGE_RELOAD successful on [${browserId}].`);
+                if (targetBrowser.role === 'master') {
+                    await this.navSync.setupMasterSync();
+                    await this.actionDispatcher.injectMasterListeners(targetBrowser.page);
+                }
+            } catch (err) {
+                logger.error(`[EventBusRegistrar] Recovery PAGE_RELOAD failed on [${browserId}]: ${err.message}`);
+            }
         });
 
         this.commandRouter.register('Recovery', 'HEAL_REQUESTED', async (command) => {

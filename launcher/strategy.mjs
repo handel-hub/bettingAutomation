@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ini from 'ini';
-import { logger } from '../../config.mjs';
+import { logger } from './config.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -66,7 +66,7 @@ export class StrategyPolicyLoader {
         };
 
         try {
-            const policyPath = path.join(__dirname, '..', '..', '..', 'betting_strategy.ini');
+            const policyPath = path.join(__dirname, '..', 'betting_strategy.ini');
             
             if (fs.existsSync(policyPath)) {
                 const raw = fs.readFileSync(policyPath, 'utf-8');
@@ -177,3 +177,4 @@ export class StrategyPolicyLoader {
         }
     }
 }
+export const loadStrategyPolicy = () => StrategyPolicyLoader.loadPolicy();

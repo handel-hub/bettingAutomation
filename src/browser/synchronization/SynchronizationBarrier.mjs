@@ -1,5 +1,5 @@
 import { SynchronizationDiagnostics } from './telemetry/SynchronizationDiagnostics.mjs';
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import { CapabilityPhases } from './SynchronizationLevel.mjs';
 
 /**

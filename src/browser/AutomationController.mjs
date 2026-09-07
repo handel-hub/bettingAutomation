@@ -1,4 +1,4 @@
-import { logger } from '../config.mjs';
+import { logger } from '../utils/logger.mjs';
 import { CommandRouter } from './CommandRouter.mjs';
 import { TargetResolver } from './coordination/TargetResolver.mjs';
 
@@ -22,12 +22,11 @@ import { RunLedger } from './coordination/wal/RunLedger.mjs';
 import { RunOrchestrator } from './coordination/RunOrchestrator.mjs';
 import { PassiveShadowDaemon } from './coordination/PassiveShadowDaemon.mjs';
 import { TriggerRouter } from './execution/TriggerRouter.mjs';
-import { StrategyPolicyLoader } from './execution/StrategyPolicyLoader.mjs';
-import { FilePolicyProvider } from './execution/FilePolicyProvider.mjs';
+import { MemoryPolicyProvider } from '../worker/MemoryPolicyProvider.mjs';
+import { StealthEngine } from '../detection/stealth.mjs';
 
 
 import {
-    CommandReceiver,
     ActionDispatcher,
     ActionSimulator,
     ExecutionScheduler,
@@ -51,10 +50,12 @@ import { attachSyncTelemetryAdapter } from '../rkp/integration/SyncTelemetryAdap
 import { attachBrowserLifecycleAdapter } from '../rkp/integration/BrowserLifecycleAdapter.mjs';
 
 export class AutomationController {
-    constructor(settings, accounts, proxyManager, stealthEngine) {
+    constructor(settings, accounts, proxies, policy, ipcIngress) {
         this.settings = settings;
         this.accounts = accounts;
-        this.proxyManager = proxyManager;
+        
+        // --- Stealth moved from Launcher to Execution ---
+        this.stealthEngine = new StealthEngine(settings);
 
         // --- Initialize Coordination Subsystem ---
         this.registry = new BrowserStateRegistry();
@@ -64,7 +65,7 @@ export class AutomationController {
         this.capabilityRegistry = new CapabilityRegistry();
         this.syncManager = new SynchronizationManager(this.registry, this.capabilityRegistry);
 
-        this.lifecycleManager = new BrowserLifecycleManager(this.registry, this.capabilityRegistry, settings, stealthEngine);
+        this.lifecycleManager = new BrowserLifecycleManager(this.registry, this.capabilityRegistry, settings, this.stealthEngine);
         this.sessionManager = new SessionManager(this.registry);
         this.actionDispatcher = new ActionDispatcher(settings, this.registry);
         this.navSync = new NavigationSynchronizer(this.registry, this.actionDispatcher);
@@ -86,21 +87,20 @@ export class AutomationController {
         });
 
         // --- Initialize Execution Subsystem ---
-        this.commandReceiver = new CommandReceiver(settings);
+        this.commandReceiver = ipcIngress; // IpcIngress now acts as CommandReceiver
         this.simulator = new ActionSimulator();
         this.scheduler = new ExecutionScheduler(this.simulator, this.registry, this.syncManager);
         this.macroEngine = new MacroEngine(this.simulator, this.scheduler);
         this.lockManager = new AccountLockManager();
 
         // --- P1 Fix: Initialize Policies and Orchestrators FIRST ---
-        this.policyManager = new FilePolicyProvider();
+        this.policyManager = new MemoryPolicyProvider(policy);
         this.commandRouter = new CommandRouter();
         this.runLedger = new RunLedger();
         
         this.bettingAuthorizationRegistry = new BettingAuthorizationRegistry();
 
         this.runOrchestrator = new RunOrchestrator(this.runLedger, this.registry, this.commandRouter, this.bettingAuthorizationRegistry);
-
 
         this.workflowEngine = new WorkflowEngine({
             lockManager: this.lockManager,
@@ -207,7 +207,7 @@ export class AutomationController {
         this.clusterOrchestrator = new ClusterOrchestrator({
             settings: this.settings,
             accounts: this.accounts,
-            proxyManager: this.proxyManager,
+            proxies: proxies,
             lifecycleManager: this.lifecycleManager,
             sessionManager: this.sessionManager,
             navSync: this.navSync,

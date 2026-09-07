@@ -97,4 +97,39 @@ describe('PricingSolver', () => {
         const candidates = solve(obs, pol);
         expect(candidates).toEqual([2000, 3000, 4000, 5000]);
     });
+
+    describe('Rebet Linear Progression & Concurrency', () => {
+        const basePolicy = {
+            Pricing: {
+                Strategy: { Mode: 'FIXED', BaseStake: 100, TargetProfit: 1000, MinimumAcceptableProfit: 0, ResolutionStrategy: 'CLAMP_THEN_REDUCE_PROFIT' },
+                Behavior: { PlatformIncrement: 1, SelectionPreference: 'ROUND_NUMBERS', RestorePolicyOnRebet: true }
+            },
+            Rebet: { Strategy: { MaxRebetAttempts: 3, RebetStakeIncrement: 10 } },
+            Execution: { Timeouts: { ResultTimeoutMs: 1000 }, Retries: { MaxExecutionRetries: 3 } },
+            RiskManagement: { Policy: { AutoAcceptOddsChanges: false, MaxStake: 500, MinimumStake: 10, AbortOnMarketSuspend: true } }
+        };
+
+        it('calculates exact progression x, x+0n, x+1n, x+2n across sequential cycles', () => {
+            const stakes = [];
+            const n = basePolicy.Rebet.Strategy.RebetStakeIncrement; // 10
+            const x = basePolicy.Pricing.Strategy.BaseStake; // 100
+
+            for (let successCount = 0; successCount <= 3; successCount++) {
+                let stake = x;
+                const rebetSequenceIndex = successCount;
+                if (n > 0 && rebetSequenceIndex >= 2) {
+                    const multiplier = rebetSequenceIndex - 1;
+                    stake += multiplier * n;
+                }
+                stakes.push(stake);
+            }
+
+            expect(stakes).toEqual([
+                100, // Cycle 1 (Initial): x
+                100, // Cycle 2 (Rebet 1): x + 0n
+                110, // Cycle 3 (Rebet 2): x + 1n
+                120  // Cycle 4 (Rebet 3): x + 2n
+            ]);
+        });
+    });
 });

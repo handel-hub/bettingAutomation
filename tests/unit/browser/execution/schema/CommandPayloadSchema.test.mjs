@@ -329,6 +329,34 @@ describe('Milestone 1: Authoritative Ingress Contract & Schema Gating Tests', ()
             expect(cmd.timestamp).toBe(Date.parse(iso));
             expect(cmd.captureTime).toBe(Date.parse(iso));
         });
+
+        it('accepts string target for Navigation commands without schema violation', () => {
+            const navCmd = {
+                id: 'cmd-nav-1',
+                type: 'navigate',
+                category: 'Navigation',
+                captureTime: Date.now(),
+                target: 'slave_0',
+                payload: { url: 'https://example.com' }
+            };
+            const result = CommandPayloadSchema.validate(navCmd);
+            expect(result.valid).toBe(true);
+            expect(result.errors).toHaveLength(0);
+        });
+
+        it('accepts string target for Recovery PAGE_RELOAD commands without schema violation', () => {
+            const reloadCmd = {
+                id: 'cmd-reload-1',
+                type: 'PAGE_RELOAD',
+                category: 'Recovery',
+                captureTime: Date.now(),
+                target: 'slave_0',
+                payload: {}
+            };
+            const result = CommandPayloadSchema.validate(reloadCmd);
+            expect(result.valid).toBe(true);
+            expect(result.errors).toHaveLength(0);
+        });
     });
 });
 

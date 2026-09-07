@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { logger } from '../../config.mjs';
-import { encrypt, decrypt } from '../../utils/crypto.mjs';
+import { logger } from '../../utils/logger.mjs';
+
 import { redactUsername } from '../../utils/redact.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -34,18 +34,13 @@ export class SessionManager {
             let wasLegacy = false;
             
             if (fileData && fileData.iv && fileData.authTag) {
-                const decryptedStr = decrypt(fileData, username);
-                const parsed = JSON.parse(decryptedStr);
-                if (Array.isArray(parsed)) {
-                    fullState = { cookies: parsed, localStorage: [], sessionStorage: [] };
-                    wasLegacy = true;
-                } else {
-                    fullState = parsed;
-                }
-            } else {
+                throw new Error('Encrypted session format is no longer supported. Forcing fresh login.');
+            } else if (Array.isArray(fileData)) {
                 fullState = { cookies: fileData, localStorage: [], sessionStorage: [] };
                 wasLegacy = true;
-                logger.info(`Loaded legacy plaintext session for ${redactUsername(username)}; it will be re-saved encrypted.`);
+                logger.info(`Loaded legacy array session for ${redactUsername(username)}; it will be re-saved as object.`);
+            } else {
+                fullState = fileData;
             }
 
             await browserObj.context.addCookies(fullState.cookies || []);
@@ -129,9 +124,8 @@ export class SessionManager {
             };
 
             const sessionFile = path.join(this.sessionsDir, `${username}.json`);
-            const encrypted = encrypt(JSON.stringify(fullState), username);
-            await fsPromises.writeFile(sessionFile, JSON.stringify(encrypted, null, 2), { mode: 0o600 });
-            logger.info(`Saved encrypted session (Cookies + DOMStorage) for ${redactUsername(username)} from [${id}]`);
+            await fsPromises.writeFile(sessionFile, JSON.stringify(fullState, null, 2), { mode: 0o600 });
+            logger.info(`Saved session (Cookies + DOMStorage) for ${redactUsername(username)} from [${id}]`);
         } catch (err) {
             logger.error(`Failed to save session for ${redactUsername(username)}:`, err);
         }
@@ -287,7 +281,7 @@ export class SessionManager {
         } catch (err) {
             logger.error(`Login failed for ${redactUsername(username)} on [${id}]: ${err.message}`);
             try {
-                const screenshotsDir = path.join(process.cwd(), 'screenshots');
+                const screenshotsDir = path.join(__dirname, '..', '..', '..', 'screenshots');
                 if (!fs.existsSync(screenshotsDir)) await fsPromises.mkdir(screenshotsDir, { recursive: true });
                 const screenshotPath = path.join(screenshotsDir, `error_${id}_login_${Date.now()}.png`);
                 await page.screenshot({ path: screenshotPath });

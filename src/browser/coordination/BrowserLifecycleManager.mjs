@@ -1,6 +1,6 @@
 import { chromium } from 'playwright-extra';
 import { devices } from 'playwright';
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import { LifecycleState } from '../synchronization/models/BrowserStateModel.mjs';
 import { Capabilities } from '../synchronization/capabilities.mjs';
 

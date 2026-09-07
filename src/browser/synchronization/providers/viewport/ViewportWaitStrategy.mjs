@@ -2,7 +2,7 @@ import { Capabilities } from '../../capabilities.mjs';
 import { ViewportComparisonResult } from './ViewportComparator.mjs';
 import { CapabilityResult } from '../../models/CapabilityResult.mjs';
 import { ViewportLifecycle } from '../../models/BrowserStateModel.mjs';
-import { logger } from '../../../../config.mjs';
+import { logger } from '../../../../utils/logger.mjs';
 
 /**
  * Handles concurrent evaluation of Viewport readiness by evaluating

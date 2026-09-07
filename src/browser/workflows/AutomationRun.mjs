@@ -1,4 +1,4 @@
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import { BetCycle } from './BetCycle.mjs';
 import crypto from 'node:crypto';
 import { Command } from '../execution/Command.mjs';
@@ -51,7 +51,7 @@ export class AutomationRun {
                     runOrchestrator: this.runOrchestrator,
                     bettingAuthorizationRegistry: this.bettingAuthorizationRegistry,
                     isRebetContinuation: this.isNextCycleRebet,
-                    rebetSequenceIndex: this.isNextCycleRebet ? this.successCount : 0
+                    rebetSequenceIndex: this.successCount
                 });
                 
                 // Reset the flag immediately after consuming it

@@ -1,4 +1,4 @@
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import { Command } from './Command.mjs';
 import { SportyBetLocatorRegistry } from '../adapters/sportybet/SportyBetLocatorRegistry.mjs';
 import { forensicLogger } from '../forensics/ForensicLogger.mjs';

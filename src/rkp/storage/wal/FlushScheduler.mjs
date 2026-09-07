@@ -1,4 +1,4 @@
-import { logger } from '../../../config.mjs';
+import { logger } from '../../../utils/logger.mjs';
 
 /**
  * Decides when to flush facts from the RuntimeLedger to the WAL.

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { HybridLogicalClock } from '../common/models/HybridLogicalClock.mjs';
 import { LateArrivalError } from '../common/errors/ProtocolErrors.mjs';
-import { logger } from '../config.mjs';
+import { logger } from '../utils/logger.mjs';
 import { TelemetryCollector } from '../browser/execution/locatorIntelligence/telemetry/TelemetryCollector.mjs';
 
 /**

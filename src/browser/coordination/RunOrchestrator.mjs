@@ -1,4 +1,4 @@
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import { globalRecorder } from '../../rkp/RuntimeKnowledgePlatform.mjs';
 import crypto from 'node:crypto';
 import { forensicLogger } from '../forensics/ForensicLogger.mjs';
