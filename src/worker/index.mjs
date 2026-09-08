@@ -93,7 +93,8 @@ if (isControlPlaneManaged) {
     // Mode B: Legacy Launcher Mode (Backward Compatibility)
     logger.info('[Execution] Bootstrapping in standalone/launcher mode.');
 
-    const ipcIngress = new IpcIngress(logger);
+    const ipcIngress = new IpcIngress(logger, process);
+    ipcIngress.setTransport(process);
     let lifecycleManager = new ExecutionLifecycleManager(logger, null);
 
     process.on('message', async (msg) => {

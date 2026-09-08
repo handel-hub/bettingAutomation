@@ -42,17 +42,27 @@ async function main() {
         }
     });
 
+    executionWorker.on('error', (err) => {
+        logger.fatal({ err }, `Execution Worker failed to spawn or encountered process error: ${err.message}`);
+        process.exit(1);
+    });
+
     executionWorker.on('message', (msg) => {
+        if (!msg || typeof msg !== 'object') return;
         if (msg.type === 'STATE_UPDATE') {
             logger.info(`Execution State: ${msg.state}`);
         } else if (msg.type === 'FATAL') {
             logger.fatal(`Execution Error: ${msg.error}`);
             process.exit(1);
+        } else if (msg.type === 'TACTICAL:OPERATION_RESULT' || msg.type === 'OPERATION_RESULT') {
+            logger.info(`[Launcher] Operation Result: ${JSON.stringify(msg.payload || {})}`);
+        } else if (msg.type) {
+            logger.info(`[Launcher] Worker Event [${msg.type}]`);
         }
     });
 
-    executionWorker.on('exit', (code) => {
-        logger.info(`Execution Plane exited with code ${code}. Launcher shutting down.`);
+    executionWorker.on('exit', (code, signal) => {
+        logger.info(`Execution Plane exited with code ${code} (signal: ${signal}). Launcher shutting down.`);
         process.exit(code || 0);
     });
 
