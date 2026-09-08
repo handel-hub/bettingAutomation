@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import EventEmitter from 'node:events';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -9,8 +10,9 @@ import { AutomationRun } from '../workflows/AutomationRun.mjs';
 import { CashoutTransaction } from '../workflows/CashoutTransaction.mjs';
 import { SportyBetAdapter } from '../adapters/sportybet/SportyBetAdapter.mjs';
 
-export class WorkflowEngine {
+export class WorkflowEngine extends EventEmitter {
     constructor({ lockManager, registry, policyManager, simulator, runOrchestrator, bettingAuthorizationRegistry }) {
+        super();
         this.lockManager = lockManager;
         this.registry = registry;
         this.policyManager = policyManager;
@@ -72,11 +74,13 @@ export class WorkflowEngine {
                         }
                     }
 
+                    return { targetId: b.id, result };
                 } catch (err) {
                     logger.error(`[WorkflowEngine] Unhandled error in CashoutTransaction [${runId}] on [${b.id}]: ${err.message}`);
                     if (this.runOrchestrator) {
                         this.runOrchestrator.markUncertain(b.id);
                     }
+                    return { targetId: b.id, error: err };
                 } finally {
                     this.activeRuns.delete(runId);
 
@@ -87,7 +91,19 @@ export class WorkflowEngine {
                 }
             });
 
-            await Promise.allSettled(promises);
+            const results = await Promise.allSettled(promises);
+            const opId = command.runId || command.payload?.operationId;
+            if (opId) {
+                const allCompleted = results.length > 0 && results.every(r => r.status === 'fulfilled' && r.value?.result?.status === 'COMPLETED');
+                const anyUncertain = results.some(r => r.status === 'fulfilled' && r.value?.result?.status === 'UNCERTAIN');
+                const finalStatus = allCompleted ? 'SUCCESS' : (anyUncertain ? 'UNCERTAIN' : 'FAILED');
+                this.emit('OperationComplete', {
+                    operationId: opId,
+                    traceId: command.traceId,
+                    status: finalStatus,
+                    metrics: { targets: results.length }
+                });
+            }
             return;
         }
 
@@ -149,12 +165,14 @@ export class WorkflowEngine {
                     }
                 }
 
+                return { targetId: b.id, result };
             } catch (err) {
                 logger.error(`[WorkflowEngine] Unhandled error in AutomationRun [${runId}] on [${b.id}]: ${err.message}`);
                 // On total crash, default to uncertain to prevent double-spending
                 if (this.runOrchestrator) {
                     this.runOrchestrator.markUncertain(b.id);
                 }
+                return { targetId: b.id, error: err };
             } finally {
                 this.activeRuns.delete(b.id);
                 
@@ -165,6 +183,18 @@ export class WorkflowEngine {
             }
         });
 
-        await Promise.allSettled(promises);
+        const results = await Promise.allSettled(promises);
+        const opId = command.runId || command.payload?.operationId;
+        if (opId) {
+            const allCompleted = results.length > 0 && results.every(r => r.status === 'fulfilled' && r.value?.result?.status === 'COMPLETED');
+            const anyUncertain = results.some(r => r.status === 'fulfilled' && r.value?.result?.status === 'UNCERTAIN');
+            const finalStatus = allCompleted ? 'SUCCESS' : (anyUncertain ? 'UNCERTAIN' : 'FAILED');
+            this.emit('OperationComplete', {
+                operationId: opId,
+                traceId: command.traceId,
+                status: finalStatus,
+                metrics: { targets: results.length }
+            });
+        }
     }
 }

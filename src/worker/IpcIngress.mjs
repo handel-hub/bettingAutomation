@@ -153,14 +153,52 @@ export class IpcIngress extends EventEmitter {
             case ExecutionMessageType.ACTIVATE_ACCOUNT:
             case 'ACTIVATE_ACCOUNT': {
                 this.emit('ActivateAccount', payload);
-                this.logger.info(`[IpcIngress] Received ACTIVATE_ACCOUNT for user: ${payload.account?.username}`);
+                const account = payload.account || payload;
+                this.logger.info(`[IpcIngress] Received ACTIVATE_ACCOUNT for user: ${account?.username}`);
+                if (this.controller?.activateAccount) {
+                    this.controller.activateAccount(account, payload.proxyUrl)
+                        .then((slave) => {
+                            this.sendReply(ExecutionMessageType.BROWSER_STATUS, {
+                                accountId: payload.accountId || slave?.id,
+                                username: account?.username,
+                                status: 'READY'
+                            }, traceId);
+                        })
+                        .catch((err) => {
+                            this.logger.error(`[IpcIngress] Failed to activate account: ${err.message}`);
+                            this.sendReply(ExecutionMessageType.BROWSER_STATUS, {
+                                accountId: payload.accountId,
+                                username: account?.username,
+                                status: 'ERROR',
+                                error: err.message
+                            }, traceId);
+                        });
+                }
                 break;
             }
 
             case ExecutionMessageType.DEACTIVATE_ACCOUNT:
             case 'DEACTIVATE_ACCOUNT': {
                 this.emit('DeactivateAccount', payload);
-                this.logger.info(`[IpcIngress] Received DEACTIVATE_ACCOUNT for id: ${payload.accountId}`);
+                const idOrUser = payload.accountId || payload.username || payload.targetBrowserId;
+                this.logger.info(`[IpcIngress] Received DEACTIVATE_ACCOUNT for id: ${idOrUser}`);
+                if (this.controller?.deactivateAccount) {
+                    this.controller.deactivateAccount(idOrUser)
+                        .then((ok) => {
+                            this.sendReply(ExecutionMessageType.BROWSER_STATUS, {
+                                accountId: payload.accountId,
+                                status: ok ? 'TERMINATED' : 'NOT_FOUND'
+                            }, traceId);
+                        })
+                        .catch((err) => {
+                            this.logger.error(`[IpcIngress] Failed to deactivate account: ${err.message}`);
+                            this.sendReply(ExecutionMessageType.BROWSER_STATUS, {
+                                accountId: payload.accountId,
+                                status: 'ERROR',
+                                error: err.message
+                            }, traceId);
+                        });
+                }
                 break;
             }
 
@@ -168,6 +206,9 @@ export class IpcIngress extends EventEmitter {
             case 'UPDATE_POLICY': {
                 this.emit('UpdatePolicy', payload);
                 this.logger.info(`[IpcIngress] Received UPDATE_POLICY: ${payload.category}`);
+                if (this.controller?.policyManager?.updatePolicy) {
+                    this.controller.policyManager.updatePolicy(payload.category, payload.values);
+                }
                 break;
             }
 
