@@ -9,6 +9,7 @@ export class TargetResolver {
         let targets = [];
         
         switch (mode) {
+            case 'ALL':
             case 'SLAVES_ONLY':
                 targets = this.registry.getReadySlaves();
                 break;

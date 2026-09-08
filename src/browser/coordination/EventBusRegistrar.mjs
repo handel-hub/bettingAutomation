@@ -235,7 +235,13 @@ export class EventBusRegistrar {
                 logger.debug(`[EventBusRegistrar] Dropped DOM_SYNC command [${cmd.type}] because Master [${masterId}] is EXECUTING.`);
                 if (cmd.ges !== undefined && cmd.ges !== null) {
                     this.commandRouter.route(new Command({
-                        category: 'Execution', type: 'NOOP', target: cmd.target || {}, source: 'EventBusRegistrar', ges: cmd.ges, payload: { reason: 'Master EXECUTING drop' }
+                        category: 'Execution',
+                        type: 'NOOP',
+                        target: {},
+                        source: 'EventBusRegistrar',
+                        ges: cmd.ges,
+                        executionMode: 'SLAVES_ONLY',
+                        payload: { reason: 'Master EXECUTING drop' }
                     }));
                 }
                 return;
