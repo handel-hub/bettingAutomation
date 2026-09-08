@@ -43,7 +43,7 @@ export class TriggerRouter {
                 logger.info(`[TriggerRouter] Suppressing automated stake DOM sync broadcast from [${browserId}].`);
                 if (command.ges !== undefined && command.ges !== null) {
                     return new Command({
-                        category: 'Execution', type: 'NOOP', target: command.target || {}, source: 'TriggerRouter', ges: command.ges, payload: { reason: 'Suppressed automated stake sync' }
+                        category: 'Execution', type: 'NOOP', target: command.target || {}, source: 'TriggerRouter', ges: command.ges, executionMode: 'SLAVES_ONLY', payload: { reason: 'Suppressed automated stake sync' }
                     });
                 }
                 return null;
@@ -59,6 +59,50 @@ export class TriggerRouter {
         // We check against the registry's exact CSS selector, as well as text-based semantic fallbacks.
         const selectorLower = selector.toLowerCase();
         const sidText = (command.payload?.sid?.text || '').toLowerCase();
+
+        // Phase 1.5: Causal Suppression of Bet / Rebet Success Overlay Actions
+        // Clicks on the betslip success modal (OK/Dismiss or Rebet) must not broadcast to Slaves,
+        // because each browser autonomously resolves its success modal within its own AutomationRun.
+        const matchesAny = (target, patterns) => {
+            if (!target) return false;
+            return patterns.some(p => p && target.includes(p));
+        };
+        const rebetPatterns = (this.locators.rebetTrigger || '').split(',').map(s => s.trim().toLowerCase());
+        const okPatterns = (this.locators.successOkButton || '').split(',').map(s => s.trim().toLowerCase());
+
+        const isRebetButton = matchesAny(selectorLower, rebetPatterns) ||
+            selectorLower.includes('betslip-success-rebet') ||
+            selectorLower.includes('m-btn-rebet') ||
+            selectorLower.includes('role=button[name="rebet"') ||
+            selectorLower.includes('role=button[name=\\"rebet\\"') ||
+            sidText === 'rebet';
+
+        const isSuccessOkButton = matchesAny(selectorLower, okPatterns) ||
+            selectorLower.includes('betslip-success-ok') ||
+            selectorLower.includes('data-cms-key="ok"') ||
+            selectorLower.includes('m-btn-confirm') ||
+            selectorLower.includes('role=button[name="ok"') ||
+            selectorLower.includes('role=button[name=\\"ok\\"') ||
+            sidText === 'ok';
+
+        if (isRebetButton || isSuccessOkButton) {
+            const reason = isRebetButton ? 'Suppressed automated rebet sync' : 'Suppressed success modal dismiss sync';
+            forensicLogger.log('DOM_SYNC_SUPPRESSED', { browserId, reason, commandId: command.id });
+            logger.info(`[TriggerRouter] Suppressing betslip success overlay action [${selector}] broadcast from [${browserId}].`);
+            if (command.ges !== undefined && command.ges !== null) {
+                return new Command({
+                    category: 'Execution',
+                    type: 'NOOP',
+                    target: command.target || {},
+                    source: 'TriggerRouter',
+                    ges: command.ges,
+                    executionMode: 'SLAVES_ONLY',
+                    payload: { reason }
+                });
+            }
+            return null;
+        }
+
         if (selector.includes(this.locators.placeBetButton) || 
             selectorLower.includes('place-bet') || 
             selectorLower.includes('placebet') || 
@@ -74,7 +118,7 @@ export class TriggerRouter {
                 logger.warn(`[TriggerRouter] Suppressing physical Place Bet click on [${browserId}]: Browser is explicitly UNAUTHORIZED to begin new betting transactions.`);
                 if (command.ges !== undefined && command.ges !== null) {
                     return new Command({
-                        category: 'Execution', type: 'NOOP', target: command.target || {}, source: 'TriggerRouter', ges: command.ges, payload: { reason: 'UNAUTHORIZED_FOR_BETTING' }
+                        category: 'Execution', type: 'NOOP', target: command.target || {}, source: 'TriggerRouter', ges: command.ges, executionMode: 'SLAVES_ONLY', payload: { reason: 'UNAUTHORIZED_FOR_BETTING' }
                     });
                 }
                 return null;
