@@ -1,4 +1,4 @@
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import { Workflow } from './Workflow.mjs';
 import { redactUsername } from '../../utils/redact.mjs';
 

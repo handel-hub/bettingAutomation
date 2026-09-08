@@ -14,9 +14,9 @@
   "name": "bettingautomation",
   "version": "1.0.0",
   "description": "",
-  "main": "index.mjs",
+  "main": "launcher/index.mjs",
   "scripts": {
-    "start": "node index.mjs",
+    "start": "node launcher/index.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"

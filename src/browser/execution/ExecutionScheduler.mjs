@@ -1,4 +1,4 @@
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import { Command } from './Command.mjs';
 import { ExecutionContext } from './ExecutionContext.mjs';
 import { SynchronizationProfiles } from '../synchronization/profiles/SynchronizationProfiles.mjs';

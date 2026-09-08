@@ -1,4 +1,4 @@
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import { globalRecorder } from '../../rkp/RuntimeKnowledgePlatform.mjs';
 import crypto from 'node:crypto';
 import { forensicLogger } from '../forensics/ForensicLogger.mjs';
@@ -9,10 +9,11 @@ import { forensicLogger } from '../forensics/ForensicLogger.mjs';
  * Enforces single-flight ownership and interacts with the RunLedger WAL.
  */
 export class RunOrchestrator {
-    constructor(runLedger, registry, commandRouter) {
+    constructor(runLedger, registry, commandRouter, bettingAuthorizationRegistry) {
         this.runLedger = runLedger;
         this.registry = registry;
         this.commandRouter = commandRouter;
+        this.bettingAuthorizationRegistry = bettingAuthorizationRegistry;
         
         // Ownership map: accountId -> activeRun object
         // If an account is not in this map, it is PASSIVE.
@@ -26,6 +27,14 @@ export class RunOrchestrator {
      */
     acquireOwnership(accountId, triggerSource) {
         forensicLogger.log('OWNERSHIP_REQUEST', { ownershipId: accountId, accountId, browserId: accountId, triggerSource, previousState: this.activeRuns.has(accountId) ? 'EXECUTING' : 'PASSIVE' });
+        
+        // EARLY AUTHORIZATION REJECTION (GATE 1)
+        if (this.bettingAuthorizationRegistry && !this.bettingAuthorizationRegistry.isAuthorized(accountId)) {
+            forensicLogger.log('OWNERSHIP_REJECTED', { ownershipId: accountId, accountId, browserId: accountId, reason: 'UNAUTHORIZED_FOR_BETTING' });
+            logger.warn(`[RunOrchestrator] Ownership acquisition rejected for [${accountId}]: Browser is explicitly UNAUTHORIZED to begin new betting transactions.`);
+            return null;
+        }
+
         if (this.activeRuns.has(accountId)) {
             forensicLogger.log('OWNERSHIP_REJECTED', { ownershipId: accountId, accountId, browserId: accountId, reason: 'Already EXECUTING' });
             logger.warn(`[RunOrchestrator] Ownership acquisition rejected for [${accountId}] via ${triggerSource}: Already EXECUTING.`);

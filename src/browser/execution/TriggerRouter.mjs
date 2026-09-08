@@ -1,4 +1,4 @@
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import { Command } from './Command.mjs';
 import { SportyBetLocatorRegistry } from '../adapters/sportybet/SportyBetLocatorRegistry.mjs';
 import { forensicLogger } from '../forensics/ForensicLogger.mjs';
@@ -67,6 +67,18 @@ export class TriggerRouter {
             selectorLower.includes('\"place ')) {
             forensicLogger.log('PLACE_BET_DETECTED', { browserId, commandId: command.id, locator: selector, text: sidText });
             logger.info(`[TriggerRouter] Physical Place Bet click detected from DOM on [${browserId}].`);
+
+            // TRANSACTION BOUNDARY GATE (GATE 1 - EARLY REJECTION)
+            if (this.runOrchestrator.bettingAuthorizationRegistry && !this.runOrchestrator.bettingAuthorizationRegistry.isAuthorized(browserId)) {
+                forensicLogger.log('DOM_SYNC_SUPPRESSED', { browserId, reason: 'UNAUTHORIZED_FOR_BETTING', commandId: command.id });
+                logger.warn(`[TriggerRouter] Suppressing physical Place Bet click on [${browserId}]: Browser is explicitly UNAUTHORIZED to begin new betting transactions.`);
+                if (command.ges !== undefined && command.ges !== null) {
+                    return new Command({
+                        category: 'Execution', type: 'NOOP', target: command.target || {}, source: 'TriggerRouter', ges: command.ges, payload: { reason: 'UNAUTHORIZED_FOR_BETTING' }
+                    });
+                }
+                return null;
+            }
 
             const lease = this.runOrchestrator.acquireOwnership(browserId, 'DOM_SYNC');
             if (lease) {

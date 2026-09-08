@@ -1,4 +1,4 @@
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import fs from 'node:fs';
 import { promises as fsPromises } from 'node:fs';
 import path from 'node:path';

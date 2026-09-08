@@ -1,4 +1,4 @@
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import { Command } from '../execution/Command.mjs';
 import { ConstraintEngine } from '../execution/ConstraintEngine.mjs';
 import { forensicLogger } from '../forensics/ForensicLogger.mjs';
@@ -9,13 +9,14 @@ import { forensicLogger } from '../forensics/ForensicLogger.mjs';
  * Owns physical execution (typing, pre-flight checks, physical click) and observes the immediate DOM result.
  */
 export class BetCycle {
-    constructor({ runId, cycleId, policySnapshot, adapter, simulator, runOrchestrator, isRebetContinuation = false, rebetSequenceIndex = 0 }) {
+    constructor({ runId, cycleId, policySnapshot, adapter, simulator, runOrchestrator, bettingAuthorizationRegistry, isRebetContinuation = false, rebetSequenceIndex = 0 }) {
         this.runId = runId;
         this.cycleId = cycleId;
         this.policy = policySnapshot;
         this.adapter = adapter;
         this.simulator = simulator;
         this.runOrchestrator = runOrchestrator;
+        this.bettingAuthorizationRegistry = bettingAuthorizationRegistry;
         this.isRebetContinuation = isRebetContinuation;
         this.rebetSequenceIndex = rebetSequenceIndex;
         
@@ -55,6 +56,15 @@ export class BetCycle {
         const cycleStartTime = Date.now();
         
         forensicLogger.log('BETCYCLE_START', { cycleId: this.cycleId, accountId: id, browserId: id });
+        
+        // TRANSACTION BOUNDARY GATE (GATE 2)
+        if (this.bettingAuthorizationRegistry && !this.bettingAuthorizationRegistry.isAuthorized(id)) {
+            forensicLogger.log('BETCYCLE_ABORTED', { cycleId: this.cycleId, accountId: id, reason: 'UNAUTHORIZED_FOR_BETTING' });
+            logger.warn(`[Cycle:${this.cycleId}] Aborting before execution: Browser [${id}] is explicitly UNAUTHORIZED to begin a new betting transaction.`);
+            this._logStateTransition('ABORTED', id);
+            return { status: 'ABORTED', reason: 'UNAUTHORIZED_FOR_BETTING' };
+        }
+
         await this._captureState(page, 'A. Before BetCycle starts', id);
 
         try {

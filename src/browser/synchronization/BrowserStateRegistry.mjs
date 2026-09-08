@@ -1,6 +1,6 @@
 import { BrowserStateModel, LifecycleState } from './models/BrowserStateModel.mjs';
 import { NTPClockSync } from '../execution/time/NTPClockSync.mjs';
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 import EventEmitter from 'node:events';
 
 /**

@@ -1,5 +1,5 @@
 import EventEmitter from 'node:events';
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 
 export class StateObserver extends EventEmitter {
     constructor(registry) {

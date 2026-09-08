@@ -1,7 +1,7 @@
 import EventEmitter from 'node:events';
 import { ViewportLifecycle } from '../../models/BrowserStateModel.mjs';
 import { ViewportEventType } from './ViewportEvent.mjs';
-import { logger } from '../../../../config.mjs';
+import { logger } from '../../../../utils/logger.mjs';
 
 /**
  * Consumes ViewportEvents, debounces them via ViewportPolicy,

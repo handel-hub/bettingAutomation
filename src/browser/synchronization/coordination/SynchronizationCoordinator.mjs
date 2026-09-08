@@ -1,7 +1,7 @@
 import { CapabilityDependencyGraph } from './CapabilityDependencyGraph.mjs';
 import { SynchronizationSnapshot } from './SynchronizationSnapshot.mjs';
 import { CapabilityRegistry } from '../CapabilityRegistry.mjs';
-import { logger } from '../../../config.mjs';
+import { logger } from '../../../utils/logger.mjs';
 import EventEmitter from 'node:events';
 
 export class SynchronizationCoordinator extends EventEmitter {

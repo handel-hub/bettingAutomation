@@ -131,9 +131,9 @@ export class CommandPayloadSchema {
 
         // Validate target descriptor if present
         if (command.target !== undefined && command.target !== null) {
-            if (typeof command.target !== 'object' && category !== 'Recovery') {
-                errors.push('Command target must be an object.');
-            } else if (typeof command.target === 'object' && command.target.primarySelector !== undefined && typeof command.target.primarySelector !== 'string') {
+            if (typeof command.target !== 'object' && typeof command.target !== 'string' && !Array.isArray(command.target)) {
+                errors.push('Command target must be an object, string, or array.');
+            } else if (typeof command.target === 'object' && !Array.isArray(command.target) && command.target.primarySelector !== undefined && typeof command.target.primarySelector !== 'string') {
                 errors.push('Command target.primarySelector must be a string.');
             }
         }

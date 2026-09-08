@@ -1,5 +1,5 @@
 import { RecoveryPlan } from './RecoveryPlan.mjs';
-import { logger } from '../../../config.mjs';
+import { logger } from '../../../utils/logger.mjs';
 
 export class RecoveryCoordinator {
     constructor(registry) {

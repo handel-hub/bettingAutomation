@@ -1,20 +1,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { logger } from '../../config.mjs';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+import { logger } from '../../utils/logger.mjs';
 import { AutomationRun } from '../workflows/AutomationRun.mjs';
 import { CashoutTransaction } from '../workflows/CashoutTransaction.mjs';
 import { SportyBetAdapter } from '../adapters/sportybet/SportyBetAdapter.mjs';
 
 export class WorkflowEngine {
-    constructor({ lockManager, registry, policyManager, simulator, runOrchestrator }) {
+    constructor({ lockManager, registry, policyManager, simulator, runOrchestrator, bettingAuthorizationRegistry }) {
         this.lockManager = lockManager;
         this.registry = registry;
         this.policyManager = policyManager;
         this.simulator = simulator;
         this.runOrchestrator = runOrchestrator;
+        this.bettingAuthorizationRegistry = bettingAuthorizationRegistry;
         
         try {
-            const selectorsPath = path.resolve(process.cwd(), 'sequences', 'selectors.json');
+            const selectorsPath = path.resolve(__dirname, '..', '..', '..', 'sequences', 'selectors.json');
             this.selectors = JSON.parse(fs.readFileSync(selectorsPath, 'utf8'));
             logger.info('WorkflowEngine: Loaded selectors.json successfully.');
         } catch (err) {
@@ -89,9 +94,25 @@ export class WorkflowEngine {
         logger.info(`[WorkflowEngine] Starting AutomationRun on ${targetBrowsers.length} target(s)...`);
 
         const promises = targetBrowsers.map(async (b) => {
-            const runId = command.runId;
+            let runId;
+            if (this.runOrchestrator) {
+                const existingRun = this.runOrchestrator.activeRuns.get(b.id);
+                if (existingRun) {
+                    runId = existingRun.runId;
+                } else {
+                    const lease = this.runOrchestrator.acquireOwnership(b.id, command.source || 'WORKFLOW');
+                    if (!lease) {
+                        logger.warn(`[WorkflowEngine] Skipping [${b.id}]: could not acquire execution ownership.`);
+                        return;
+                    }
+                    runId = lease.runId;
+                }
+            } else {
+                runId = command.runId;
+            }
+
             if (!runId) {
-                logger.error(`[WorkflowEngine] Cannot execute placebet without a valid runId.`);
+                logger.error(`[WorkflowEngine] Cannot execute placebet on [${b.id}] without a valid runId.`);
                 return;
             }
 
@@ -106,15 +127,16 @@ export class WorkflowEngine {
                     this.policyManager,
                     adapter,
                     this.simulator,
-                    this.runOrchestrator
+                    this.runOrchestrator,
+                    this.bettingAuthorizationRegistry
                 );
 
-                this.activeRuns.set(runId, run);
+                this.activeRuns.set(b.id, run);
 
                 // Start the run execution loop
                 const result = await run.start(b);
                 
-                logger.info(`[WorkflowEngine] AutomationRun [${runId}] terminated with status: ${result.status} after ${result.cycles} cycles.`);
+                logger.info(`[WorkflowEngine] AutomationRun [${runId}] on [${b.id}] terminated with status: ${result.status} after ${result.cycles} cycles.`);
                 
                 if (this.runOrchestrator) {
                     if (result.status === 'UNCERTAIN') {
@@ -134,7 +156,7 @@ export class WorkflowEngine {
                     this.runOrchestrator.markUncertain(b.id);
                 }
             } finally {
-                this.activeRuns.delete(runId);
+                this.activeRuns.delete(b.id);
                 
                 const currentState = this.registry.get(b.id);
                 if (currentState && currentState.state === 'Busy') {

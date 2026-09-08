@@ -1,6 +1,6 @@
 import { BrowserStateRegistry } from './BrowserStateRegistry.mjs';
 import { CapabilityRegistry } from './CapabilityRegistry.mjs';
-import { logger } from '../../config.mjs';
+import { logger } from '../../utils/logger.mjs';
 
 /**
  * The orchestrator. Coordinates the barrier and executes Capability Providers.

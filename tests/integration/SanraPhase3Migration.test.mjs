@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { rkp } from '../../src/rkp/RuntimeKnowledgePlatform.mjs';
-import { logger } from '../../src/config.mjs';
+import { logger } from '../../src/utils/logger.mjs';
 import { CommandRouter } from '../../src/browser/CommandRouter.mjs';
 import { TelemetryCollector } from '../../src/browser/execution/locatorIntelligence/telemetry/TelemetryCollector.mjs';
 import { SynchronizationManager } from '../../src/browser/synchronization/SynchronizationManager.mjs';

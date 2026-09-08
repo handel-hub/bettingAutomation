@@ -1,4 +1,4 @@
-import { logger } from '../../../config.mjs';
+import { logger } from '../../../utils/logger.mjs';
 import { TelemetryCollector } from '../locatorIntelligence/telemetry/TelemetryCollector.mjs';
 import { ClockDriftError } from '../errors.mjs';
 
