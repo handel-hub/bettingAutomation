@@ -88,6 +88,71 @@ export class TriggerRouter {
             return command;
         }
 
+        // CASHOUT TRANSACTION BOUNDARY (Detection & Causal Suppression)
+        const isCashoutTrigger = command.payload?.isCashout ||
+            selectorLower.includes('btn--cashout') ||
+            selectorLower.includes('btn-cashout') ||
+            selectorLower.includes('openbet__cashout_btn') ||
+            selectorLower.includes('cashout') ||
+            selectorLower.includes('cash out') ||
+            sidText.includes('cash out') ||
+            sidText.includes('cashout');
+
+        if (isCashoutTrigger) {
+            forensicLogger.log('CASHOUT_DETECTED', { browserId, commandId: command.id, locator: selector, text: sidText, betId: command.payload?.betId });
+            logger.info(`[TriggerRouter] Physical Cashout click detected from DOM on [${browserId}].`);
+
+            // If already executing an active run, suppress the click to prevent feedback loops
+            if (this.runOrchestrator.isExecuting(browserId)) {
+                logger.info(`[TriggerRouter] Suppressing Cashout click on [${browserId}] because browser is already EXECUTING.`);
+                if (command.ges !== undefined && command.ges !== null) {
+                    return new Command({
+                        category: 'Execution', type: 'NOOP', target: command.target || {}, source: 'TriggerRouter', ges: command.ges, payload: { reason: 'Cashout in progress drop' }
+                    });
+                }
+                return null;
+            }
+
+            const lease = this.runOrchestrator.acquireOwnership(browserId, 'CASHOUT_DOM_SYNC');
+            if (lease) {
+                const workflowCmd = new Command({
+                    category: 'Workflow',
+                    type: 'cashout',
+                    source: 'TriggerRouter',
+                    executionMode: 'UNIQUE_ACCOUNTS_ONLY',
+                    runId: lease.runId,
+                    payload: {
+                        betId: command.payload?.betId || null,
+                        selector: selector,
+                        sid: command.payload?.sid || null
+                    }
+                });
+                forensicLogger.log('CASHOUT_WORKFLOW_CREATED', { browserId, runId: lease.runId, commandId: workflowCmd.id });
+
+                // Suppress raw physical click broadcast to slaves to preserve semantic bet identity!
+                if (command.ges !== undefined && command.ges !== null) {
+                    const noopCmd = new Command({
+                        category: 'Execution',
+                        type: 'NOOP',
+                        target: command.target || {},
+                        source: 'TriggerRouter',
+                        ges: command.ges,
+                        payload: { reason: 'Suppressed raw cashout click to preserve semantic bet identity' }
+                    });
+                    return [noopCmd, workflowCmd];
+                }
+                return workflowCmd;
+            }
+
+            // If lease could not be acquired, drop the raw click
+            if (command.ges !== undefined && command.ges !== null) {
+                return new Command({
+                    category: 'Execution', type: 'NOOP', target: command.target || {}, source: 'TriggerRouter', ges: command.ges, payload: { reason: 'Cashout ownership not acquired' }
+                });
+            }
+            return null;
+        }
+
         return command;
     }
 
@@ -106,6 +171,19 @@ export class TriggerRouter {
                 });
             }
             return null; 
+        }
+
+        if (command.category === 'Workflow' && command.type === 'cashout') {
+            logger.info(`[TriggerRouter] Hotkey Cashout detected on [${browserId}].`);
+
+            const lease = this.runOrchestrator.acquireOwnership(browserId, 'CASHOUT_HOTKEY');
+            if (lease) {
+                return new Command({
+                    ...command,
+                    runId: lease.runId
+                });
+            }
+            return null;
         }
 
         return command;
