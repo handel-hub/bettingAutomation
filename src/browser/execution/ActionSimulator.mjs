@@ -688,6 +688,141 @@ export class ActionSimulator extends EventEmitter {
                         }
                     }, command.payload);
                 }, browserObj, deadlineBudget, options.executionContext);
+            } else if (type === 'ATOMIC_CASHOUT') {
+                usedLocatorInfo = await this._executeWithRecovery(command, page, 'atomic_cashout', async (loc) => {
+                    import('../forensics/ForensicLogger.mjs').then(({ forensicLogger }) => {
+                        forensicLogger.log('ATOMIC_CASHOUT_START', { commandId: command.id });
+                    }).catch(()=>{});
+
+                    const executionResult = await loc.evaluate(async (wrapEl, data) => {
+                        const forensic = (evt, meta) => console.log('FORENSIC_LOG:' + JSON.stringify({ evt, meta, ts: performance.now() }));
+                        forensic('ATOMIC_CASHOUT_ENTER', { betId: data.betId });
+
+                        // 1. CHECK IF CONFIRM MODAL IS ALREADY OPEN (e.g. Master already opened it)
+                        const confirmSelector = data.confirmSelector || '.m-cashout-pop .af-button--primary, .af-modal--cashout .af-button--primary, button[data-op="cashout-confirm"]';
+                        let confirmBtn = document.querySelector(confirmSelector);
+                        const isAlreadyConfirmScreen = confirmBtn && confirmBtn.getBoundingClientRect().height > 0;
+
+                        if (isAlreadyConfirmScreen) {
+                            forensic('ATOMIC_CASHOUT_STAGE', { stage: 'ALREADY_CONFIRM_SCREEN' });
+                        } else {
+                            // 2. RESOLVE TARGET OPEN BET
+                            let betWrapper = null;
+                            if (data.betId) {
+                                betWrapper = document.querySelector(`[data-op*="openbet-item-wrapper-${data.betId}"], [data-op*="openbet-simple-list-item-${data.betId}"]`);
+                                if (!betWrapper && typeof data.betId === 'string' && data.betId.length >= 12) {
+                                    // Timestamp prefix fallback
+                                    const tsPrefix = data.betId.slice(0, 12);
+                                    betWrapper = document.querySelector(`[data-op*="openbet-item-wrapper-${tsPrefix}"], [data-op*="openbet-simple-list-item-${tsPrefix}"]`);
+                                }
+                            }
+
+                            if (!betWrapper && data.targetSelector) {
+                                const candidate = document.querySelector(data.targetSelector);
+                                if (candidate) {
+                                    betWrapper = candidate.closest('[data-op*="openbet-item-wrapper-"], [data-op*="openbet-simple-list-item-"]') || candidate;
+                                }
+                            }
+
+                            if (!betWrapper) {
+                                const anyCashout = document.querySelector('button.m-btn--cashout:not([disabled]), [data-op="openbet__cashout_btn"]:not([disabled])');
+                                if (anyCashout) {
+                                    betWrapper = anyCashout.closest('[data-op*="openbet-item-wrapper-"], [data-op*="openbet-simple-list-item-"]') || anyCashout.parentElement;
+                                }
+                            }
+
+                            if (!betWrapper) {
+                                forensic('ATOMIC_CASHOUT_ERROR', { error: 'TARGET_BET_NOT_FOUND' });
+                                throw new Error(`[ATOMIC-ABORT] Target open bet [${data.betId || 'unknown'}] not found in DOM`);
+                            }
+
+                            // 3. LOCATE CASHOUT BUTTON
+                            const cashoutBtn = betWrapper.tagName === 'BUTTON' ? betWrapper : betWrapper.querySelector('button.m-btn--cashout, [data-op="openbet__cashout_btn"], .m-btn-cashout, button');
+                            if (!cashoutBtn) {
+                                throw new Error(`[ATOMIC-ABORT] Cashout button missing in target bet item`);
+                            }
+
+                            if (cashoutBtn.disabled || cashoutBtn.classList.contains('disabled') || cashoutBtn.classList.contains('is-disabled')) {
+                                throw new Error(`[ATOMIC-ABORT] Cashout button is currently disabled for this bet`);
+                            }
+
+                            const btnText = cashoutBtn.innerText || cashoutBtn.textContent || '';
+                            const initialValue = parseFloat(btnText.replace(/[^\d.]/g, '')) || null;
+                            forensic('ATOMIC_CASHOUT_VALUE_READ', { initialValue, rawText: btnText });
+
+                            // 4. CLICK CASHOUT BUTTON
+                            forensic('ATOMIC_CASHOUT_STEP1_CLICK', { betId: data.betId });
+                            cashoutBtn.click();
+
+                            // 5. WAIT FOR CONFIRM MODAL
+                            const confirmTimeout = data.confirmTimeoutMs || 5000;
+                            const modalStartTime = performance.now();
+
+                            while (performance.now() - modalStartTime < confirmTimeout) {
+                                confirmBtn = document.querySelector(confirmSelector);
+                                if (confirmBtn && confirmBtn.getBoundingClientRect().height > 0) {
+                                    break;
+                                }
+                                await new Promise(r => setTimeout(r, 50));
+                            }
+
+                            if (!confirmBtn || confirmBtn.getBoundingClientRect().height === 0) {
+                                throw new Error(`[ATOMIC-ABORT] Confirmation modal failed to appear within ${confirmTimeout}ms`);
+                            }
+                        }
+
+                        // 6. IRREVERSIBLE BOUNDARY - CLICK CONFIRM
+                        const confirmText = (confirmBtn.innerText || confirmBtn.textContent || '').trim();
+                        forensic('ATOMIC_CASHOUT_IRREVERSIBLE_BOUNDARY_CROSSED', { confirmText, ts: Date.now() });
+                        confirmBtn.click();
+
+                        // 7. AWAIT OUTCOME
+                        const resultTimeout = data.resultTimeoutMs || 12000;
+                        const submitStartTime = performance.now();
+                        let outcome = 'UNKNOWN';
+                        let detail = '';
+
+                        while (performance.now() - submitStartTime < resultTimeout) {
+                            const successToast = document.querySelector('.m-toast--success, .m-notice--success, .m-msg--success, .m-alert--success');
+                            const errorToast = document.querySelector('.m-toast--error, .m-notice--error, .m-msg--error, .m-alert--error, .fs-m-error');
+                            const modalStillOpen = document.querySelector('.m-cashout-pop, .af-modal--cashout');
+
+                            if (successToast && successToast.getBoundingClientRect().height > 0) {
+                                outcome = 'SUCCESS';
+                                detail = successToast.innerText || 'Cashout success toast detected';
+                                break;
+                            }
+
+                            if (errorToast && errorToast.getBoundingClientRect().height > 0) {
+                                outcome = 'FAILED';
+                                detail = errorToast.innerText || 'Cashout error toast detected';
+                                break;
+                            }
+
+                            // If modal closed and bet is no longer in DOM
+                            if (!modalStillOpen) {
+                                const betStillOpen = data.betId ? document.querySelector(`[data-op*="openbet-item-wrapper-${data.betId}"]`) : null;
+                                if (data.betId && !betStillOpen) {
+                                    outcome = 'SUCCESS';
+                                    detail = 'Bet successfully settled and removed from open bets';
+                                    break;
+                                }
+                            }
+
+                            await new Promise(r => setTimeout(r, 100));
+                        }
+
+                        forensic('ATOMIC_CASHOUT_RESULT', { outcome, detail });
+                        return { status: outcome, detail };
+                    }, command.payload);
+
+                    if (executionResult.status === 'UNKNOWN') {
+                        throw new UncertainStateError(`[ATOMIC-UNKNOWN] ${executionResult.detail}`);
+                    } else if (executionResult.status === 'FAILED') {
+                        throw new Error(`[ATOMIC-FAILED] ${executionResult.detail}`);
+                    }
+                    return executionResult;
+                }, browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'CLICK' || type === 'click') {
                 usedLocatorInfo = await this._executeWithRecovery(command, page, 'click', async (loc) => await loc.click(tOpts), browserObj, deadlineBudget, options.executionContext);
             } else if (type === 'DOUBLE_CLICK' || type === 'dblclick') {

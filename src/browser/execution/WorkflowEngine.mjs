@@ -6,6 +6,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import { logger } from '../../utils/logger.mjs';
 import { AutomationRun } from '../workflows/AutomationRun.mjs';
+import { CashoutTransaction } from '../workflows/CashoutTransaction.mjs';
 import { SportyBetAdapter } from '../adapters/sportybet/SportyBetAdapter.mjs';
 
 export class WorkflowEngine {
@@ -31,8 +32,62 @@ export class WorkflowEngine {
     }
 
     async execute(command, targetBrowsers) {
-        if (command.type !== 'placebet') {
+        if (command.type !== 'placebet' && command.type !== 'cashout') {
             logger.error(`WorkflowEngine: Unsupported workflow type '${command.type}'`);
+            return;
+        }
+
+        if (command.type === 'cashout') {
+            logger.info(`[WorkflowEngine] Starting CashoutTransaction on ${targetBrowsers.length} target(s)...`);
+
+            const promises = targetBrowsers.map(async (b) => {
+                const runId = command.runId;
+                if (!runId) {
+                    logger.error(`[WorkflowEngine] Cannot execute cashout without a valid runId.`);
+                    return;
+                }
+
+                try {
+                    this.registry.updateState(b.id, 'Busy');
+
+                    const transaction = new CashoutTransaction(
+                        runId,
+                        b.id,
+                        this.simulator,
+                        this.runOrchestrator,
+                        command.payload || {}
+                    );
+
+                    this.activeRuns.set(runId, transaction);
+
+                    const result = await transaction.start(b);
+
+                    logger.info(`[WorkflowEngine] CashoutTransaction [${runId}] terminated with status: ${result.status} after ${result.cycles} cycles.`);
+
+                    if (this.runOrchestrator) {
+                        if (result.status === 'UNCERTAIN') {
+                            this.runOrchestrator.markUncertain(b.id);
+                        } else {
+                            this.runOrchestrator.releaseOwnership(b.id, result.status);
+                        }
+                    }
+
+                } catch (err) {
+                    logger.error(`[WorkflowEngine] Unhandled error in CashoutTransaction [${runId}] on [${b.id}]: ${err.message}`);
+                    if (this.runOrchestrator) {
+                        this.runOrchestrator.markUncertain(b.id);
+                    }
+                } finally {
+                    this.activeRuns.delete(runId);
+
+                    const currentState = this.registry.get(b.id);
+                    if (currentState && currentState.state === 'Busy') {
+                        this.registry.updateState(b.id, 'Ready');
+                    }
+                }
+            });
+
+            await Promise.allSettled(promises);
             return;
         }
 
