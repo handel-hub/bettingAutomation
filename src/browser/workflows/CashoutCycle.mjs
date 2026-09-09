@@ -1,6 +1,7 @@
 import { logger } from '../../utils/logger.mjs';
 import { Command } from '../execution/Command.mjs';
 import { forensicLogger } from '../forensics/ForensicLogger.mjs';
+import { SportyBetAdapter } from '../adapters/sportybet/SportyBetAdapter.mjs';
 
 /**
  * CashoutCycle
@@ -17,6 +18,7 @@ export class CashoutCycle {
         this.simulator = simulator;
         this.runOrchestrator = runOrchestrator;
         this.state = 'CREATED';
+        this.adapter = new SportyBetAdapter();
     }
 
     async execute(browserObj) {
@@ -30,42 +32,37 @@ export class CashoutCycle {
             if (this.runOrchestrator) {
                 this.runOrchestrator.setActiveCycle(this.runId, this.cycleId);
             }
-            this.state = 'PROCESSING';
+            this.state = 'DISPATCHED';
 
+            const translated = this.adapter.translateAtomicCashout(this.betId, this.targetSelector);
             const atomicCommand = new Command({
                 category: 'Execution',
-                type: 'ATOMIC_CASHOUT',
-                payload: {
-                    selector: 'body',
-                    betId: this.betId,
-                    targetSelector: this.targetSelector,
-                    confirmTimeoutMs: 5000,
-                    resultTimeoutMs: 12000,
-                    idempotent: false
-                },
+                type: translated.type,
+                payload: translated.payload,
                 source: 'CashoutCycle',
                 runId: this.runId,
                 cycleId: this.cycleId,
                 idempotent: false
             });
 
-            await this.simulator.execute(browserObj, atomicCommand);
+            const executionResult = await this.simulator.execute(browserObj, atomicCommand);
             this.state = 'SETTLEMENT';
             forensicLogger.log('CASHOUT_CYCLE_COMPLETE', { runId: this.runId, cycleId: this.cycleId, accountId: id, status: 'SUCCESS', duration: Date.now() - cycleStartTime });
             logger.info(`[CashoutCycle:${this.cycleId}] Cashout completed successfully on [${id}].`);
-            return { status: 'SUCCESS', detail: 'Cashout settled successfully' };
+            return { status: 'SUCCESS', detail: executionResult?.detail || 'Cashout settled successfully' };
 
         } catch (err) {
             const msg = err.message || '';
+            const boundaryCrossed = err.boundaryCrossed === true;
             logger.error(`[CashoutCycle:${this.cycleId}] Cashout failed on [${id}]: ${msg}`);
-            forensicLogger.log('CASHOUT_CYCLE_ERROR', { runId: this.runId, cycleId: this.cycleId, accountId: id, error: msg, duration: Date.now() - cycleStartTime });
+            forensicLogger.log('CASHOUT_CYCLE_ERROR', { runId: this.runId, cycleId: this.cycleId, accountId: id, error: msg, boundaryCrossed, duration: Date.now() - cycleStartTime });
 
             if (msg.includes('ATOMIC-UNKNOWN')) {
                 this.state = 'UNCERTAIN';
                 return { status: 'UNCERTAIN', detail: msg };
             }
 
-            if (msg.includes('ATOMIC-ABORT')) {
+            if (msg.includes('ATOMIC-ABORT') || !boundaryCrossed) {
                 this.state = 'ABORTED';
                 return { status: 'ABORTED', detail: msg };
             }
@@ -75,12 +72,14 @@ export class CashoutCycle {
                 return { status: 'FAILED', detail: msg };
             }
 
-            // If an unexpected error occurred during or after processing, assume UNCERTAIN to protect funds
-            if (this.state === 'PROCESSING' || this.state === 'SETTLEMENT') {
-                return { status: 'UNCERTAIN', detail: `Unexpected fault during cashout processing: ${msg}` };
+            // Only if boundary was crossed and an unexpected error occurred, assume UNCERTAIN
+            if (boundaryCrossed || this.state === 'SETTLEMENT') {
+                this.state = 'UNCERTAIN';
+                return { status: 'UNCERTAIN', detail: `Unexpected fault during cashout settlement: ${msg}` };
             }
 
-            return { status: 'FAILED', detail: msg };
+            this.state = 'ABORTED';
+            return { status: 'ABORTED', detail: msg };
 
         } finally {
             if (this.runOrchestrator) {

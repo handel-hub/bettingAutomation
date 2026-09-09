@@ -26,6 +26,20 @@ export class CashoutTransaction {
         this.state = 'ACTIVE';
         logger.info(`[CashoutTransaction:${this.runId}] Starting cashout transaction on [${this.accountId}].`);
 
+        // Ensure browser is situated on the Open Bets view
+        if (browserObj?.page) {
+            try {
+                const currentUrl = browserObj.page.url() || '';
+                if (!currentUrl.includes('/my_accounts/open_bets')) {
+                    logger.info(`[CashoutTransaction:${this.runId}] Browser [${this.accountId}] not on Open Bets. Navigating...`);
+                    await browserObj.page.goto('https://www.sportybet.com/ng/m/my_accounts/open_bets?from=nav_bar', { waitUntil: 'domcontentloaded', timeout: 10000 });
+                    await browserObj.page.waitForTimeout(1000);
+                }
+            } catch (navErr) {
+                logger.warn(`[CashoutTransaction:${this.runId}] Navigation pre-flight warning for [${this.accountId}]: ${navErr.message}`);
+            }
+        }
+
         let active = true;
         const maxPreBoundaryRetries = 2;
         let attempt = 0;

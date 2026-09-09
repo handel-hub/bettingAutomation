@@ -111,6 +111,18 @@ export class TriggerRouter {
             sidText.includes('cashout');
 
         if (isCashoutTrigger) {
+            // TRANSACTION BOUNDARY GATE (GATE 1 - EARLY REJECTION)
+            if (this.runOrchestrator.bettingAuthorizationRegistry && !this.runOrchestrator.bettingAuthorizationRegistry.isAuthorized(browserId)) {
+                forensicLogger.log('DOM_SYNC_SUPPRESSED', { browserId, reason: 'UNAUTHORIZED_FOR_CASHOUT', commandId: command.id });
+                logger.warn(`[TriggerRouter] Suppressing physical Cashout click on [${browserId}]: Browser is explicitly UNAUTHORIZED for cashout.`);
+                if (command.ges !== undefined && command.ges !== null) {
+                    return new Command({
+                        category: 'Execution', type: 'NOOP', target: command.target || {}, source: 'TriggerRouter', ges: command.ges, payload: { reason: 'UNAUTHORIZED_FOR_CASHOUT' }
+                    });
+                }
+                return null;
+            }
+
             forensicLogger.log('CASHOUT_DETECTED', { browserId, commandId: command.id, locator: selector, text: sidText, betId: command.payload?.betId });
             logger.info(`[TriggerRouter] Physical Cashout click detected from DOM on [${browserId}].`);
 
@@ -125,6 +137,12 @@ export class TriggerRouter {
                 return null;
             }
 
+            const isPureCss = typeof selector === 'string' &&
+                !selector.includes('internal:') &&
+                !selector.includes('>>') &&
+                /^[.#a-zA-Z\[]/.test(selector.trim());
+            const cleanSelector = isPureCss ? selector : null;
+
             const lease = this.runOrchestrator.acquireOwnership(browserId, 'CASHOUT_DOM_SYNC');
             if (lease) {
                 const workflowCmd = new Command({
@@ -135,7 +153,8 @@ export class TriggerRouter {
                     runId: lease.runId,
                     payload: {
                         betId: command.payload?.betId || null,
-                        selector: selector,
+                        masterBetId: command.payload?.betId || null,
+                        selector: cleanSelector,
                         sid: command.payload?.sid || null
                     }
                 });

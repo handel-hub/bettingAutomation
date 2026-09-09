@@ -53,7 +53,9 @@ export class SportyBetLocatorRegistry {
         this.cashoutItemWrapper = '[data-op*="openbet-item-wrapper-"], [data-op*="openbet-simple-list-item-"]';
         this.cashoutConfirmModal = '.m-cashout-pop, .af-modal--cashout';
         this.cashoutConfirmButton = '.m-cashout-pop .af-button--primary, .af-modal--cashout .af-button--primary, button[data-op="cashout-confirm"]';
-        this.cashoutSuccessToast = '.m-toast--success, .m-notice--success, .m-msg--success, .m-alert--success';
+        this.cashoutSuccessPopup = '[data-op="open_bets__cashout_success_popup"]';
+        this.cashoutSuccessPopupClose = '[data-op="open_bets__cashout_success_popup_close"]';
+        this.cashoutSuccessToast = '.m-toast--success, .m-notice--success, .m-msg--success, .m-alert--success, .m-toast, [class*="toast"]';
         this.cashoutErrorToast = '.m-toast--error, .m-notice--error, .m-msg--error, .m-alert--error, .fs-m-error';
     }
 

@@ -80,4 +80,52 @@ describe('Cashout in TriggerRouter', () => {
         expect(result.runId).toBe('lease-123');
         expect(mockRunOrchestrator.acquireOwnership).toHaveBeenCalledWith('master', 'CASHOUT_HOTKEY');
     });
+
+    it('suppresses cashout click at Gate 1 if browser is UNAUTHORIZED', () => {
+        mockRunOrchestrator.bettingAuthorizationRegistry = {
+            isAuthorized: vi.fn().mockReturnValue(false)
+        };
+
+        const clickCmd = new Command({
+            category: 'Execution',
+            type: 'CLICK',
+            ges: 45,
+            payload: {
+                isCashout: true,
+                selector: 'button.m-btn--cashout'
+            }
+        });
+
+        const result = router.interceptDomSync(clickCmd, 'slave-1');
+
+        expect(result.type).toBe('NOOP');
+        expect(result.ges).toBe(45);
+        expect(result.payload.reason).toBe('UNAUTHORIZED_FOR_CASHOUT');
+        expect(mockRunOrchestrator.acquireOwnership).not.toHaveBeenCalled();
+    });
+
+    it('sanitizes Playwright pseudo-selectors and sets masterBetId on workflow command', () => {
+        const clickCmd = new Command({
+            category: 'Execution',
+            type: 'CLICK',
+            ges: 46,
+            payload: {
+                isCashout: true,
+                betId: 'master-bet-007',
+                selector: 'internal:role=button[name="Cashout"i] >> nth=0'
+            }
+        });
+
+        const result = router.interceptDomSync(clickCmd, 'master');
+
+        expect(Array.isArray(result)).toBe(true);
+        const [noopCmd, workflowCmd] = result;
+
+        expect(noopCmd.type).toBe('NOOP');
+        expect(workflowCmd.type).toBe('cashout');
+        expect(workflowCmd.payload.betId).toBe('master-bet-007');
+        expect(workflowCmd.payload.masterBetId).toBe('master-bet-007');
+        // Pseudo-selector must be stripped out so slaves do not fail document.querySelector
+        expect(workflowCmd.payload.selector).toBeNull();
+    });
 });

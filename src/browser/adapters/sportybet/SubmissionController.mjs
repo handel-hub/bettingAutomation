@@ -115,6 +115,8 @@ export class SubmissionController {
                 cashoutSelector: this.registry.cashoutButton,
                 confirmSelector: this.registry.cashoutConfirmButton,
                 modalSelector: this.registry.cashoutConfirmModal,
+                successPopupSelector: this.registry.cashoutSuccessPopup,
+                successPopupCloseSelector: this.registry.cashoutSuccessPopupClose,
                 successToastSelector: this.registry.cashoutSuccessToast,
                 errorToastSelector: this.registry.cashoutErrorToast,
                 confirmTimeoutMs: 5000,

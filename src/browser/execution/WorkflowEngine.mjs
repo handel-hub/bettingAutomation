@@ -41,28 +41,50 @@ export class WorkflowEngine {
             logger.info(`[WorkflowEngine] Starting CashoutTransaction on ${targetBrowsers.length} target(s)...`);
 
             const promises = targetBrowsers.map(async (b) => {
-                const runId = command.runId;
+                let runId;
+                if (this.runOrchestrator) {
+                    const existingRun = this.runOrchestrator.activeRuns.get(b.id);
+                    if (existingRun) {
+                        runId = existingRun.runId;
+                    } else {
+                        const lease = this.runOrchestrator.acquireOwnership(b.id, command.source || 'CASHOUT_WORKFLOW');
+                        if (!lease) {
+                            logger.warn(`[WorkflowEngine] Skipping [${b.id}]: could not acquire cashout execution ownership.`);
+                            return;
+                        }
+                        runId = lease.runId;
+                    }
+                } else {
+                    runId = command.runId;
+                }
+
                 if (!runId) {
-                    logger.error(`[WorkflowEngine] Cannot execute cashout without a valid runId.`);
+                    logger.error(`[WorkflowEngine] Cannot execute cashout on [${b.id}] without a valid runId.`);
                     return;
                 }
 
                 try {
                     this.registry.updateState(b.id, 'Busy');
 
+                    const isMaster = b.role === 'Master' || b.id === 'master';
+                    const browserPayload = {
+                        ...(command.payload || {}),
+                        betId: isMaster ? (command.payload?.masterBetId || command.payload?.betId || null) : null
+                    };
+
                     const transaction = new CashoutTransaction(
                         runId,
                         b.id,
                         this.simulator,
                         this.runOrchestrator,
-                        command.payload || {}
+                        browserPayload
                     );
 
-                    this.activeRuns.set(runId, transaction);
+                    this.activeRuns.set(b.id, transaction);
 
                     const result = await transaction.start(b);
 
-                    logger.info(`[WorkflowEngine] CashoutTransaction [${runId}] terminated with status: ${result.status} after ${result.cycles} cycles.`);
+                    logger.info(`[WorkflowEngine] CashoutTransaction [${runId}] on [${b.id}] terminated with status: ${result.status} after ${result.cycles} cycles.`);
 
                     if (this.runOrchestrator) {
                         if (result.status === 'UNCERTAIN') {
@@ -78,7 +100,7 @@ export class WorkflowEngine {
                         this.runOrchestrator.markUncertain(b.id);
                     }
                 } finally {
-                    this.activeRuns.delete(runId);
+                    this.activeRuns.delete(b.id);
 
                     const currentState = this.registry.get(b.id);
                     if (currentState && currentState.state === 'Busy') {

@@ -74,4 +74,43 @@ describe('CashoutCycle', () => {
         expect(result.status).toBe('ABORTED');
         expect(mockRunOrchestrator.clearActiveCycle).toHaveBeenCalledWith('run-12');
     });
+
+    it('returns ABORTED when pre-boundary error occurs without boundaryCrossed flag', async () => {
+        const syntaxErr = new SyntaxError("Failed to execute 'querySelector' on 'Document': 'internal:role=button' is not a valid selector.");
+        mockSimulator.execute.mockRejectedValueOnce(syntaxErr);
+
+        const cycle = new CashoutCycle({
+            runId: 'run-13',
+            cycleId: 'cycle-13',
+            betId: 'bet999',
+            simulator: mockSimulator,
+            runOrchestrator: mockRunOrchestrator
+        });
+
+        const result = await cycle.execute(mockBrowser);
+
+        expect(result.status).toBe('ABORTED');
+        expect(cycle.state).toBe('ABORTED');
+        expect(mockRunOrchestrator.clearActiveCycle).toHaveBeenCalledWith('run-13');
+    });
+
+    it('returns UNCERTAIN when unexpected error occurs after boundaryCrossed is true', async () => {
+        const postBoundaryErr = new Error('Network disconnected after confirm click');
+        postBoundaryErr.boundaryCrossed = true;
+        mockSimulator.execute.mockRejectedValueOnce(postBoundaryErr);
+
+        const cycle = new CashoutCycle({
+            runId: 'run-14',
+            cycleId: 'cycle-14',
+            betId: 'bet999',
+            simulator: mockSimulator,
+            runOrchestrator: mockRunOrchestrator
+        });
+
+        const result = await cycle.execute(mockBrowser);
+
+        expect(result.status).toBe('UNCERTAIN');
+        expect(cycle.state).toBe('UNCERTAIN');
+        expect(mockRunOrchestrator.clearActiveCycle).toHaveBeenCalledWith('run-14');
+    });
 });

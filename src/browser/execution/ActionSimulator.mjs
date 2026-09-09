@@ -697,11 +697,12 @@ export class ActionSimulator extends EventEmitter {
                     const executionResult = await loc.evaluate(async (wrapEl, data) => {
                         const forensic = (evt, meta) => console.log('FORENSIC_LOG:' + JSON.stringify({ evt, meta, ts: performance.now() }));
                         forensic('ATOMIC_CASHOUT_ENTER', { betId: data.betId });
+                        let boundaryCrossed = false;
 
                         // 1. CHECK IF CONFIRM MODAL IS ALREADY OPEN (e.g. Master already opened it)
                         const confirmSelector = data.confirmSelector || '.m-cashout-pop .af-button--primary, .af-modal--cashout .af-button--primary, button[data-op="cashout-confirm"]';
                         let confirmBtn = document.querySelector(confirmSelector);
-                        const isAlreadyConfirmScreen = confirmBtn && confirmBtn.getBoundingClientRect().height > 0;
+                        const isAlreadyConfirmScreen = confirmBtn && (confirmBtn.offsetParent !== null || confirmBtn.getBoundingClientRect().height > 0);
 
                         if (isAlreadyConfirmScreen) {
                             forensic('ATOMIC_CASHOUT_STAGE', { stage: 'ALREADY_CONFIRM_SCREEN' });
@@ -717,10 +718,21 @@ export class ActionSimulator extends EventEmitter {
                                 }
                             }
 
-                            if (!betWrapper && data.targetSelector) {
-                                const candidate = document.querySelector(data.targetSelector);
-                                if (candidate) {
-                                    betWrapper = candidate.closest('[data-op*="openbet-item-wrapper-"], [data-op*="openbet-simple-list-item-"]') || candidate;
+                            // Validate data.targetSelector to guarantee Playwright pseudo-selectors never hit native querySelector
+                            const isCssSelector = typeof data.targetSelector === 'string' &&
+                                !data.targetSelector.includes('internal:') &&
+                                !data.targetSelector.includes('>>') &&
+                                /^[.#a-zA-Z\[]/.test(data.targetSelector.trim());
+                            const safeTargetSelector = isCssSelector ? data.targetSelector : null;
+
+                            if (!betWrapper && safeTargetSelector) {
+                                try {
+                                    const candidate = document.querySelector(safeTargetSelector);
+                                    if (candidate) {
+                                        betWrapper = candidate.closest('[data-op*="openbet-item-wrapper-"], [data-op*="openbet-simple-list-item-"]') || candidate;
+                                    }
+                                } catch (e) {
+                                    // Ignore invalid CSS gracefully
                                 }
                             }
 
@@ -760,13 +772,13 @@ export class ActionSimulator extends EventEmitter {
 
                             while (performance.now() - modalStartTime < confirmTimeout) {
                                 confirmBtn = document.querySelector(confirmSelector);
-                                if (confirmBtn && confirmBtn.getBoundingClientRect().height > 0) {
+                                if (confirmBtn && (confirmBtn.offsetParent !== null || confirmBtn.getBoundingClientRect().height > 0)) {
                                     break;
                                 }
                                 await new Promise(r => setTimeout(r, 50));
                             }
 
-                            if (!confirmBtn || confirmBtn.getBoundingClientRect().height === 0) {
+                            if (!confirmBtn || (confirmBtn.offsetParent === null && confirmBtn.getBoundingClientRect().height === 0)) {
                                 throw new Error(`[ATOMIC-ABORT] Confirmation modal failed to appear within ${confirmTimeout}ms`);
                             }
                         }
@@ -775,6 +787,7 @@ export class ActionSimulator extends EventEmitter {
                         const confirmText = (confirmBtn.innerText || confirmBtn.textContent || '').trim();
                         forensic('ATOMIC_CASHOUT_IRREVERSIBLE_BOUNDARY_CROSSED', { confirmText, ts: Date.now() });
                         confirmBtn.click();
+                        boundaryCrossed = true;
 
                         // 7. AWAIT OUTCOME
                         const resultTimeout = data.resultTimeoutMs || 12000;
@@ -782,27 +795,61 @@ export class ActionSimulator extends EventEmitter {
                         let outcome = 'UNKNOWN';
                         let detail = '';
 
+                        const successPopupSelector = data.successPopupSelector || '[data-op="open_bets__cashout_success_popup"]';
+                        const successPopupCloseSelector = data.successPopupCloseSelector || '[data-op="open_bets__cashout_success_popup_close"]';
+
                         while (performance.now() - submitStartTime < resultTimeout) {
-                            const successToast = document.querySelector('.m-toast--success, .m-notice--success, .m-msg--success, .m-alert--success');
-                            const errorToast = document.querySelector('.m-toast--error, .m-notice--error, .m-msg--error, .m-alert--error, .fs-m-error');
-                            const modalStillOpen = document.querySelector('.m-cashout-pop, .af-modal--cashout');
-
-                            if (successToast && successToast.getBoundingClientRect().height > 0) {
+                            // Check user-discovered SportyBet Cashout Success Popup
+                            const successPopup = document.querySelector(successPopupSelector);
+                            if (successPopup && (successPopup.offsetParent !== null || successPopup.getBoundingClientRect().height > 0)) {
                                 outcome = 'SUCCESS';
-                                detail = successToast.innerText || 'Cashout success toast detected';
+                                detail = 'Cashout success popup detected';
+
+                                // Auto-dismiss the popup cleanly to restore UI state
+                                const closeBtn = document.querySelector(successPopupCloseSelector);
+                                if (closeBtn) {
+                                    try { closeBtn.click(); } catch(e){}
+                                }
                                 break;
                             }
 
-                            if (errorToast && errorToast.getBoundingClientRect().height > 0) {
+                            // Check all active toast notifications for explicit status text
+                            const toasts = Array.from(document.querySelectorAll('.m-toast, .m-notice, .m-msg, .m-alert, [class*="toast"]'));
+                            const visibleToasts = toasts.filter(el => el.getBoundingClientRect().height > 0 || el.offsetParent !== null);
+
+                            let detectedSuccess = false;
+                            let detectedError = false;
+
+                            for (const t of visibleToasts) {
+                                const txt = (t.innerText || t.textContent || '').toLowerCase();
+                                if (txt.includes('cashout succeeded') || txt.includes('succeeded') || txt.includes('success')) {
+                                    detectedSuccess = true;
+                                    detail = t.innerText || 'Cashout success toast detected';
+                                    break;
+                                }
+                                if (txt.includes('failed') || txt.includes('rejected') || txt.includes('unavailable') || txt.includes('changed') || t.classList.contains('m-toast--error') || t.classList.contains('fs-m-error')) {
+                                    detectedError = true;
+                                    detail = t.innerText || 'Cashout error toast detected';
+                                    break;
+                                }
+                            }
+
+                            if (detectedSuccess) {
+                                outcome = 'SUCCESS';
+                                break;
+                            }
+                            if (detectedError) {
                                 outcome = 'FAILED';
-                                detail = errorToast.innerText || 'Cashout error toast detected';
                                 break;
                             }
 
-                            // If modal closed and bet is no longer in DOM
-                            if (!modalStillOpen) {
-                                const betStillOpen = data.betId ? document.querySelector(`[data-op*="openbet-item-wrapper-${data.betId}"]`) : null;
-                                if (data.betId && !betStillOpen) {
+                            // Check confirmation modal closure AND open bet removal
+                            const modalEl = document.querySelector('.m-cashout-pop, .af-modal--cashout');
+                            const isModalOpen = modalEl && (modalEl.offsetParent !== null && modalEl.getBoundingClientRect().height > 0);
+
+                            if (!isModalOpen && data.betId) {
+                                const betStillOpen = document.querySelector(`[data-op*="openbet-item-wrapper-${data.betId}"]`);
+                                if (!betStillOpen) {
                                     outcome = 'SUCCESS';
                                     detail = 'Bet successfully settled and removed from open bets';
                                     break;
@@ -812,14 +859,18 @@ export class ActionSimulator extends EventEmitter {
                             await new Promise(r => setTimeout(r, 100));
                         }
 
-                        forensic('ATOMIC_CASHOUT_RESULT', { outcome, detail });
-                        return { status: outcome, detail };
+                        forensic('ATOMIC_CASHOUT_RESULT', { outcome, detail, boundaryCrossed });
+                        return { status: outcome, detail, boundaryCrossed };
                     }, command.payload);
 
                     if (executionResult.status === 'UNKNOWN') {
-                        throw new UncertainStateError(`[ATOMIC-UNKNOWN] ${executionResult.detail}`);
+                        const err = new UncertainStateError(`[ATOMIC-UNKNOWN] ${executionResult.detail}`);
+                        err.boundaryCrossed = executionResult.boundaryCrossed;
+                        throw err;
                     } else if (executionResult.status === 'FAILED') {
-                        throw new Error(`[ATOMIC-FAILED] ${executionResult.detail}`);
+                        const err = new Error(`[ATOMIC-FAILED] ${executionResult.detail}`);
+                        err.boundaryCrossed = executionResult.boundaryCrossed;
+                        throw err;
                     }
                     return executionResult;
                 }, browserObj, deadlineBudget, options.executionContext);
