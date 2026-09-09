@@ -334,6 +334,50 @@ export class ActionDispatcher extends EventEmitter {
                             }
                             payload.shadowPath = shadowPath;
                         }
+
+                        if (['CLICK', 'DOUBLE_CLICK'].includes(type) && data.target && data.target.nodeType === 1) {
+                            try {
+                                let curr = data.target;
+                                let cashoutBtn = null;
+                                let betItemWrapper = null;
+                                let isConfirmModal = false;
+
+                                while (curr && curr !== document.body && curr !== document.documentElement) {
+                                    if (curr.nodeType === 1) {
+                                        const op = curr.getAttribute ? curr.getAttribute('data-op') : null;
+                                        const cls = (curr.className && typeof curr.className === 'string') ? curr.className : '';
+                                        const txt = curr.innerText || curr.textContent || '';
+
+                                        if (!cashoutBtn && (op === 'openbet__cashout_btn' || cls.includes('m-btn--cashout') || cls.includes('m-btn-cashout') || ((curr.tagName === 'BUTTON' || cls.includes('af-button')) && /cash\s*out/i.test(txt)))) {
+                                            cashoutBtn = curr;
+                                        }
+                                        if (!betItemWrapper && op && (op.includes('openbet-item-wrapper-') || op.includes('openbet-simple-list-item-'))) {
+                                            betItemWrapper = curr;
+                                        }
+                                        if (!isConfirmModal && (cls.includes('m-cashout-pop') || op === 'cashout-pop' || cls.includes('af-modal--cashout'))) {
+                                            isConfirmModal = true;
+                                        }
+                                    }
+                                    curr = curr.parentElement;
+                                }
+
+                                if (cashoutBtn || isConfirmModal || (betItemWrapper && cashoutBtn)) {
+                                    payload.isCashout = true;
+                                    if (isConfirmModal) {
+                                        payload.isCashoutConfirm = true;
+                                    }
+                                    if (betItemWrapper) {
+                                        const op = betItemWrapper.getAttribute('data-op') || '';
+                                        const match = op.match(/openbet-(?:item-wrapper|simple-list-item)-([a-zA-Z0-9]+)/);
+                                        if (match) {
+                                            payload.betId = match[1];
+                                        }
+                                    }
+                                }
+                            } catch (cErr) {
+                                // Non-fatal
+                            }
+                        }
                     }
 
                     const eidHash = TelemetryCollector.computeEIDHash(eid);

@@ -171,4 +171,14 @@ export class SportyBetAdapter {
     translateAcceptOdds() {
         return this.submissionController.translateAcceptOdds();
     }
+
+    /**
+     * Translates Cashout intent into an ATOMIC_CASHOUT command.
+     * @param {string|null} betId
+     * @param {string|null} targetSelector
+     * @returns {Object} Command payload
+     */
+    translateAtomicCashout(betId = null, targetSelector = null) {
+        return this.submissionController.translateAtomicCashout(betId, targetSelector);
+    }
 }

@@ -98,4 +98,31 @@ export class SubmissionController {
             }
         };
     }
+
+    /**
+     * Translates the Cashout intent into an ATOMIC_CASHOUT command.
+     * @param {string|null} betId
+     * @param {string|null} targetSelector
+     * @returns {Object} Command payload
+     */
+    translateAtomicCashout(betId = null, targetSelector = null) {
+        return {
+            type: 'ATOMIC_CASHOUT',
+            payload: {
+                selector: 'body',
+                betId,
+                targetSelector,
+                cashoutSelector: this.registry.cashoutButton,
+                confirmSelector: this.registry.cashoutConfirmButton,
+                modalSelector: this.registry.cashoutConfirmModal,
+                successPopupSelector: this.registry.cashoutSuccessPopup,
+                successPopupCloseSelector: this.registry.cashoutSuccessPopupClose,
+                successToastSelector: this.registry.cashoutSuccessToast,
+                errorToastSelector: this.registry.cashoutErrorToast,
+                confirmTimeoutMs: 5000,
+                resultTimeoutMs: 12000,
+                idempotent: false
+            }
+        };
+    }
 }
