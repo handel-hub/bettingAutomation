@@ -20,6 +20,7 @@ export class RecoveryManager extends EventEmitter {
 
     initiateCorrectiveNavigation(browserId, url, baselineGes = undefined) {
         logger.info(`[RecoveryManager] Issuing CORRECTIVE_NAV to ${browserId} for url: ${url} (BaselineGES: ${baselineGes})`);
+        logger.info(`[Telemetry] {"event":"CORRECTIVE_NAV_ISSUED","browserId":"${browserId}","targetUrl":"${url}","baselineGes":${baselineGes}}`);
         this.emit('Command', new Command({
             category: 'Navigation',
             type: 'navigate',
@@ -43,7 +44,9 @@ export class RecoveryManager extends EventEmitter {
         }
 
         const { role, username, proxyUrl } = target;
+        const startTime = Date.now();
         logger.warn(`Attempting to heal browser [${browserId}] (role=${role})...`);
+        logger.info(`[Telemetry] {"event":"HEAL_START","browserId":"${browserId}","role":"${role}","attempt":1,"maxAttempts":${this.maxAttempts}}`);
 
         try {
             await this.closeQuietly(target);
@@ -52,6 +55,26 @@ export class RecoveryManager extends EventEmitter {
             for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
                 try {
                     await this.respawn(browserId, role, proxyUrl, username);
+
+                    // VALIDATION GATE: Verify browser and session readiness after respawn
+                    const targetState = this.registry.get(browserId);
+                    if (!targetState || !targetState.browser || !targetState.page) {
+                        throw new Error(`Browser instance or page missing after respawn for [${browserId}]`);
+                    }
+
+                    if (typeof targetState.browser.isConnected === 'function' && !targetState.browser.isConnected()) {
+                        throw new Error(`Browser [${browserId}] is disconnected immediately after respawn`);
+                    }
+
+                    if (role !== 'master') {
+                        const isLoggedIn = await this.sessionManager.verifyLoggedIn(browserId);
+                        if (!isLoggedIn) {
+                            throw new Error(`Session verification failed after respawn for slave [${browserId}]`);
+                        }
+                    }
+
+                    const durationMs = Date.now() - startTime;
+                    logger.info(`[Telemetry] {"event":"HEAL_SUCCESS","browserId":"${browserId}","role":"${role}","attempt":${attempt},"durationMs":${durationMs}}`);
                     logger.info(`Healed browser [${browserId}] on attempt ${attempt}/${this.maxAttempts}.`);
                     
                     if (role !== 'master') {
@@ -63,6 +86,7 @@ export class RecoveryManager extends EventEmitter {
                     return;
                 } catch (err) {
                     logger.error(`Heal attempt ${attempt}/${this.maxAttempts} failed for [${browserId}]: ${err.message}`);
+                    logger.info(`[Telemetry] {"event":"HEAL_ATTEMPT_FAILED","browserId":"${browserId}","role":"${role}","attempt":${attempt},"error":"${err.message.replace(/"/g, '\\"')}"}`);
 
                     const partial = this.registry.get(browserId);
                     if (partial) {
@@ -78,6 +102,7 @@ export class RecoveryManager extends EventEmitter {
             }
 
             logger.error(`Giving up healing browser [${browserId}] after ${this.maxAttempts} attempts. It will stay out of rotation until manually restarted.`);
+            logger.info(`[Telemetry] {"event":"HEAL_ABANDONED","browserId":"${browserId}","role":"${role}","totalAttempts":${this.maxAttempts}}`);
             this.emit('Command', new Command({
                 category: 'Recovery',
                 type: 'HEAL_FAILED',
@@ -101,6 +126,17 @@ export class RecoveryManager extends EventEmitter {
     async respawn(id, role, proxyUrl, username) {
         await this.lifecycleManager.spawnBrowser(id, role, proxyUrl, username);
 
+        const password = this.credentialsMap.get(username);
+        if (!password) {
+            throw new Error(`No stored credentials for ${username}; cannot recover [${id}]`);
+        }
+
+        const recovered = await this.sessionManager.restoreOrLogin(id, username, password);
+        logger.info(`[Telemetry] {"event":"HEAL_SESSION_RESTORE","browserId":"${id}","role":"${role}","restored":${Boolean(recovered)}}`);
+        if (!recovered) {
+            throw new Error(`Failed to restore session or log in while recovering [${id}]`);
+        }
+
         if (role === 'master') {
             this.emit('Command', new Command({
                 category: 'Recovery',
@@ -116,16 +152,6 @@ export class RecoveryManager extends EventEmitter {
                 source: 'RecoveryManager'
             }));
             return;
-        }
-
-        const password = this.credentialsMap.get(username);
-        if (!password) {
-            throw new Error(`No stored credentials for ${username}; cannot recover [${id}]`);
-        }
-
-        const recovered = await this.sessionManager.restoreOrLogin(id, username, password);
-        if (!recovered) {
-            throw new Error(`Failed to restore session or log in while recovering [${id}]`);
         }
     }
 }

@@ -33,6 +33,7 @@ export class RecoveryCoordinator {
         }
 
         logger.info(`[Telemetry] {"event":"RECOVERY_STRATEGY_SELECTED","attempts":${attempts},"strategy":"${strategy}","consistencyScore":${snapshot.consistency}}`);
+        logger.info(`[Telemetry] {"event":"SYNC_ESCALATION","browserId":"${snapshot.browserId}","strategy":"${strategy}","attempt":${attempts},"consistency":${snapshot.consistency}}`);
 
         return new RecoveryPlan({
             strategy,

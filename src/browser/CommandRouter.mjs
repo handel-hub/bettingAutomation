@@ -159,6 +159,7 @@ export class CommandRouter extends EventEmitter {
         if (!validation.valid) {
             const errorMsg = `[LF-701] Ingress Contract Violation (${command.id || command.commandId || 'unknown'}): ${validation.errors.join('; ')}`;
             this.#emitViolation(errorMsg, command);
+            logger.info(`[Telemetry] {"event":"SCHEMA_REJECTION","commandId":"${command.id || command.commandId}","category":"${command.category}","type":"${command.type}","source":"${command.source}","errors":"${validation.errors.join('; ').replace(/"/g, '\\"')}"}`);
             
             this.#metrics.rejected++;
             logger.error(`[CommandRouter] STRICT mode rejecting command: ${errorMsg}`);

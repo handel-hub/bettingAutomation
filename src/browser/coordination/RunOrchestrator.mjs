@@ -18,6 +18,41 @@ export class RunOrchestrator {
         // Ownership map: accountId -> activeRun object
         // If an account is not in this map, it is PASSIVE.
         this.activeRuns = new Map();
+
+        // Hydrate unresolved runs from WAL asynchronously
+        if (this.runLedger && typeof this.runLedger.getUnresolvedRuns === 'function') {
+            this.hydrateFromWal().catch(err => {
+                logger.error(`[RunOrchestrator] Error during WAL hydration: ${err.message}`);
+            });
+        }
+    }
+
+    /**
+     * Hydrates unresolved runs from RunLedger WAL.
+     * Any run that reached PROCESSING without SETTLEMENT is restored as UNCERTAIN,
+     * freezing the account until ReconciliationDaemon verifies the transaction.
+     */
+    async hydrateFromWal() {
+        try {
+            const unresolved = await this.runLedger.getUnresolvedRuns();
+            if (unresolved && unresolved.length > 0) {
+                for (const entry of unresolved) {
+                    const { runId, cycleId, accountId } = entry;
+                    this.activeRuns.set(accountId, {
+                        runId,
+                        cycleId,
+                        accountId,
+                        triggerSource: 'WAL_RECOVERY',
+                        state: 'UNCERTAIN',
+                        acquiredAt: entry.timestamp || Date.now()
+                    });
+                    logger.warn(`[RunOrchestrator] Hydrated UNCERTAIN run [${runId}] for account [${accountId}] from WAL.`);
+                    logger.info(`[Telemetry] {"event":"RUN_HYDRATED_UNCERTAIN","accountId":"${accountId}","runId":"${runId}","cycleId":"${cycleId}"}`);
+                }
+            }
+        } catch (err) {
+            logger.error(`[RunOrchestrator] Failed to hydrate unresolved runs from WAL: ${err.message}`);
+        }
     }
 
     /**

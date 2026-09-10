@@ -6,7 +6,7 @@ export class CDPMutex extends EventEmitter {
     constructor() {
         super();
         this.locks = new Map(); // Map<browserId, { timeoutId, context, onTargetClosed }>
-        this.TTL_MS = 5000;
+        this.TTL_MS = 60000;
     }
 
     /**
@@ -37,6 +37,7 @@ export class CDPMutex extends EventEmitter {
 
         const timeoutId = setTimeout(() => {
             logger.warn(`[CDPMutex] TTL expired for ${browserId}, releasing lock to prevent deadlock`);
+            logger.info(`[Telemetry] {"event":"MUTEX_TTL_EXPIRED","browserId":"${browserId}","heldDurationMs":${this.TTL_MS}}`);
             this.releaseRecoveryLock(browserId);
         }, this.TTL_MS);
 

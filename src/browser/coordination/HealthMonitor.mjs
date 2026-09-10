@@ -20,6 +20,7 @@ export class CircuitBreaker {
         }
         if (this.failureTimestamps.length >= this.threshold) {
             this.state = 'OPEN';
+            logger.info(`[Telemetry] {"event":"CIRCUIT_BREAKER_TRIPPED","failureCount":${this.failureTimestamps.length},"windowMs":${this.windowMs}}`);
         }
     }
 
@@ -132,7 +133,9 @@ export class HealthMonitor extends EventEmitter {
         const { isPhysicalCrash, reason } = this.evaluateErrorState(browser);
         if (isPhysicalCrash) {
             const id = browser.id || browser.browserId;
+            const timeSinceLastHeartbeat = browser.healthMetrics?.lastHeartbeat ? (Date.now() - browser.healthMetrics.lastHeartbeat) : null;
             logger.info(`[HealthMonitor] Physical crash/disconnect detected on [${id}]: ${reason}. Initiating recovery...`);
+            logger.info(`[Telemetry] {"event":"HEALTH_CRASH_DETECTED","browserId":"${id}","reason":"${String(reason).replace(/"/g, '\\"')}","timeSinceLastHeartbeat":${timeSinceLastHeartbeat}}`);
             this.registry.updateState(id, 'Recovering');
             this.emit('Command', new Command({
                 category: 'Recovery',

@@ -1,7 +1,9 @@
+import EventEmitter from 'node:events';
 import { logger } from '../../utils/logger.mjs';
 
-export class ClusterOrchestrator {
+export class ClusterOrchestrator extends EventEmitter {
     constructor(deps) {
+        super();
         this.settings = deps.settings;
         this.accounts = deps.accounts;
         this.proxies = deps.proxies || [];
@@ -29,6 +31,7 @@ export class ClusterOrchestrator {
         return proxy;
     }
     async start() {
+        const startTime = Date.now();
         logger.info('Starting Automation Controller...');
 
         // Dynamic import to prevent circular dependencies if any, but regular import is fine.
@@ -89,7 +92,7 @@ export class ClusterOrchestrator {
         const masterAccount = activeAccounts[0];
         const slaveAccounts = activeAccounts.slice(1);
 
-        // 1. Master Spawning & Auth
+        // 1. Master Spawning + Inline Auth
         let masterProxyUrl = null;
         if (this.settings.Spawning.master_use_proxy === 'true') {
             masterProxyUrl = this._allocateProxy();
@@ -99,11 +102,16 @@ export class ClusterOrchestrator {
             }
         }
         await this.lifecycleManager.spawnBrowser('master', 'master', masterProxyUrl, masterAccount.username);
-        
-        logger.info(`Authenticating Master browser with account: ${masterAccount.username}`);
-        await this.sessionManager.restoreOrLogin('master', masterAccount.username, masterAccount.password);
 
-        // 2. Slave Spawning & Auth
+        logger.info(`Authenticating Master browser with account: ${masterAccount.username}`);
+        try {
+            const masterAuthResult = await this.sessionManager.restoreOrLogin('master', masterAccount.username, masterAccount.password);
+            logger.info(`[Telemetry] {"event":"SESSION_READY","browserId":"master","username":"${masterAccount.username}","success":${Boolean(masterAuthResult)}}`);
+        } catch (err) {
+            logger.error(`Failed to authenticate Master browser: ${err.message}`);
+        }
+
+        // 2. Slave Spawning + Inline Auth
         if (slaveAccounts.length > 0) {
             logger.info(`Spawning ${slaveAccounts.length} slave accounts...`);
             for (let i = 0; i < slaveAccounts.length; i++) {
@@ -117,7 +125,14 @@ export class ClusterOrchestrator {
                 }
 
                 await this.lifecycleManager.spawnBrowser(id, 'slave', proxyUrl, account.username);
-                await this.sessionManager.restoreOrLogin(id, account.username, account.password);
+
+                logger.info(`Authenticating slave [${id}] with account: ${account.username}`);
+                try {
+                    const slaveAuthResult = await this.sessionManager.restoreOrLogin(id, account.username, account.password);
+                    logger.info(`[Telemetry] {"event":"SESSION_READY","browserId":"${id}","username":"${account.username}","success":${Boolean(slaveAuthResult)}}`);
+                } catch (err) {
+                    logger.error(`Failed to authenticate slave [${id}]: ${err.message}`);
+                }
             }
         } else {
             logger.warn('Only 1 account provided in accounts.txt. No slaves will be spawned (Master took the first account).');
@@ -132,8 +147,11 @@ export class ClusterOrchestrator {
                 await this.passiveShadowDaemon.attachToPage(master.id, master.page);
             }
         }
-        for (const slave of this.registry.getReadySlaves()) {
-             await this.stateObserver.injectObservers(slave.id, slave.page);
+        const slaves = this.registry.getAll().filter(b => b.role === 'slave');
+        for (const slave of slaves) {
+            if (slave.page) {
+                await this.stateObserver.injectObservers(slave.id, slave.page);
+            }
         }
 
         // 4. Replay Startup Macro (moved up, BEFORE listener injection)
@@ -143,13 +161,15 @@ export class ClusterOrchestrator {
             if (sequence && master) {
                  await this.macroEngine.execute(sequence, [master]);
                  const readySlaves = this.registry.getReadySlaves();
-                 await this.macroEngine.execute(sequence, readySlaves);
+                 if (readySlaves.length > 0) {
+                     await this.macroEngine.execute(sequence, readySlaves);
+                 }
             }
         }
 
         // 5. Setup Execution Dispatcher (Master Event Listeners)
         await this.actionDispatcher.init();
-        if (master) {
+        if (master && master.page) {
             await this.actionDispatcher.injectMasterListeners(master.page);
         }
 
@@ -157,7 +177,51 @@ export class ClusterOrchestrator {
         this.healthMonitor.startMonitoring();
         this.commandReceiver.start();
 
+        const infraDuration = Date.now() - startTime;
+        logger.info(`[Telemetry] {"event":"STARTUP_INFRA_READY","browserCount":${this.registry.getAll().length},"durationMs":${infraDuration}}`);
         logger.info('Automation Controller fully initialized.');
+    }
+
+    /**
+     * Resolves and authenticates sessions asynchronously in the background.
+     * Emits SESSION_READY upon completion for each browser.
+     */
+    async resolveSessionsAsync(masterAccount, slaveAccounts) {
+        logger.info('[ClusterOrchestrator] Initiating background session resolution...');
+
+        // 1. Master Session Resolution
+        const masterStart = Date.now();
+        logger.info(`Authenticating Master browser with account: ${masterAccount.username}`);
+        try {
+            const success = await this.sessionManager.restoreOrLogin('master', masterAccount.username, masterAccount.password);
+            const durationMs = Date.now() - masterStart;
+            this.emit('SESSION_READY', { browserId: 'master', username: masterAccount.username, success, durationMs });
+            logger.info(`[Telemetry] {"event":"SESSION_READY","browserId":"master","username":"${masterAccount.username}","success":${Boolean(success)},"durationMs":${durationMs}}`);
+        } catch (err) {
+            logger.error(`Failed to authenticate Master browser: ${err.message}`);
+        }
+
+        // 2. Slave Session Resolution (concurrent resolution)
+        if (slaveAccounts && slaveAccounts.length > 0) {
+            const slavePromises = slaveAccounts.map(async (account, i) => {
+                const id = `slave_${i}`;
+                const slave = this.registry.get(id);
+                if (!slave) return;
+
+                const start = Date.now();
+                logger.info(`Authenticating slave [${id}] with account: ${account.username}`);
+                try {
+                    const success = await this.sessionManager.restoreOrLogin(id, account.username, account.password);
+                    const durationMs = Date.now() - start;
+                    this.emit('SESSION_READY', { browserId: id, username: account.username, success, durationMs });
+                    logger.info(`[Telemetry] {"event":"SESSION_READY","browserId":"${id}","username":"${account.username}","success":${Boolean(success)},"durationMs":${durationMs}}`);
+                } catch (err) {
+                    logger.error(`Failed to authenticate slave [${id}]: ${err.message}`);
+                }
+            });
+            await Promise.allSettled(slavePromises);
+        }
+        logger.info('[ClusterOrchestrator] Background session resolution completed for all provisioned browsers.');
     }
 
     async stop() {

@@ -128,6 +128,17 @@ export class EventBusRegistrar {
                 slaves = this.registry.getReadySlaves();
             }
             logger.info(`Routing NavigationCommand to ${slaves.length} target(s): ${command.payload.url}`);
+
+            if (command.payload?.navClass === 'CORRECTIVE_NAV' && typeof command.payload?.baselineGes === 'number') {
+                for (const target of slaves) {
+                    const state = this.registry.getState(target.id);
+                    const prevGes = state.currentGes;
+                    state.currentGes = command.payload.baselineGes;
+                    logger.info(`[EventBusRegistrar] Rebased GES on [${target.id}] from ${prevGes} to ${command.payload.baselineGes} (CORRECTIVE_NAV)`);
+                    logger.info(`[Telemetry] {"event":"HEAL_GES_REBASE","browserId":"${target.id}","previousGes":${prevGes},"baselineGes":${command.payload.baselineGes}}`);
+                }
+            }
+
             const promises = slaves.map(b => {
                 return new Promise((resolve) => {
                     if (this.convergenceEngine) {
@@ -200,9 +211,14 @@ export class EventBusRegistrar {
             const master = this.registry.getMaster();
             if (!master) return;
             try {
+                // Validation gate: Ensure master browser and page exist and are connected
+                if (!master.browser || !master.page || (typeof master.browser.isConnected === 'function' && !master.browser.isConnected())) {
+                    throw new Error('Master browser handle invalid or disconnected');
+                }
                 await this.navSync.setupMasterSync();
                 await this.actionDispatcher.injectMasterListeners(master.page);
                 this.registry.updateState(master.id, 'Ready');
+                logger.info(`[EventBusRegistrar] Master browser successfully re-synchronized and ready.`);
             } catch (err) {
                 logger.error(`Failed to re-attach master listeners after heal: ${err.message}`);
                 this.registry.updateState(master.id, 'Error');
