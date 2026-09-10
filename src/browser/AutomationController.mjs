@@ -24,6 +24,7 @@ import { PassiveShadowDaemon } from './coordination/PassiveShadowDaemon.mjs';
 import { TriggerRouter } from './execution/TriggerRouter.mjs';
 import { MemoryPolicyProvider } from '../worker/MemoryPolicyProvider.mjs';
 import { StealthEngine } from '../detection/stealth.mjs';
+import { ExecutionMessageType } from '../worker/protocol.mjs';
 
 
 import {
@@ -220,8 +221,21 @@ export class AutomationController {
             commandReceiver: this.commandReceiver,
             scheduler: this.scheduler,
             stateObserver: this.stateObserver,
-            passiveShadowDaemon: this.passiveShadowDaemon
+            passiveShadowDaemon: this.passiveShadowDaemon,
+            bettingAuthorizationRegistry: this.bettingAuthorizationRegistry
         });
+
+        this.ipcIngress = ipcIngress;
+        if (this.ipcIngress) {
+            this.workflowEngine.on('OperationComplete', (data) => {
+                this.ipcIngress.sendReply(ExecutionMessageType.OPERATION_RESULT, {
+                    operationId: data.operationId,
+                    status: data.status,
+                    metrics: data.metrics,
+                    error: data.error
+                }, data.traceId);
+            });
+        }
 
         this.eventBusRegistrar.registerAll();
     }
@@ -237,5 +251,17 @@ export class AutomationController {
 
     async stop() {
         await this.clusterOrchestrator.stop();
+    }
+
+    activateAccount(account, proxyUrl) {
+        return this.clusterOrchestrator.activateAccount(account, proxyUrl);
+    }
+
+    deactivateAccount(accountIdOrUsername) {
+        return this.clusterOrchestrator.deactivateAccount(accountIdOrUsername);
+    }
+
+    getActiveBrowserCount() {
+        return this.clusterOrchestrator.getActiveBrowserCount();
     }
 }

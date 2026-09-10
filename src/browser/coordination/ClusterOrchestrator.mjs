@@ -19,6 +19,7 @@ export class ClusterOrchestrator {
         this.scheduler = deps.scheduler;
         this.stateObserver = deps.stateObserver;
         this.passiveShadowDaemon = deps.passiveShadowDaemon;
+        this.bettingAuthorizationRegistry = deps.bettingAuthorizationRegistry;
     }
 
         _allocateProxy() {
@@ -247,5 +248,89 @@ export class ClusterOrchestrator {
                 });
             }).catch(() => {});
         }
+    }
+
+    /**
+     * Returns the count of actively available browsers (Master + Slaves in Ready or Busy state).
+     * @returns {number}
+     */
+    getActiveBrowserCount() {
+        if (!this.registry) return 0;
+        return this.registry.getAll().filter(b => b.state === 'Ready' || b.state === 'Busy').length;
+    }
+
+    /**
+     * Dynamically activates an account by spawning a new slave browser and logging in.
+     * @param {{ username: string, password: string }} account
+     * @param {string} [explicitProxyUrl]
+     * @returns {Promise<any>} The created browser state model
+     */
+    async activateAccount(account, explicitProxyUrl = null) {
+        if (!account || !account.username || !account.password) {
+            throw new Error('Account object with username and password is required');
+        }
+
+        const existing = this.registry.getAll().find(b => b.username === account.username);
+        if (existing) {
+            logger.info(`[ClusterOrchestrator] Account ${account.username} is already active on [${existing.id}].`);
+            return existing;
+        }
+
+        const slaveId = `slave_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        const proxyUrl = explicitProxyUrl || this._allocateProxy();
+        if (!proxyUrl && this.settings.Proxy?.proxy_failure_mode === 'strict') {
+            throw new Error(`Cannot activate account ${account.username}: No proxy available in strict mode`);
+        }
+
+        logger.info(`[ClusterOrchestrator] Dynamically spawning slave browser [${slaveId}] for ${account.username}...`);
+        await this.lifecycleManager.spawnBrowser(slaveId, 'slave', proxyUrl, account.username);
+        await this.sessionManager.restoreOrLogin(slaveId, account.username, account.password);
+
+        const slave = this.registry.get(slaveId);
+        if (slave && slave.page) {
+            await this.stateObserver.injectObservers(slave.id, slave.page);
+        }
+
+        if (this.bettingAuthorizationRegistry) {
+            this.bettingAuthorizationRegistry.enable(slaveId);
+        }
+
+        logger.info(`[ClusterOrchestrator] Successfully activated dynamic slave [${slaveId}] for ${account.username}.`);
+        return slave;
+    }
+
+    /**
+     * Dynamically deactivates an account by closing its browser instance and removing it from the registry.
+     * @param {string} accountIdOrUsername - Browser ID or account username
+     * @returns {Promise<boolean>} True if deactivated
+     */
+    async deactivateAccount(accountIdOrUsername) {
+        if (!accountIdOrUsername) {
+            throw new Error('accountIdOrUsername is required');
+        }
+
+        const target = this.registry.getAll().find(b => b.id === accountIdOrUsername || b.username === accountIdOrUsername);
+        if (!target) {
+            logger.warn(`[ClusterOrchestrator] Cannot deactivate: browser [${accountIdOrUsername}] not found in registry.`);
+            return false;
+        }
+
+        logger.info(`[ClusterOrchestrator] Deactivating browser [${target.id}] (${target.username})...`);
+        if (this.bettingAuthorizationRegistry) {
+            this.bettingAuthorizationRegistry.disable(target.id);
+        }
+
+        try {
+            if (target.browser) {
+                await target.browser.close();
+            }
+        } catch (err) {
+            logger.warn(`[ClusterOrchestrator] Error closing browser [${target.id}]: ${err.message}`);
+        } finally {
+            this.registry.remove(target.id);
+        }
+
+        logger.info(`[ClusterOrchestrator] Browser [${target.id}] successfully deactivated.`);
+        return true;
     }
 }
