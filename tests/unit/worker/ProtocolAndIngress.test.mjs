@@ -194,6 +194,10 @@ describe('IpcIngress Standardized Ingress Routing', () => {
 
         ingress._routeMessage(envelope);
 
-        expect(mockPolicyManager.updatePolicy).toHaveBeenCalledWith('Staking', { maxStake: 500 });
+        expect(mockPolicyManager.updatePolicy).toHaveBeenCalledWith({
+            target: 'ALL',
+            category: 'Staking',
+            values: { maxStake: 500 }
+        });
     });
 });

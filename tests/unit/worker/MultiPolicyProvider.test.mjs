@@ -57,9 +57,13 @@ describe('MultiPolicyProvider Core Architecture', () => {
         const provider = new MemoryPolicyProvider(baseDefaultPolicy);
 
         // Target Account A
-        provider.updatePolicy('acc_A', 'Pricing', {
-            Strategy: {
-                TargetProfit: 5000
+        provider.updatePolicy({
+            target: 'acc_A',
+            category: 'Pricing',
+            values: {
+                Strategy: {
+                    TargetProfit: 5000
+                }
             }
         });
 
@@ -77,8 +81,8 @@ describe('MultiPolicyProvider Core Architecture', () => {
     it('applies consecutive targeted updates to the same account cleanly', () => {
         const provider = new MemoryPolicyProvider(baseDefaultPolicy);
 
-        provider.updatePolicy('acc_A', 'Pricing', { Strategy: { TargetProfit: 3000 } });
-        provider.updatePolicy('acc_A', 'RiskManagement', { Policy: { MaxStake: 8000 } });
+        provider.updatePolicy({ target: 'acc_A', category: 'Pricing', values: { Strategy: { TargetProfit: 3000 } } });
+        provider.updatePolicy({ target: 'acc_A', category: 'RiskManagement', values: { Policy: { MaxStake: 8000 } } });
 
         const policyA = provider.getPolicy('acc_A');
         expect(policyA.Pricing.Strategy.TargetProfit).toBe(3000);
@@ -87,14 +91,14 @@ describe('MultiPolicyProvider Core Architecture', () => {
         expect(policyA.Pricing.Strategy.BaseStake).toBe(100);
     });
 
-    it('performs cluster-wide update targeting ALL via 3-argument signature', () => {
+    it('performs cluster-wide update targeting ALL explicitly', () => {
         const provider = new MemoryPolicyProvider(baseDefaultPolicy);
 
         // Account A already has an override
-        provider.updatePolicy('acc_A', 'Pricing', { Strategy: { TargetProfit: 2500 } });
+        provider.updatePolicy({ target: 'acc_A', category: 'Pricing', values: { Strategy: { TargetProfit: 2500 } } });
 
         // Broadcast update to ALL
-        provider.updatePolicy('ALL', 'RiskManagement', { Policy: { MaxStake: 15000 } });
+        provider.updatePolicy({ target: 'ALL', category: 'RiskManagement', values: { Policy: { MaxStake: 15000 } } });
 
         expect(provider.getPolicy('acc_A').RiskManagement.Policy.MaxStake).toBe(15000);
         expect(provider.getPolicy('acc_B').RiskManagement.Policy.MaxStake).toBe(15000);
@@ -104,10 +108,10 @@ describe('MultiPolicyProvider Core Architecture', () => {
         expect(provider.getPolicy('acc_A').Pricing.Strategy.TargetProfit).toBe(2500);
     });
 
-    it('performs cluster-wide update via backward-compatible 2-argument signature', () => {
+    it('performs cluster-wide update with default target (ALL)', () => {
         const provider = new MemoryPolicyProvider(baseDefaultPolicy);
 
-        provider.updatePolicy('RiskManagement', { Policy: { MinimumStake: 50 } });
+        provider.updatePolicy({ category: 'RiskManagement', values: { Policy: { MinimumStake: 50 } } });
 
         expect(provider.getPolicy('acc_X').RiskManagement.Policy.MinimumStake).toBe(50);
         expect(provider.getPolicy().RiskManagement.Policy.MinimumStake).toBe(50);
@@ -119,7 +123,7 @@ describe('MultiPolicyProvider Core Architecture', () => {
         provider.addAlias('slave_0', '08107992381');
 
         // Update using slot ID
-        provider.updatePolicy('slave_0', 'Pricing', { Strategy: { TargetProfit: 7777 } });
+        provider.updatePolicy({ target: 'slave_0', category: 'Pricing', values: { Strategy: { TargetProfit: 7777 } } });
 
         // Retrieve using username
         expect(provider.getPolicy('08107992381').Pricing.Strategy.TargetProfit).toBe(7777);
@@ -130,7 +134,7 @@ describe('MultiPolicyProvider Core Architecture', () => {
     it('guarantees deep isolation so nested property mutation does not leak', () => {
         const provider = new MemoryPolicyProvider(baseDefaultPolicy);
 
-        provider.updatePolicy('acc_1', 'Pricing', { Strategy: { Mode: 'CUSTOM' } });
+        provider.updatePolicy({ target: 'acc_1', category: 'Pricing', values: { Strategy: { Mode: 'CUSTOM' } } });
         const p1 = provider.getPolicy('acc_1');
         p1.Pricing.Strategy.Mode = 'MUTATED_DIRECTLY';
 
@@ -175,11 +179,11 @@ describe('IpcIngress Targeted Policy Routing Integration', () => {
 
         ingress._routeMessage(envelope);
 
-        expect(mockPolicyManager.updatePolicy).toHaveBeenCalledWith(
-            'slave_0',
-            'Pricing',
-            { TargetProfit: 5000 }
-        );
+        expect(mockPolicyManager.updatePolicy).toHaveBeenCalledWith({
+            target: 'slave_0',
+            category: 'Pricing',
+            values: { TargetProfit: 5000 }
+        });
 
         expect(mockTransport.sendEnvelope).toHaveBeenCalledWith(
             ExecutionMessageType.OPERATION_ACK,
@@ -202,14 +206,14 @@ describe('IpcIngress Targeted Policy Routing Integration', () => {
 
         ingress._routeMessage(envelope);
 
-        expect(mockPolicyManager.updatePolicy).toHaveBeenCalledWith(
-            'user_99',
-            'RiskManagement',
-            { MaxStake: 500 }
-        );
+        expect(mockPolicyManager.updatePolicy).toHaveBeenCalledWith({
+            target: 'user_99',
+            category: 'RiskManagement',
+            values: { MaxStake: 500 }
+        });
     });
 
-    it('routes legacy untargeted UPDATE_POLICY via 2-argument call', () => {
+    it('routes default untargeted UPDATE_POLICY with target ALL', () => {
         const envelope = createExecutionEnvelope(ExecutionMessageType.UPDATE_POLICY, {
             category: 'Staking',
             values: { maxStake: 1000 }
@@ -217,9 +221,10 @@ describe('IpcIngress Targeted Policy Routing Integration', () => {
 
         ingress._routeMessage(envelope);
 
-        expect(mockPolicyManager.updatePolicy).toHaveBeenCalledWith(
-            'Staking',
-            { maxStake: 1000 }
-        );
+        expect(mockPolicyManager.updatePolicy).toHaveBeenCalledWith({
+            target: 'ALL',
+            category: 'Staking',
+            values: { maxStake: 1000 }
+        });
     });
 });

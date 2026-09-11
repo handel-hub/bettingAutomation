@@ -150,41 +150,19 @@ export class MemoryPolicyProvider {
     }
 
     /**
-     * Updates policy values with support for targeted or cluster-wide updates.
+     * Updates policy values using an explicit command options object.
      * 
-     * Signatures:
-     * - updatePolicy(target, category, values) -> targeted to target ('ALL' or accountId)
-     * - updatePolicy(category, values) -> backward-compatible cluster-wide ('ALL')
-     * 
-     * @param {string} targetOrCategory - AccountId / 'ALL' or Category name
-     * @param {any} categoryOrValues - Category name or Values object
-     * @param {any} [maybeValues] - Values object if 3 arguments passed
+     * @param {Object} [options]
+     * @param {string} [options.target='ALL'] - 'ALL' or specific accountId/slotId
+     * @param {string|null} [options.category=null] - Policy section to update (e.g. 'Pricing')
+     * @param {Object} [options.values=null] - Key-value overrides to deep-merge
      */
-    updatePolicy(targetOrCategory, categoryOrValues, maybeValues) {
-        let target = 'ALL';
-        let category = null;
-        let values = null;
-
-        if (maybeValues !== undefined) {
-            // 3-argument signature: (target, category, values)
-            target = targetOrCategory ? String(targetOrCategory) : 'ALL';
-            category = categoryOrValues;
-            values = maybeValues;
-        } else if (categoryOrValues !== undefined) {
-            // 2-argument signature: (category, values) -> default to 'ALL'
-            target = 'ALL';
-            category = targetOrCategory;
-            values = categoryOrValues;
-        } else if (targetOrCategory && typeof targetOrCategory === 'object') {
-            // 1-argument signature: (values) -> default to 'ALL'
-            target = 'ALL';
-            category = null;
-            values = targetOrCategory;
-        }
-
+    updatePolicy({ target = 'ALL', category = null, values = null } = {}) {
         if (!values || typeof values !== 'object') return;
 
-        if (target === 'ALL' || target === '*' || !target) {
+        const effectiveTarget = target ? String(target) : 'ALL';
+
+        if (effectiveTarget === 'ALL' || effectiveTarget === '*') {
             // Cluster-wide update: update default template and all active account policies
             this._merge(this.defaultPolicy, category, values);
             for (const accountPolicy of this.accountPolicies.values()) {
@@ -192,7 +170,7 @@ export class MemoryPolicyProvider {
             }
         } else {
             // Targeted update: update specific account entry (clone default if first override)
-            const resolvedId = this._resolveId(target);
+            const resolvedId = this._resolveId(effectiveTarget);
             if (!this.accountPolicies.has(resolvedId)) {
                 const clonedDefault = JSON.parse(JSON.stringify(this.defaultPolicy));
                 this.accountPolicies.set(resolvedId, clonedDefault);
