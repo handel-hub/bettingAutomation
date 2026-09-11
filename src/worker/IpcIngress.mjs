@@ -205,9 +205,23 @@ export class IpcIngress extends EventEmitter {
             case ExecutionMessageType.UPDATE_POLICY:
             case 'UPDATE_POLICY': {
                 this.emit('UpdatePolicy', payload);
-                this.logger.info(`[IpcIngress] Received UPDATE_POLICY: ${payload.category}`);
+                const target = payload.accountId || payload.target || payload.browserId;
+                const operationId = payload.operationId || msg.operationId;
+                this.logger.info(`[IpcIngress] Received UPDATE_POLICY: ${payload.category} (target: ${target || 'ALL'})`);
                 if (this.controller?.policyManager?.updatePolicy) {
-                    this.controller.policyManager.updatePolicy(payload.category, payload.values);
+                    if (target) {
+                        this.controller.policyManager.updatePolicy(target, payload.category, payload.values);
+                    } else {
+                        this.controller.policyManager.updatePolicy(payload.category, payload.values);
+                    }
+                }
+                if (operationId) {
+                    this.sendReply(ExecutionMessageType.OPERATION_ACK, {
+                        operationId,
+                        operation: 'UPDATE_POLICY',
+                        target: target || 'ALL',
+                        status: 'APPLIED'
+                    }, traceId);
                 }
                 break;
             }

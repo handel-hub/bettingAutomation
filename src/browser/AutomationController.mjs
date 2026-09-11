@@ -96,6 +96,19 @@ export class AutomationController {
 
         // --- P1 Fix: Initialize Policies and Orchestrators FIRST ---
         this.policyManager = new MemoryPolicyProvider(policy);
+        if (Array.isArray(accounts)) {
+            if (accounts.length > 0 && accounts[0]?.username) {
+                this.policyManager.addAlias('master', accounts[0].username);
+                this.policyManager.addAlias(accounts[0].username, 'master');
+            }
+            for (let i = 1; i < accounts.length; i++) {
+                if (accounts[i]?.username) {
+                    const slaveId = `slave_${i - 1}`;
+                    this.policyManager.addAlias(slaveId, accounts[i].username);
+                    this.policyManager.addAlias(accounts[i].username, slaveId);
+                }
+            }
+        }
         this.commandRouter = new CommandRouter();
         this.runLedger = new RunLedger();
         
@@ -253,8 +266,13 @@ export class AutomationController {
         await this.clusterOrchestrator.stop();
     }
 
-    activateAccount(account, proxyUrl) {
-        return this.clusterOrchestrator.activateAccount(account, proxyUrl);
+    async activateAccount(account, proxyUrl) {
+        const slave = await this.clusterOrchestrator.activateAccount(account, proxyUrl);
+        if (slave && slave.id && account?.username) {
+            this.policyManager.addAlias(slave.id, account.username);
+            this.policyManager.addAlias(account.username, slave.id);
+        }
+        return slave;
     }
 
     deactivateAccount(accountIdOrUsername) {
