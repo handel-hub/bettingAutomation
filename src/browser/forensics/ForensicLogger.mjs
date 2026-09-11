@@ -9,7 +9,13 @@ const __dirname = path.dirname(__filename);
 class ForensicLogger {
     constructor() {
         this.runId = `FR-${new Date().toISOString().replace(/[-:T]/g, '').slice(0,14)}-${Math.floor(Math.random()*1000).toString().padStart(3, '0')}`;
-        this.logFile = path.resolve(__dirname, '..', '..', '..', `forensic_trace_${this.runId}.jsonl`);
+        this.logDir = path.resolve(__dirname, '..', '..', '..', 'logs', 'forensics');
+        if (!fs.existsSync(this.logDir)) {
+            try {
+                fs.mkdirSync(this.logDir, { recursive: true });
+            } catch (err) {}
+        }
+        this.logFile = path.join(this.logDir, `forensic_trace_${this.runId}.jsonl`);
         this.events = [];
     }
 
