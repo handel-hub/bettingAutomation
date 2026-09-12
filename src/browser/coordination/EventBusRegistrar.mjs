@@ -191,6 +191,34 @@ export class EventBusRegistrar {
             try {
                 this.scheduler.clearQueue(browserId);
                 await targetBrowser.page.reload({ waitUntil: 'domcontentloaded' });
+                
+                // If slave was reloaded, restore authoritative master scroll position
+                if (targetBrowser.role === 'slave') {
+                    const master = this.registry.getMaster();
+                    const masterScroll = master?.scrollContext;
+                    if (masterScroll && (masterScroll.rhoX !== undefined || masterScroll.pageScrollX !== undefined)) {
+                        try {
+                            await targetBrowser.page.evaluate(({ masterScroll }) => {
+                                const maxX = Math.max(0, document.documentElement.scrollWidth - window.innerWidth);
+                                const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+                                const targetX = masterScroll.rhoX !== undefined && maxX > 0 
+                                    ? Math.round(masterScroll.rhoX * maxX) 
+                                    : (masterScroll.pageScrollX || 0);
+                                const targetY = masterScroll.rhoY !== undefined && maxY > 0 
+                                    ? Math.round(masterScroll.rhoY * maxY) 
+                                    : (masterScroll.pageScrollY || 0);
+                                window.scrollTo({ left: targetX, top: targetY, behavior: 'instant' });
+                            }, { masterScroll });
+                            if (typeof this.registry.update === 'function') {
+                                this.registry.update(browserId, { scrollContext: { ...masterScroll } });
+                            }
+                            logger.info(`[EventBusRegistrar] Restored scroll state on reloaded slave [${browserId}].`);
+                        } catch (scrollErr) {
+                            logger.warn(`[EventBusRegistrar] Failed to restore scroll state on reloaded slave [${browserId}]: ${scrollErr.message}`);
+                        }
+                    }
+                }
+
                 this.registry.updateState(browserId, 'Ready');
                 logger.info(`[EventBusRegistrar] Recovery PAGE_RELOAD successful on [${browserId}].`);
                 if (targetBrowser.role === 'master') {

@@ -6,6 +6,10 @@ import { CDPMutex } from '../../../../src/browser/synchronization/coordination/C
 import { RunOrchestrator } from '../../../../src/browser/coordination/RunOrchestrator.mjs';
 import { EventBusRegistrar } from '../../../../src/browser/coordination/EventBusRegistrar.mjs';
 import { Command } from '../../../../src/browser/execution/Command.mjs';
+import { RecoveryCoordinator } from '../../../../src/browser/synchronization/coordination/RecoveryCoordinator.mjs';
+import { SynchronizationBarrier } from '../../../../src/browser/synchronization/SynchronizationBarrier.mjs';
+import { CommandRouter } from '../../../../src/browser/CommandRouter.mjs';
+import { Capabilities } from '../../../../src/browser/synchronization/capabilities.mjs';
 
 describe('Verified Recovery Architecture & Stability Fixes', () => {
 
@@ -379,4 +383,258 @@ describe('Verified Recovery Architecture & Stability Fixes', () => {
             expect(orchestrator.isExecuting('slave_0')).toBe(false);
         });
     });
+
+    describe('6. SynchronizationBarrier resets recoveryState.attempts on barrier success', () => {
+        let mockRegistry;
+        let mockSyncManager;
+        let browserState;
+
+        beforeEach(() => {
+            browserState = {
+                id: 'slave_0',
+                navigationEpoch: 1,
+                capabilities: { isSatisfied: () => true },
+                recoveryState: { attempts: 3, lastRecovery: Date.now() }
+            };
+
+            mockRegistry = {
+                getState: vi.fn(() => browserState),
+                update: vi.fn((id, updates) => {
+                    if (updates.recoveryState) {
+                        Object.assign(browserState.recoveryState, updates.recoveryState);
+                    }
+                })
+            };
+
+            mockSyncManager = {
+                registry: mockRegistry,
+                awaitCapabilities: vi.fn().mockResolvedValue({
+                    satisfied: true,
+                    satisfiedCapabilities: [Capabilities.SCROLL_READY],
+                    missingCapabilities: [],
+                    blockingCapability: null,
+                    providerTelemetry: [],
+                    snapshot: { consistency: 100 }
+                }),
+                timeline: null,
+                telemetry: null
+            };
+        });
+
+        it('resets recovery attempts to 0 when barrier evaluation succeeds', async () => {
+            const executionContext = { addTrace: vi.fn() };
+            const syncContext = {
+                browserId: 'slave_0',
+                profile: { level: [Capabilities.SCROLL_READY] },
+                context: executionContext,
+                deadline: Date.now() + 5000,
+                syncManager: mockSyncManager
+            };
+
+            const result = await SynchronizationBarrier.wait(syncContext);
+
+            expect(result.status).toBe('PASSED');
+            expect(mockRegistry.update).toHaveBeenCalledWith('slave_0', {
+                recoveryState: { attempts: 0 }
+            });
+            expect(browserState.recoveryState.attempts).toBe(0);
+        });
+
+        it('does not issue redundant updates if attempts is already 0', async () => {
+            browserState.recoveryState.attempts = 0;
+            const executionContext = { addTrace: vi.fn() };
+            const syncContext = {
+                browserId: 'slave_0',
+                profile: { level: [Capabilities.SCROLL_READY] },
+                context: executionContext,
+                deadline: Date.now() + 5000,
+                syncManager: mockSyncManager
+            };
+
+            const result = await SynchronizationBarrier.wait(syncContext);
+
+            expect(result.status).toBe('PASSED');
+            expect(mockRegistry.update).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('7. RecoveryCoordinator caps SCROLL_READY recovery at DEPENDENCY_CASCADE', () => {
+        let coordinator;
+        let mockRegistry;
+
+        beforeEach(() => {
+            mockRegistry = {
+                update: vi.fn()
+            };
+            coordinator = new RecoveryCoordinator(mockRegistry);
+        });
+
+        it('caps strategy at DEPENDENCY_CASCADE on attempt 4 for SCROLL_READY (does not escalate to PAGE_RELOAD)', async () => {
+            const snapshot = {
+                browserId: 'slave_0',
+                consistency: 90,
+                recoveryState: { attempts: 3 } // Next attempt will be 4
+            };
+
+            const plan = await coordinator.recover(snapshot, Capabilities.SCROLL_READY);
+
+            expect(plan.strategy).toBe('DEPENDENCY_CASCADE');
+            expect(plan.escalateTo).toBeNull();
+        });
+
+        it('caps strategy at DEPENDENCY_CASCADE on attempt 5+ for SCROLL_READY (does not escalate to BROWSER_RESTART)', async () => {
+            const snapshot = {
+                browserId: 'slave_0',
+                consistency: 90,
+                recoveryState: { attempts: 4 } // Next attempt will be 5
+            };
+
+            const plan = await coordinator.recover(snapshot, Capabilities.SCROLL_READY);
+
+            expect(plan.strategy).toBe('DEPENDENCY_CASCADE');
+            expect(plan.escalateTo).toBeNull();
+        });
+
+        it('does not escalate to BROWSER_RESTART for SCROLL_READY even if consistency < 30', async () => {
+            const snapshot = {
+                browserId: 'slave_0',
+                consistency: 10,
+                recoveryState: { attempts: 0 }
+            };
+
+            const plan = await coordinator.recover(snapshot, Capabilities.SCROLL_READY);
+
+            expect(plan.strategy).toBe('SOFT_RESET');
+            expect(plan.strategy).not.toBe('BROWSER_RESTART');
+        });
+
+        it('preserves PAGE_RELOAD and BROWSER_RESTART escalation for non-scroll capabilities', async () => {
+            // Attempt 4 for DOM_READY -> PAGE_RELOAD
+            const snapshotAttempt4 = {
+                browserId: 'slave_0',
+                consistency: 90,
+                recoveryState: { attempts: 3 }
+            };
+            const plan4 = await coordinator.recover(snapshotAttempt4, Capabilities.DOM_READY);
+            expect(plan4.strategy).toBe('PAGE_RELOAD');
+            expect(plan4.escalateTo).toBe('BROWSER_RESTART');
+
+            // Attempt 5 for DOM_READY -> BROWSER_RESTART
+            const snapshotAttempt5 = {
+                browserId: 'slave_0',
+                consistency: 90,
+                recoveryState: { attempts: 4 }
+            };
+            const plan5 = await coordinator.recover(snapshotAttempt5, Capabilities.DOM_READY);
+            expect(plan5.strategy).toBe('BROWSER_RESTART');
+            expect(plan5.escalateTo).toBeNull();
+
+            // Low consistency for DOM_READY -> immediate BROWSER_RESTART
+            const snapshotLow = {
+                browserId: 'slave_0',
+                consistency: 20,
+                recoveryState: { attempts: 0 }
+            };
+            const planLow = await coordinator.recover(snapshotLow, Capabilities.DOM_READY);
+            expect(planLow.strategy).toBe('BROWSER_RESTART');
+        });
+    });
+
+    describe('8. EventBusRegistrar restores scroll position on reloaded slave', () => {
+        let commandRouter;
+        let mockRegistry;
+        let mockScheduler;
+        let registrar;
+        let slaveBrowser;
+        let masterBrowser;
+
+        beforeEach(() => {
+            commandRouter = new CommandRouter();
+            
+            slaveBrowser = {
+                id: 'slave_0',
+                role: 'slave',
+                state: 'Error',
+                page: {
+                    reload: vi.fn().mockResolvedValue(),
+                    evaluate: vi.fn().mockResolvedValue()
+                }
+            };
+
+            masterBrowser = {
+                id: 'master',
+                role: 'master',
+                state: 'Ready',
+                scrollContext: {
+                    rhoX: 0.25,
+                    rhoY: 0.75,
+                    pageScrollX: 100,
+                    pageScrollY: 600
+                },
+                page: {}
+            };
+
+            mockRegistry = {
+                get: vi.fn((id) => (id === 'slave_0' ? slaveBrowser : (id === 'master' ? masterBrowser : null))),
+                getMaster: vi.fn(() => masterBrowser),
+                updateState: vi.fn((id, state) => {
+                    if (id === 'slave_0') slaveBrowser.state = state;
+                }),
+                update: vi.fn(),
+                on: vi.fn()
+            };
+
+            mockScheduler = {
+                clearQueue: vi.fn()
+            };
+
+            registrar = new EventBusRegistrar({
+                commandRouter,
+                targetResolver: { resolve: () => [] },
+                macroEngine: {},
+                scheduler: mockScheduler,
+                registry: mockRegistry,
+                lockManager: { isLocked: () => false },
+                workflowEngine: {},
+                recoveryManager: { heal: vi.fn(), on: vi.fn() },
+                navSync: { setupMasterSync: vi.fn(), on: vi.fn() },
+                actionDispatcher: { injectMasterListeners: vi.fn(), on: vi.fn() },
+                lifecycleManager: {},
+                commandReceiver: { on: vi.fn() },
+                healthMonitor: { on: vi.fn() },
+                syncRecoveryActionExecutor: { on: vi.fn() },
+                simulator: {},
+                convergenceEngine: null,
+                triggerRouter: null,
+                runOrchestrator: null
+            });
+
+            registrar.registerAll();
+        });
+
+        it('restores canonical master scroll state on reloaded slave before setting Ready', async () => {
+            const reloadCommand = new Command({
+                category: 'Recovery',
+                type: 'PAGE_RELOAD',
+                target: 'slave_0',
+                source: 'RecoveryActionExecutor'
+            });
+
+            await commandRouter.route(reloadCommand);
+
+            // Queue cleared
+            expect(mockScheduler.clearQueue).toHaveBeenCalledWith('slave_0');
+            // Page reloaded
+            expect(slaveBrowser.page.reload).toHaveBeenCalledWith({ waitUntil: 'domcontentloaded' });
+            // Master scroll position evaluated on slave
+            expect(slaveBrowser.page.evaluate).toHaveBeenCalledTimes(1);
+            // Registry scrollContext updated on slave
+            expect(mockRegistry.update).toHaveBeenCalledWith('slave_0', {
+                scrollContext: masterBrowser.scrollContext
+            });
+            // Slave state updated to Ready
+            expect(mockRegistry.updateState).toHaveBeenCalledWith('slave_0', 'Ready');
+        });
+    });
 });
+

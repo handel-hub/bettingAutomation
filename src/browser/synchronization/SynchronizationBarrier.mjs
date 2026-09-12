@@ -130,6 +130,17 @@ export class SynchronizationBarrier {
             if (managerResult.satisfied) {
                 executionContext.addTrace(recoveryAttempts > 0 ? 'BarrierPassedAfterRecovery' : 'BarrierPassed');
                 if (syncManager.timeline) syncManager.timeline.record({ type: 'BarrierPassed', browserId });
+
+                // Reset recovery escalation counter on barrier success
+                if (syncManager?.registry) {
+                    const currentState = syncManager.registry.getState(browserId);
+                    if (currentState?.recoveryState?.attempts > 0) {
+                        syncManager.registry.update(browserId, {
+                            recoveryState: { attempts: 0 }
+                        });
+                    }
+                }
+
                 return enrichTelemetry('PASSED');
             }
 

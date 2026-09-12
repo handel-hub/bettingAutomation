@@ -1,5 +1,6 @@
 import { RecoveryPlan } from './RecoveryPlan.mjs';
 import { logger } from '../../../utils/logger.mjs';
+import { Capabilities } from '../capabilities.mjs';
 
 export class RecoveryCoordinator {
     constructor(registry) {
@@ -12,10 +13,12 @@ export class RecoveryCoordinator {
             recoveryState: { attempts, lastRecovery: Date.now() }
         });
 
+        const isScroll = failedCapability === Capabilities.SCROLL_READY || failedCapability === 'SCROLL_READY';
+
         let strategy = 'SOFT_RESET';
         let escalateTo = 'HARD_RESET';
         
-        if (snapshot.consistency < 30) {
+        if (snapshot.consistency < 30 && !isScroll) {
             strategy = 'BROWSER_RESTART';
             escalateTo = null;
         } else if (attempts === 2) {
@@ -23,13 +26,23 @@ export class RecoveryCoordinator {
             escalateTo = 'DEPENDENCY_CASCADE';
         } else if (attempts === 3) {
             strategy = 'DEPENDENCY_CASCADE';
-            escalateTo = 'PAGE_RELOAD';
+            escalateTo = isScroll ? null : 'PAGE_RELOAD';
         } else if (attempts === 4) {
-            strategy = 'PAGE_RELOAD';
-            escalateTo = 'BROWSER_RESTART';
+            if (isScroll) {
+                strategy = 'DEPENDENCY_CASCADE';
+                escalateTo = null;
+            } else {
+                strategy = 'PAGE_RELOAD';
+                escalateTo = 'BROWSER_RESTART';
+            }
         } else if (attempts >= 5) {
-            strategy = 'BROWSER_RESTART';
-            escalateTo = null;
+            if (isScroll) {
+                strategy = 'DEPENDENCY_CASCADE';
+                escalateTo = null;
+            } else {
+                strategy = 'BROWSER_RESTART';
+                escalateTo = null;
+            }
         }
 
         logger.info(`[Telemetry] {"event":"RECOVERY_STRATEGY_SELECTED","attempts":${attempts},"strategy":"${strategy}","consistencyScore":${snapshot.consistency}}`);
